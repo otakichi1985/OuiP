@@ -34,6 +34,7 @@ test('ZIP取得とSHA256検証・展開、実PowerShellで交換/ロールバッ
     assert.equal(JSON.parse(await fs.readFile(path.join(root,'.ouip-package.json'))).version,'0.2.0');
     assert.equal((await updater.info()).backup,'0.1.0');
     await swap(root+'.previous',true);
+    updater.staged=null; // The direct script fixture does not restart this object.
     assert.equal(JSON.parse(await fs.readFile(path.join(root,'.ouip-package.json'))).version,'0.1.0');
     assert.equal(await fs.readFile(path.join(tmp,'world.json'),'utf8'),'private creative data');
     release.assets[0].digest='sha256:'+'0'.repeat(64);

@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("ouip", {
   openDataDir: call("openDataDir"),
   devMode: call("devMode"),
   updateInfo: call("updateInfo"),
+  startupUpdate: call("startupUpdate"),
   checkUpdate: call("checkUpdate"),
   downloadUpdate: call("downloadUpdate"),
   applyUpdate: call("applyUpdate"),

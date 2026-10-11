@@ -168,6 +168,19 @@ async function scenario() {
   check(shared.board.items.length===2 && shared.entries.filter(e=>e.name===person.name).length===2,'share export/import IPC appends');
   click('#update-btn');await wait();
   check($('update-status').textContent.includes('配布版'),'development updater disabled');
+  click('[data-vclose]');
+  check($('update-notice').hidden,'development has no startup notice');
+  updateNotice({ current:'0.2.1', supported:true, kind:'available', version:'0.2.2', notes:'- 更新して再起動する処理を改善\n- <script>unsafe</script>' });
+  check(!$('update-notice').hidden && $('update-notice').textContent.includes('v0.2.2'),'notice version');
+  check(!$('update-notice').querySelector('script'),'notice plain text');
+  const noticeRect=$('update-notice').getBoundingClientRect();
+  check(noticeRect.width>0 && $('update-notice').scrollWidth <= noticeRect.width+1,'notice layout');
+  click('[data-update-dismiss]');
+  check($('update-notice').hidden && $('update-btn').textContent==='更新あり','dismiss keeps update entry');
+  updateNotice({kind:'error'});
+  check(!$('update-notice').hidden && $('update-notice').textContent.includes('再確認'),'offline notice');
+  click('[data-update-retry]');await wait();
+  check($('update-notice').hidden,'retry unsupported hides notice');
 }
 
 (async () => {

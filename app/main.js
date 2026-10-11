@@ -140,6 +140,10 @@ if (!app.requestSingleInstanceLock()) {
     try { const m = JSON.parse(fs.readFileSync(path.join(runtimeRoot, ".ouip-package.json"), "utf8")); packaged = m.product === "OuiP" && m.version === app.getVersion(); } catch {}
     const updater = new Updater({ root: runtimeRoot, cache: path.join(app.getPath("userData"), "updates"), current: app.getVersion(), supported: packaged && !dev && !dataArg && process.platform === "win32" && process.arch === "x64" });
     h("updateInfo", () => updater.info());
+    // One lookup per app process, including renderer reloads. Unsupported modes
+    // return locally and never contact GitHub.
+    let startupUpdate;
+    h("startupUpdate", () => startupUpdate ||= updater.check().then(info => info, error => ({ current: app.getVersion(), supported: updater.supported, kind: "error", error: String(error.message || error) })));
     h("checkUpdate", () => updater.check());
     h("downloadUpdate", () => updater.download());
     h("applyUpdate", async (rollback = false) => {
