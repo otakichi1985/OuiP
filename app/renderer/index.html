@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' ouip-data: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>OuiP</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1 class="logo">OuiP</h1>
+  <span id="dev-badge" class="dev-badge" hidden title="UIの変更を自動反映する開発版。データは通常版と別です">開発版</span>
+  <nav class="nav" aria-label="場所">
+    <button type="button" data-page="world" aria-current="page">概要</button>
+    <button type="button" data-page="book">設定</button>
+  </nav>
+  <div class="tools">
+    <span class="small muted" id="dirty"></span>
+    <button class="b sm" type="button" id="save-btn" title="Ctrl+S">保存</button>
+    <button class="b sm quiet" type="button" id="hist-btn">履歴</button>
+    <button class="b sm quiet" type="button" id="update-btn">更新</button>
+    <button class="b sm" type="button" id="ws-toggle" aria-pressed="false" aria-controls="wspanel">ボード</button>
+  </div>
+</header>
+
+<main>
+  <section class="page" id="p-world">
+    <label for="w-title" class="sr">世界の名前</label>
+    <input class="wtitle" id="w-title" autocomplete="off" placeholder="世界の名前">
+    <div class="world-image" id="world-image"></div>
+    <label for="w-note" class="small muted">作者のことば</label>
+    <textarea id="w-note" rows="4" placeholder="この世界のこと、まだ決めていないこと"></textarea>
+    <div class="counts" id="counts"></div>
+    <h2 class="sh">未定 <span class="c" id="open-n"></span></h2>
+    <ul class="asks" id="opens"></ul>
+  </section>
+
+  <section class="page" id="p-book" hidden>
+    <div class="subtabs" id="booktabs" role="tablist" aria-label="設定の種類"></div>
+    <div class="bookbar">
+      <label for="q" class="sr">探す</label><input id="q" type="search" placeholder="探す" autocomplete="off">
+      <div class="seg" id="bookview" role="group" aria-label="見せ方"></div>
+      <button class="b sm primary" type="button" id="addentry" style="margin-left:auto"></button>
+    </div>
+    <div class="facets" id="facets"></div>
+    <div id="bookbody"></div>
+  </section>
+</main>
+
+<aside class="wspanel" id="wspanel" hidden aria-label="ボード">
+  <div class="wsh"><b>ボード</b><span class="small muted" id="bd-hint"></span><button class="b quiet sm" type="button" id="ws-close">閉じる</button></div>
+  <div class="row"><label for="memo-new" class="sr">メモ</label><input id="memo-new" class="inp" placeholder="メモを書いて Enter" autocomplete="off" style="flex:1"></div>
+  <div class="boardwrap"><div class="board" id="board"><svg class="links" id="links" width="1600" height="1000" aria-hidden="true"></svg></div></div>
+  <p class="small muted">設定のカードをここへドラッグ ・ 選んで「つなぐ」→ 相手を押す ・ Delete で外す</p>
+</aside>
+
+<aside class="drawer" id="drawer" hidden aria-label="詳細"></aside>
+<div class="veil" id="veil" hidden><div class="viewer" role="dialog" aria-modal="true" aria-labelledby="vt" id="viewer"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="app.js"></script>
+<script src="canvas-tools.js"></script>
+<script src="updates.js"></script>
+</body>
+</html>

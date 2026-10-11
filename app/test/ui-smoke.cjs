@@ -1,0 +1,167 @@
+// 開発用の実Electron確認。通常データ・起動中のウィンドウには触れない。
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const os = require("node:os");
+const { spawn } = require("node:child_process");
+const { Store } = require("../lib/store");
+function testPNG() {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const b of body) { crc ^= b; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+    const size = Buffer.alloc(4), end = Buffer.alloc(4);
+    size.writeUInt32BE(data.length); end.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([size, body, end]);
+  };
+  const header = Buffer.alloc(13); header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 6;
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", header), chunk("IDAT", require("node:zlib").deflateSync(Buffer.from([0,108,196,180,255]))), chunk("IEND", Buffer.alloc(0))]);
+}
+
+async function scenario() {
+  console.log('smoke: start');
+  const $ = (id) => document.getElementById(id);
+  const click = (query) => { const b = document.querySelector(query); if (!b) throw Error("missing: " + query); b.click(); };
+  const wait = () => new Promise((r) => setTimeout(r, 350));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const state = await ouip.load();
+  console.log('smoke: loaded');
+  check($("world-image").querySelector("img"), "world image");
+  await Promise.race([$("world-image").querySelector("img").decode(), new Promise((r)=>setTimeout(r,1200))]);
+  console.log('smoke: world decoded');
+  click('[data-worldimage-clear]'); await wait();
+  console.log('smoke: world cleared');
+  check(!(await ouip.load()).world.image, "world image clear");
+  click('[data-worldimage]'); await wait();
+  console.log('smoke: world selected');
+  check((await ouip.load()).world.image === state.world.image, "world image picker");
+  click('[data-page="book"]');
+  console.log('smoke: book');
+  click('#addentry');
+  check([...document.querySelectorAll("[data-tk]")].map((i) => i.value).join("/") === "年齢/身長/性別/所属/身分", "default tags");
+  click('[data-tagpreset="体重"]');
+  check(document.querySelector('[data-tagpreset="体重"]').disabled, "preset disabled");
+  const gender = [...document.querySelectorAll("[data-trow]")].find((r) => r.querySelector("[data-tk]").value === "性別");
+  gender.querySelector('[data-tagvalue="女性"]').click();
+  check(gender.querySelector("[data-tv]").value === "女性", "value picker");
+  document.querySelector('[data-trow] [data-rmtag]').click();
+  check(!document.querySelector('[data-tagpreset="年齢"]').disabled, "removed tag available");
+  click('[data-addsection]');
+  document.querySelector('[data-section-title]').value = "生い立ち";
+  document.querySelector('[data-section-text]').value = "一行目\n二行目";
+  $('f-name').value = "新しい人物";
+  $('ef').requestSubmit(); await wait();
+  const person = (await ouip.load()).entries.find((e) => e.name === "新しい人物");
+  check(person.sections[0].text === "一行目\n二行目" && person.tags.体重 && !('年齢' in person.tags), "saved sections/tags");
+  check(document.querySelector('.entry-section').textContent.includes('生い立ち'), "detail section");
+  click('[data-close]');
+  check($('wspanel').hidden && document.querySelector('.en').draggable === false, "no board auto open");
+  const event = new Event('dragstart', { bubbles: true, cancelable: true });
+  event.dataTransfer = { setData() {}, effectAllowed: "" };
+  document.querySelector('.en').dispatchEvent(event);
+  check($('wspanel').hidden && event.defaultPrevented, "drag must not open board");
+  click('[data-view="相関図"]');
+  console.log('smoke: first graph');
+  check(document.querySelector('.nd image').getAttribute('href').includes(state.entries.find((e) => e.icon).icon), "relation icon");
+  click('[data-kind="用語"]');
+  await document.querySelector('.en img').decode();
+  click('[data-entry]'); click('[data-edit]');
+  check($('f-image') && !$('f-icon'), "term image edit");
+  click('[data-clear-character="image"]');
+  click('[data-pick-character="image"]'); await wait();
+  check($('f-image').value === state.world.image, "term picker handler");
+  click('#drawer [data-entry]'); click('[data-close]');
+  click('[data-kind="場所"]'); click('[data-view="地図"]');
+  console.log('smoke: first map');
+  const background = document.querySelector('.map-background');
+  click('[data-place]'); await wait();
+  check(background === document.querySelector('.map-background'), "pin placement recreated background");
+  const pin = document.querySelector('[data-node][data-which="geo"]');
+  // 合成PointerEventにはOSのポインターがないので、captureだけ模擬する。
+  pin.setPointerCapture = () => {};
+  const rect = pin.getBoundingClientRect();
+  const point = {clientX:rect.left+10,clientY:rect.top+10,pointerId:1,bubbles:true};
+  pin.dispatchEvent(new PointerEvent('pointerdown', point));
+  pin.dispatchEvent(new PointerEvent('pointermove', {...point, clientX:point.clientX+40, clientY:point.clientY+30}));
+  pin.dispatchEvent(new PointerEvent('pointerup', {...point, clientX:point.clientX+40, clientY:point.clientY+30}));
+  await wait();
+  check(background === document.querySelector('.map-background') && pin === document.querySelector('[data-node][data-which="geo"]'), "drag recreated map");
+  const loaded = await ouip.load();
+  const moved = loaded.world.maps[0].positions[loaded.entries.find((e) => e.kind === '場所').id];
+  check(moved[0] !== 440 || moved[1] !== 325, "pin move not saved");
+  // 地図を名前から追加し、独立した配置で切り替える。
+  click('[data-new-diagram="maps"]'); $('diagram-name').value = '北方大陸'; $('diagram-form').requestSubmit(); await wait();
+  console.log('smoke: map created');
+  check(document.querySelectorAll('[data-node][data-which="geo"]').length === 0, 'new map independent');
+  click('[data-mapimg]'); await wait();
+  check((await ouip.load()).world.maps.find(m=>m.name==='北方大陸').image, 'map background');
+  click('[data-adjust-map]'); await wait();
+  console.log('smoke: image editor');
+  click('[data-image-zoom="in"]'); click('[data-image-fit]'); click('[data-image-crop]');
+  $('image-editor-form').requestSubmit(); await wait(); await wait();
+  for (let i=0;i<20 && !$('veil').hidden;i++) await wait();
+  const cropped = (await ouip.load()).world.maps.find(m=>m.name==='北方大陸').image;
+  console.log('smoke: image cropped');
+  check(cropped !== state.world.image, 'cropped image saved separately');
+  const selector = $('diagram-select'); selector.value = loaded.world.maps[0].id; selector.dispatchEvent(new Event('change',{bubbles:true}));
+  check(document.querySelectorAll('[data-node][data-which="geo"]').length === 1, 'switch map restores pins');
+  const svg = document.querySelector('svg[data-camera]'), before = svg.getAttribute('viewBox');
+  svg.dispatchEvent(new WheelEvent('wheel',{deltaY:-200,clientX:300,clientY:300,bubbles:true,cancelable:true}));
+  check(svg.getAttribute('viewBox') !== before, 'map zoom');
+  click('[data-kind="人物"]'); click('[data-view="相関図"]');
+  click('[data-new-diagram="graphs"]'); $('diagram-name').value = '灯台の組織'; click('[data-all-members]'); $('diagram-form').requestSubmit(); await wait();
+  console.log('smoke: graph created');
+  click('[data-pen]');
+  document.querySelectorAll('svg[data-camera]').forEach(s=>s.scrollIntoView({block:'center'}));
+  const nodes = [...document.querySelectorAll('.nd')];
+  nodes[0].setPointerCapture=()=>{};
+  const ra=nodes[0].querySelector('circle').getBoundingClientRect(), rb=nodes[1].querySelector('circle').getBoundingClientRect();
+  const a={clientX:ra.left+ra.width/2,clientY:ra.top+ra.height/2,pointerId:2,bubbles:true};
+  nodes[0].dispatchEvent(new PointerEvent('pointerdown',a));
+  const b={...a,clientX:rb.left+rb.width/2,clientY:rb.top+rb.height/2};
+  nodes[0].dispatchEvent(new PointerEvent('pointermove',b)); nodes[0].dispatchEvent(new PointerEvent('pointerup',b));
+  check($('pen-form'), 'pen form opened'); $('pen-label').value='仲間'; $('pen-form').requestSubmit(); await wait();
+  check((await ouip.load()).world.graphs.find(g=>g.name==='灯台の組織').relations[0].label==='仲間','pen relation saved');
+  click('#ws-toggle');
+  const board = $('board'), initial=board.style.transform;
+  document.querySelector('.boardwrap').dispatchEvent(new WheelEvent('wheel',{deltaY:-200,clientX:1000,clientY:400,bubbles:true,cancelable:true}));
+  check(board.style.transform !== initial,'board zoom');
+  const wrap=document.querySelector('.boardwrap');wrap.setPointerCapture=()=>{};
+  const beforePan=board.style.transform;
+  wrap.dispatchEvent(new PointerEvent('pointerdown',{clientX:1000,clientY:400,pointerId:3,bubbles:true}));
+  wrap.dispatchEvent(new PointerEvent('pointermove',{clientX:1040,clientY:450,pointerId:3,bubbles:true}));
+  wrap.dispatchEvent(new PointerEvent('pointerup',{clientX:1040,clientY:450,pointerId:3,bubbles:true}));
+  check(board.style.transform!==beforePan,'board pan');
+  click('#update-btn');await wait();
+  check($('update-status').textContent.includes('配布版'),'development updater disabled');
+}
+
+(async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ouip-smoke-"));
+  let child;
+  try {
+    const s = new Store(path.join(tmp, "data")); await s.init();
+    const src = path.join(tmp, "test.png");
+    await fs.writeFile(src, testPNG());
+    const image = await s.importImage(src);
+    await s.updateWorld({ image, map: { image } });
+    await s.saveEntry({ kind: "人物", name: "灯", image, icon: image });
+    await s.saveEntry({ kind: "用語", name: "紋章", image });
+    await s.saveEntry({ kind: "場所", name: "灯台" });
+    const main = path.resolve(__dirname, "../main.js");
+    const harness = path.join(tmp, "main.cjs");
+    await fs.writeFile(harness, `const {app,dialog}=require('electron');dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(src)}]});const original=app.setPath.bind(app);app.setPath=(n,v)=>original(n,n==='userData'?${JSON.stringify(path.join(tmp,"profile"))}:v);require(${JSON.stringify(main)});`);
+    let errors = "";
+    child = spawn(require("electron"), [harness, "--disable-gpu", "--dev", `--data=${s.dir}`, `--shot=${path.join(tmp,"shot.png")}`, `--do=${encodeURIComponent(`(${scenario.toString()})()` )}`], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    child.stderr.on("data", (b) => errors += b);
+    child.stdout.on("data", (b) => { errors += b; process.stdout.write(b); });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { child.kill(); reject(Error("timeout: " + errors)); }, 25000);
+      child.once("exit", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(Error(errors)); });
+    });
+    await fs.access(path.join(tmp,"shot.png"));
+    console.log("PASS: 実Electronで画像・タグ・長文、複数地図切替、画像切り取り保存、複数関係図・ペン、地図ズーム、ボードズーム/パン、背景DOM保持");
+  } finally {
+    if (child && child.exitCode === null) child.kill();
+    await fs.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 });
+  }
+})().catch((e) => { console.error(e); process.exitCode = 1; });

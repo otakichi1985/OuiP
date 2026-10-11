@@ -1,0 +1,21 @@
+{
+  "name": "ouip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "未完成の創作を整理する手元のアプリ",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test test/*.test.js",
+    "test:ui": "node test/ui-smoke.cjs",
+    "package:portable": "node ../scripts/package.cjs",
+    "prepare:public": "node ../scripts/prepare-public.cjs"
+  },
+  "dependencies": {
+    "isomorphic-git": "1.43.3"
+  },
+  "devDependencies": {
+    "electron": "44.7.0"
+  }
+}
