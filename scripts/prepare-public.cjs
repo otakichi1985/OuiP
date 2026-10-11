@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { root, app, dist, assert, files, reset } = require('./package.cjs');
-function prepare() {
+function prepare(outputName = 'public-source') {
   const selections = ['README.md', 'RELEASE_NOTES.md', 'scripts/package.cjs', 'scripts/prepare-public.cjs',
     'app/main.js', 'app/preload.js', 'app/package.json', 'app/package-lock.json'];
   for (const dir of ['lib', 'renderer', 'test']) {
@@ -25,7 +25,9 @@ function prepare() {
     assert(!personalPath.test(text), `Personal absolute path detected: ${rel}`);
     assert(!credential.test(text), `Possible credential detected: ${rel}`);
   }
-  const output = path.join(dist, 'public-source');
+  assert(/^public-source(?:-[a-zA-Z0-9.-]+)?$/.test(outputName), 'Use a named public-source staging directory');
+  const output = path.join(dist, outputName);
+  assert(!fs.existsSync(path.join(output, '.git')), 'public-source is now a release repository. Preserve it; export to a new staging path before publishing another version.');
   reset(output);
   for (const rel of selections) {
     const dest = path.join(output, rel);
@@ -35,5 +37,5 @@ function prepare() {
   assert(JSON.stringify(files(output).sort()) === JSON.stringify(selections.sort()), 'Export manifest mismatch');
   console.log(JSON.stringify({ output, files: selections.length, manifest: selections }, null, 2));
 }
-if (require.main === module) { try { prepare(); } catch (error) { console.error(error.message); process.exitCode = 1; } }
+if (require.main === module) { try { prepare(process.argv[2]); } catch (error) { console.error(error.message); process.exitCode = 1; } }
 module.exports = { prepare };

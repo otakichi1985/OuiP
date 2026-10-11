@@ -49,8 +49,13 @@ async function scenario() {
   document.querySelector('[data-section-title]').value = "生い立ち";
   document.querySelector('[data-section-text]').value = "一行目\n二行目";
   $('f-name').value = "新しい人物";
+  $('f-reading').value = 'あたらしいじんぶつ';
+  click('[data-editor-expand]');
+  check($('drawer').classList.contains('editor-expanded') && $('f-name').value === '新しい人物','expand preserves input');
+  click('[data-editor-expand]');
   $('ef').requestSubmit(); await wait();
   const person = (await ouip.load()).entries.find((e) => e.name === "新しい人物");
+  check(person.reading === 'あたらしいじんぶつ' && document.querySelector('.name-reading').textContent === person.reading,'reading saved/displayed');
   check(person.sections[0].text === "一行目\n二行目" && person.tags.体重 && !('年齢' in person.tags), "saved sections/tags");
   check(document.querySelector('.entry-section').textContent.includes('生い立ち'), "detail section");
   click('[data-close]');
@@ -63,7 +68,11 @@ async function scenario() {
   console.log('smoke: first graph');
   check(document.querySelector('.nd image').getAttribute('href').includes(state.entries.find((e) => e.icon).icon), "relation icon");
   click('[data-kind="用語"]');
-  await document.querySelector('.en img').decode();
+  const termImage=document.querySelector('.en img');
+  await wait();
+  // 既に描画済みの同じURLへ再度decode()するとElectronでは待機し続ける場合がある。
+  if(!termImage.complete || !termImage.naturalWidth) await Promise.race([termImage.decode(),new Promise((_,reject)=>setTimeout(()=>reject(Error('term image decode timed out: '+termImage.src)),3000))]);
+  check(termImage.complete && termImage.naturalWidth>0,'term image rendered');
   click('[data-entry]'); click('[data-edit]');
   check($('f-image') && !$('f-icon'), "term image edit");
   click('[data-clear-character="image"]');
@@ -96,7 +105,15 @@ async function scenario() {
   check((await ouip.load()).world.maps.find(m=>m.name==='北方大陸').image, 'map background');
   click('[data-adjust-map]'); await wait();
   console.log('smoke: image editor');
-  click('[data-image-zoom="in"]'); click('[data-image-fit]'); click('[data-image-crop]');
+  click('[data-image-fill]');
+  check(imageEdit.base===Math.max(640/imageEdit.image.naturalWidth,400/imageEdit.image.naturalHeight),'image fill');
+  click('[data-image-zoom="in"]'); click('[data-image-fit]');
+  click('[data-image-trim]');
+  const cropCanvas=$('image-canvas'),cropRect=cropCanvas.getBoundingClientRect();cropCanvas.setPointerCapture=()=>{};
+  cropCanvas.dispatchEvent(new PointerEvent('pointerdown',{clientX:cropRect.left+30,clientY:cropRect.top+30,pointerId:4,bubbles:true}));
+  cropCanvas.dispatchEvent(new PointerEvent('pointermove',{clientX:cropRect.left+130,clientY:cropRect.top+130,pointerId:4,bubbles:true}));
+  cropCanvas.dispatchEvent(new PointerEvent('pointerup',{pointerId:4,bubbles:true}));
+  check(imageEdit.trim.w>0 && !$('image-apply').disabled,'crop selection');
   $('image-editor-form').requestSubmit(); await wait(); await wait();
   for (let i=0;i<20 && !$('veil').hidden;i++) await wait();
   const cropped = (await ouip.load()).world.maps.find(m=>m.name==='北方大陸').image;
@@ -131,6 +148,24 @@ async function scenario() {
   wrap.dispatchEvent(new PointerEvent('pointermove',{clientX:1040,clientY:450,pointerId:3,bubbles:true}));
   wrap.dispatchEvent(new PointerEvent('pointerup',{clientX:1040,clientY:450,pointerId:3,bubbles:true}));
   check(board.style.transform!==beforePan,'board pan');
+  await ouip.saveBoard({items:[{id:'b-share',type:'entry',ref:person.id,x:20,y:20}],links:[]});
+  await run(()=>Promise.resolve());
+  check(board.querySelector('.bs-reading').textContent===person.reading,'board reading');
+  click('[data-bs-action="present"]');
+  check(BoardShareUI.state.readOnly && $('wspanel').classList.contains('bs-expanded'),'presentation');
+  const snapshot=JSON.stringify((await ouip.load()).board);
+  board.querySelector('.bi').dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));
+  board.querySelector('.bi').dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true}));
+  check(JSON.stringify((await ouip.load()).board)===snapshot && !$('memo-ed'),'presentation blocks editing');
+  await BoardShareUI.exportPNG();
+  check($('bs-status').textContent.includes('PNG に'),'PNG export IPC');
+  click('[data-bs-action="present"]');
+  check(!BoardShareUI.state.readOnly,'presentation exits');
+  window.confirm=()=>true;
+  await BoardShareUI.exportShare();
+  await BoardShareUI.importShare();
+  const shared=await ouip.load();
+  check(shared.board.items.length===2 && shared.entries.filter(e=>e.name===person.name).length===2,'share export/import IPC appends');
   click('#update-btn');await wait();
   check($('update-status').textContent.includes('配布版'),'development updater disabled');
 }
@@ -149,9 +184,9 @@ async function scenario() {
     await s.saveEntry({ kind: "場所", name: "灯台" });
     const main = path.resolve(__dirname, "../main.js");
     const harness = path.join(tmp, "main.cjs");
-    await fs.writeFile(harness, `const {app,dialog}=require('electron');dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(src)}]});const original=app.setPath.bind(app);app.setPath=(n,v)=>original(n,n==='userData'?${JSON.stringify(path.join(tmp,"profile"))}:v);require(${JSON.stringify(main)});`);
+    await fs.writeFile(harness, `const {app,dialog}=require('electron');dialog.showOpenDialog=async(w,o)=>({canceled:false,filePaths:[o.title==='共有ボードを読み込む'?${JSON.stringify(path.join(tmp,'shared.ouip-board'))}:${JSON.stringify(src)}]});dialog.showSaveDialog=async(w,o)=>({canceled:false,filePath:o.title==='共有ボードを書き出す'?${JSON.stringify(path.join(tmp,'shared.ouip-board'))}:${JSON.stringify(path.join(tmp,'board.png'))}});const original=app.setPath.bind(app);app.setPath=(n,v)=>original(n,n==='userData'?${JSON.stringify(path.join(tmp,"profile"))}:v);require(${JSON.stringify(main)});`);
     let errors = "";
-    child = spawn(require("electron"), [harness, "--disable-gpu", "--dev", `--data=${s.dir}`, `--shot=${path.join(tmp,"shot.png")}`, `--do=${encodeURIComponent(`(${scenario.toString()})()` )}`], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    child = spawn(require("electron"), [harness, "--dev", `--data=${s.dir}`, `--shot=${path.join(tmp,"shot.png")}`, `--do=${encodeURIComponent(`(${scenario.toString()})().catch(e=>{console.error('SMOKE FAILED: '+e.stack);throw e;})` )}`], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     child.stderr.on("data", (b) => errors += b);
     child.stdout.on("data", (b) => { errors += b; process.stdout.write(b); });
     await new Promise((resolve, reject) => {
@@ -159,7 +194,7 @@ async function scenario() {
       child.once("exit", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(Error(errors)); });
     });
     await fs.access(path.join(tmp,"shot.png"));
-    console.log("PASS: 実Electronで画像・タグ・長文、複数地図切替、画像切り取り保存、複数関係図・ペン、地図ズーム、ボードズーム/パン、背景DOM保持");
+    console.log("PASS: 実Electronで読み仮名・編集拡大・画像フィット/切り抜き、既存図操作、ボード発表表示・PNG保存・共有往復（OSダイアログ/captureのみ模擬）");
   } finally {
     if (child && child.exitCode === null) child.kill();
     await fs.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 });

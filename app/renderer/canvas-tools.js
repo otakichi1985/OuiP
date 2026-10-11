@@ -202,6 +202,9 @@ async function editImage(rel, accept) {
     imageEdit = { image, accept, x: 0, y: 0, scale: 1, base: 1, crop: false };
     $("viewer").innerHTML = `<div class="vh"><h3 id="vt">画像の表示・切り取り</h3><button class="b quiet sm" data-vclose>閉じる</button></div><div class="row image-tools"><button class="b sm" data-image-zoom="out">縮小</button><button class="b sm" data-image-zoom="in">拡大</button><button class="b sm" data-image-fit>フィット</button><button class="b sm" data-image-crop aria-pressed="false">切り取り</button><label>比率 <select id="image-ratio"><option value="1.6">横長</option><option value="1">正方形</option><option value="0.75">縦長</option><option value="original">元画像</option></select></label></div><div class="image-stage"><canvas id="image-canvas" width="640" height="400" tabindex="0" aria-label="画像。ホイールで拡大縮小、ドラッグで移動"></canvas></div><p class="small muted">ホイールで拡大縮小・ドラッグで移動。「切り取り」で枠に収まる範囲を保存。元画像は残ります。</p><form id="image-editor-form"><button class="b primary" type="submit" id="image-apply" disabled>切り取りを適用</button></form>`;
     $("veil").hidden = false; fitImage();
+    document.querySelector('[data-image-fit]').textContent = "全体を収める";
+    document.querySelector('[data-image-fit]').insertAdjacentHTML('afterend','<button class="b sm" data-image-fill>枠いっぱい</button><button class="b sm" data-image-trim>切り抜き枠を指定</button>');
+    document.querySelector('[data-image-crop]').textContent = "枠で切り取り";
   } catch (e) { imageError(e); }
 }
 function fitImage() {
@@ -215,19 +218,22 @@ function drawImageEditor() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   const w = e.image.naturalWidth * e.base * e.scale, h = e.image.naturalHeight * e.base * e.scale;
   ctx.drawImage(e.image,e.x-w/2,e.y-h/2,w,h);
+  if(e.trim){const r=e.trim;ctx.fillStyle='rgba(8,12,18,.65)';ctx.fillRect(0,0,canvas.width,r.y);ctx.fillRect(0,r.y+r.h,canvas.width,canvas.height-r.y-r.h);ctx.fillRect(0,r.y,r.x,r.h);ctx.fillRect(r.x+r.w,r.y,canvas.width-r.x-r.w,r.h);ctx.strokeStyle='#6cc4b4';ctx.lineWidth=2;ctx.strokeRect(r.x,r.y,r.w,r.h);}
 }
 let imageDrag = null;
 document.addEventListener("pointerdown", (ev) => {
   if (ev.target.id !== "image-canvas" || ev.button !== 0) return;
+  if(imageEdit.selectTrim){const r=ev.target.getBoundingClientRect();const x=(ev.clientX-r.left)*ev.target.width/r.width,y=(ev.clientY-r.top)*ev.target.height/r.height;imageDrag={trim:true,x,y};imageEdit.trim={x,y,w:1,h:1};ev.target.setPointerCapture(ev.pointerId);return;}
   imageDrag = { x: ev.clientX, y: ev.clientY, ox: imageEdit.x, oy: imageEdit.y }; ev.target.setPointerCapture(ev.pointerId);
 });
 document.addEventListener("pointermove", (ev) => {
   if (!imageDrag || !$("image-canvas")) return;
   const c = $("image-canvas"), r = c.getBoundingClientRect();
+  if(imageDrag.trim){const x=Math.max(0,Math.min(c.width,(ev.clientX-r.left)*c.width/r.width)),y=Math.max(0,Math.min(c.height,(ev.clientY-r.top)*c.height/r.height));imageEdit.trim={x:Math.min(x,imageDrag.x),y:Math.min(y,imageDrag.y),w:Math.abs(x-imageDrag.x),h:Math.abs(y-imageDrag.y)};drawImageEditor();return;}
   imageEdit.x = imageDrag.ox + (ev.clientX-imageDrag.x)*c.width/r.width;
   imageEdit.y = imageDrag.oy + (ev.clientY-imageDrag.y)*c.height/r.height; drawImageEditor();
 });
-document.addEventListener("pointerup", () => { imageDrag = null; });
+document.addEventListener("pointerup", () => { if(imageDrag?.trim){imageEdit.selectTrim=false;imageEdit.crop=true;$('image-apply').disabled=false;document.querySelector('[data-image-crop]').setAttribute('aria-pressed','true');} imageDrag = null; });
 document.addEventListener("pointercancel", () => { imageDrag = null; });
 document.addEventListener("wheel", (ev) => {
   if (ev.target.id !== "image-canvas") return;
@@ -235,6 +241,7 @@ document.addEventListener("wheel", (ev) => {
 }, { passive: false });
 document.addEventListener("change", (ev) => {
   if (ev.target.id !== "image-ratio") return;
+  imageEdit.trim=null;
   const ratio = ev.target.value === "original" ? imageEdit.image.naturalWidth / imageEdit.image.naturalHeight : +ev.target.value;
   $("image-canvas").width = 640; $("image-canvas").height = Math.max(64,Math.min(900,Math.round(640/ratio))); fitImage();
 });
@@ -242,6 +249,8 @@ document.addEventListener("click", async (ev) => {
   const b = ev.target.closest("button"), d = b?.dataset || {};
   if (d.imageZoom) { imageEdit.scale = Math.max(.05,Math.min(20,imageEdit.scale*(d.imageZoom === "in" ? 1.2 : 1/1.2))); drawImageEditor(); }
   else if ("imageFit" in d) fitImage();
+  else if ("imageFill" in d) {const e=imageEdit,c=$('image-canvas');e.base=Math.max(c.width/e.image.naturalWidth,c.height/e.image.naturalHeight);e.scale=1;e.x=c.width/2;e.y=c.height/2;drawImageEditor();}
+  else if ("imageTrim" in d) {imageEdit.trim=null;imageEdit.selectTrim=true;toast('画像上でドラッグして切り抜く範囲を指定してください');}
   else if ("imageCrop" in d) { imageEdit.crop = !imageEdit.crop; b.setAttribute("aria-pressed",imageEdit.crop); $("image-canvas").classList.toggle("cropping",imageEdit.crop); $("image-apply").disabled = !imageEdit.crop; }
   else if ("vclose" in d) { imageEdit = null; imageDrag = null; }
   else if (!b && ev.target.closest("img")) {
@@ -273,6 +282,7 @@ const imageButtons = new MutationObserver(() => {
 imageButtons.observe(document.body,{childList:true,subtree:true});
 document.addEventListener('click',(ev)=>{
   const b=ev.target.closest('button'); if(!b) return;
+  if('editorExpand' in b.dataset){const drawer=$('drawer'),wide=drawer.classList.toggle('editor-expanded');b.textContent=wide?'小さく表示':'大きく表示';b.setAttribute('aria-pressed',wide);return;}
   if('adjustImage' in b.dataset){ const control=b.closest('[data-image-control]'),key=control.dataset.imageControl; editImage(control.querySelector('input').value,async(image)=>{control.outerHTML=imageControl(key,image);}); }
   else if('adjustWorld' in b.dataset) editImage(S.world.image,async(image)=>{await run(()=>api.updateWorld({image}));});
   else if(b.dataset.adjustDetail){const e=byId(cur),key=b.dataset.adjustDetail;editImage(e[key],async(image)=>{await run(()=>api.saveEntry({...e,[key]:image}));});}
@@ -281,8 +291,13 @@ document.addEventListener("submit", async (ev) => {
   if (ev.target.id !== "image-editor-form") return;
   ev.preventDefault(); if (!imageEdit?.crop) return;
   const e = imageEdit, c = $("image-canvas"), out = document.createElement("canvas");
-  const factor = Math.min(4, 3000/Math.max(c.width,c.height)); out.width = Math.round(c.width*factor); out.height = Math.round(c.height*factor);
-  out.getContext("2d").drawImage(c,0,0,out.width,out.height);
+  const rect=e.trim || {x:0,y:0,w:c.width,h:c.height};
+  if(rect.w<2||rect.h<2)return toast('切り抜く範囲をもう少し大きくしてください');
+  const factor=Math.min(1/(e.base*e.scale),3000/Math.max(rect.w,rect.h));
+  out.width=Math.max(1,Math.round(rect.w*factor));out.height=Math.max(1,Math.round(rect.h*factor));
+  // プレビューの画素ではなく元画像から描く。枠外は透明のまま残す。
+  const w=e.image.naturalWidth*e.base*e.scale,h=e.image.naturalHeight*e.base*e.scale;
+  out.getContext('2d').drawImage(e.image,(e.x-w/2-rect.x)*factor,(e.y-h/2-rect.y)*factor,w*factor,h*factor);
   $("image-apply").disabled = true;
   try {
     const blob = await new Promise((r) => out.toBlob(r,"image/png"));

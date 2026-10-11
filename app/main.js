@@ -50,6 +50,41 @@ if (!app.requestSingleInstanceLock()) {
     h("deleteEntry", (id) => store.deleteEntry(id));
     h("saveRelations", (l) => store.saveRelations(l));
     h("saveBoard", (b) => store.saveBoard(b));
+    const { BoardShare, LIMITS } = require('./lib/board-share');
+    const boardShare = new BoardShare({ store, dir });
+    h('exportBoardFile', async () => {
+      const payload = await boardShare.exportPayload();
+      const r = await dialog.showSaveDialog(win, { title: '共有ボードを書き出す', defaultPath: 'OuiP-board.ouip-board', filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
+      if (r.canceled || !r.filePath) return null;
+      if (path.resolve(r.filePath).startsWith(dir + path.sep)) throw Error('創作データのフォルダー外へ書き出してください');
+      await fs.promises.writeFile(r.filePath, JSON.stringify(payload));
+      return { saved: true };
+    });
+    h('importBoardFile', async () => {
+      const r = await dialog.showOpenDialog(win, { title: '共有ボードを読み込む', properties: ['openFile'], filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
+      if (r.canceled || !r.filePaths[0]) return null;
+      const handle = await fs.promises.open(r.filePaths[0], 'r');
+      let bytes;
+      try {
+        if ((await handle.stat()).size > LIMITS.json) throw Error('共有ファイルは30MB以下にしてください');
+        bytes = Buffer.alloc(LIMITS.json + 1);
+        let used = 0, count;
+        while (used < bytes.length && (count = (await handle.read(bytes, used, bytes.length-used)).bytesRead)) used += count;
+        if (used > LIMITS.json) throw Error('共有ファイルは30MB以下にしてください');
+        bytes = bytes.subarray(0, used);
+      } finally { await handle.close(); }
+      return boardShare.importPayload(bytes);
+    });
+    h('saveBoardPNG', async bytes => {
+      if (!(bytes instanceof Uint8Array) || bytes.length > 30*1024*1024) throw Error('画像の大きさが不正です');
+      const buffer = Buffer.from(bytes), image = nativeImage.createFromBuffer(buffer), size = image.getSize();
+      if (!buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || image.isEmpty() || size.width*size.height > 16000000) throw Error('PNG画像の大きさが不正です');
+      const r = await dialog.showSaveDialog(win, { title: 'ボードを画像に保存', defaultPath: 'OuiP-board.png', filters: [{ name: 'PNG画像', extensions: ['png'] }] });
+      if (r.canceled || !r.filePath) return null;
+      if (path.resolve(r.filePath).startsWith(dir + path.sep)) throw Error('創作データのフォルダー外へ書き出してください');
+      await fs.promises.writeFile(r.filePath, buffer);
+      return { saved: true };
+    });
     h("saveDiagram", (type, d) => store.saveDiagram(type, d));
     h("readImage", (rel) => {
       const abs = path.resolve(dir, String(rel));

@@ -104,7 +104,7 @@ function renderBook() {
   sel[kind] ??= {};
   const Sk = sel[kind];
   F.forEach((f) => (Sk[f] ??= new Set()));
-  const hit = (e) => !q || [e.name, e.desc, ...(e.sections || []).map((s) => s.title + " " + s.text), ...(e.fields || []).map((f) => f.key + " " + (f.value ?? "")), ...Object.values(tagsOf(e)).flat()].some((x) => String(x).includes(q));
+  const hit = (e) => !q || [e.name, e.reading, e.desc, ...(e.sections || []).map((s) => s.title + " " + s.text), ...(e.fields || []).map((f) => f.key + " " + (f.value ?? "")), ...Object.values(tagsOf(e)).flat()].some((x) => String(x ?? "").includes(q));
   const ok = (e, skip) => hit(e) && F.every((f) => f === skip || !Sk[f].size || (tagsOf(e)[f] || []).some((v) => Sk[f].has(v)));
 
   $("booktabs").innerHTML = KINDS.map(([k, l]) => `<button role="tab" type="button" data-kind="${k}" aria-selected="${k === kind}">${l}<span class="c">${S.entries.filter((e) => e.kind === k).length}</span></button>`).join("");
@@ -138,13 +138,16 @@ function card(e) {
   const pic = e.kind === "人物" || e.image ? `<span class="face" style="background:hsl(${Number(e.hue) || 0} 45% 62%)">${e.image ? `<img src="${assetURL(e.image)}" alt="${esc(e.name)}のカード画像" draggable="false">` : esc([...e.name][0] || "")}</span>` : "";
   const tags = Object.values(e.tags || {}).flat();
   const oc = openCount(e);
-  return `<div class="en" draggable="${!$("wspanel").hidden}" data-drag="${e.id}"><button class="open-btn" type="button" data-entry="${e.id}">${pic}<span class="k">${esc(tags.join(" ・ ") || kindLabel(e.kind))}</span><span class="character-name">${characterIcon(e)}<span class="t">${esc(e.name)}</span></span>${e.desc ? `<p>${esc(e.desc)}</p>` : ""}${oc ? `<span class="pills"><span class="pill open">未定 ${oc}</span></span>` : ""}</button></div>`;
+  return `<div class="en" draggable="${!$("wspanel").hidden}" data-drag="${e.id}"><button class="open-btn" type="button" data-entry="${e.id}">${pic}<span class="k">${esc(tags.join(" ・ ") || kindLabel(e.kind))}</span><span class="character-name">${characterIcon(e)}<span class="t">${esc(e.name)}</span></span>${readingLabel(e)}${e.desc ? `<p>${esc(e.desc)}</p>` : ""}${oc ? `<span class="pills"><span class="pill open">未定 ${oc}</span></span>` : ""}</button></div>`;
 }
 function assetURL(rel) {
   return esc("ouip-data://local/" + rel.split("/").map(encodeURIComponent).join("/"));
 }
 function characterIcon(e) {
   return e.kind === "人物" && e.icon ? `<img class="character-icon" src="${assetURL(e.icon)}" alt="" draggable="false">` : "";
+}
+function readingLabel(e) {
+  return e.kind === "人物" && e.reading ? `<span class="name-reading">${esc(e.reading)}</span>` : "";
 }
 function imageControl(key, value) {
   const label = key === "image" ? "カード画像" : "アイコン";
@@ -310,7 +313,7 @@ function openEntry(id) {
   const usedIn = S.entries.filter((x) => x.kind === "出来事" && (x.refs || []).includes(id));
   const tags = Object.entries(e.tags || {});
   D.innerHTML = `<div class="row"><button class="b quiet sm" type="button" data-close>閉じる</button><button class="b sm primary" type="button" data-edit style="margin-left:auto">編集</button></div>
-    <div class="small muted" style="margin-top:8px">${esc(kindLabel(e.kind))}${e.kind === "出来事" ? " ・ " + esc(yearText(e)) : ""}</div><h3 class="character-name">${characterIcon(e)}${esc(e.name)}</h3>
+    <div class="small muted" style="margin-top:8px">${esc(kindLabel(e.kind))}${e.kind === "出来事" ? " ・ " + esc(yearText(e)) : ""}</div><h3 class="character-name">${characterIcon(e)}${esc(e.name)}</h3>${readingLabel(e)}
     ${e.image ? `<img class="character-detail-image" src="${assetURL(e.image)}" alt="${esc(e.name)}のカード画像">` : ""}
     ${e.desc ? `<p class="desc">${esc(e.desc)}</p>` : ""}
     ${tags.length ? `<dl>${tags.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v.length ? v.map(esc).join("、") : `<span class="muted">—</span>`}</dd>`).join("")}</dl>` : ""}
@@ -356,10 +359,11 @@ function openForm(id, focusKey) {
   const D = $("drawer");
   const tagEntries = Object.entries(e.tags || {});
   const refCands = S.entries.filter((x) => x.kind !== "出来事");
-  D.innerHTML = `<div class="row"><button class="b quiet sm" type="button" ${id ? `data-entry="${id}"` : "data-close"}>やめる</button></div>
+  D.innerHTML = `<div class="row editor-toolbar"><button class="b quiet sm" type="button" ${id ? `data-entry="${id}"` : "data-close"}>やめる</button><button class="b quiet sm" type="button" data-editor-expand aria-pressed="${D.classList.contains("editor-expanded")}">${D.classList.contains("editor-expanded") ? "小さく表示" : "大きく表示"}</button></div>
     <h3>${id ? esc(e.name) : kindLabel(e.kind) + "を追加"}</h3>
     <form id="ef" data-kind="${e.kind}">
     <label class="l" for="f-name">名前</label><input type="text" id="f-name" value="${esc(e.name)}" required autocomplete="off">
+    ${e.kind === "人物" ? `<label class="l" for="f-reading">読み仮名</label><input type="text" id="f-reading" value="${esc(e.reading || "")}" autocomplete="off" placeholder="例: あかり">` : ""}
     <label class="l" for="f-desc">説明</label><textarea id="f-desc" rows="3">${esc(e.desc)}</textarea>
     ${["人物", "用語"].includes(e.kind) ? `<h4 class="form-heading">画像</h4><div class="character-images">${imageControl("image", e.image)}${e.kind === "人物" ? imageControl("icon", e.icon) : ""}</div><p class="small muted">PNG・JPEG・WebP／20MBまで</p>` : ""}
     ${e.kind === "出来事" ? `<div class="row" style="margin-top:10px"><label class="small muted" for="f-year">年（数値）</label><input type="number" id="f-year" value="${esc(e.year?.n ?? "")}" placeholder="空で未定" style="width:8em"><label class="small muted" for="f-ylabel">表記</label><input type="text" id="f-ylabel" value="${esc(e.year?.label || "")}" placeholder="空なら暦から" style="flex:1;min-width:6em"></div>
@@ -403,6 +407,7 @@ function readForm(form) {
     e.image = $("f-image").value || null;
   }
   if (k === "人物") {
+    e.reading = $("f-reading").value.trim();
     e.icon = $("f-icon").value || null;
     e.sections = [...form.querySelectorAll("[data-section]")].map((row) => ({ title: row.querySelector("[data-section-title]").value.trim(), text: row.querySelector("[data-section-text]").value }));
   }

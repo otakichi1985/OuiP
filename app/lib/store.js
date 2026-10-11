@@ -210,6 +210,7 @@ class Store {
         }
       }
       if (e.kind === "人物") {
+        e.reading = String(input.reading ?? prev.reading ?? "").trim();
         e.sections = (input.sections ?? prev.sections ?? []).map((s) => ({ title: String(s.title ?? "").trim(), text: String(s.text ?? "") })).filter((s) => s.title || s.text);
         if (e.sections.some((s) => !s.title)) throw new Error("文章の見出しを入れてください");
         e.hue = Number.isFinite(input.hue) ? input.hue : prev.hue ?? [...name].reduce((s, c) => s + c.codePointAt(0) * 37, 0) % 360;

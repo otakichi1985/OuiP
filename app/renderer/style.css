@@ -150,6 +150,11 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 /* 引き出し */
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--line);padding:14px 20px 24px;overflow-y:auto;overscroll-behavior:contain;z-index:40;box-shadow:-12px 0 30px rgba(0,0,0,.4)}
 .drawer h3{font-family:var(--display);font-size:24px;margin:8px 0 2px}
+.drawer.editor-expanded{width:min(100%,1080px);padding-inline:clamp(20px,4vw,56px)}
+.editor-toolbar{position:sticky;top:-14px;background:var(--surface);padding:8px 0;z-index:2}
+.editor-toolbar [data-editor-expand]{margin-left:auto}
+.name-reading{display:block;font-size:12px;color:var(--muted);font-weight:400;margin:2px 0 8px;overflow-wrap:anywhere}
+.drawer.editor-expanded .character-images{max-width:760px}
 .drawer dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px}
 .drawer dt{color:var(--muted)}.drawer dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .drawer .open{color:var(--warn)}
