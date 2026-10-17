@@ -1,0 +1,32 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const { Store } = require('../lib/store');
+const { History } = require('../lib/history');
+const { BoardShare } = require('../lib/board-share');
+
+test('タグのカード内位置は部分更新・履歴・共有でも保持し、旧データは名前の下へ', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ouip-card-layout-'));
+  t.after(() => fs.rm(dir, {recursive:true, force:true}));
+  const store = new Store(path.join(dir, 'source')), receiver = new Store(path.join(dir, 'receiver'));
+  const history = new History(store.dir);
+  await store.init(); await receiver.init(); await history.init();
+  const e = await store.saveEntry({kind:'人物', name:'灯', tags:{年齢:['16歳'], 身長:['160cm'], 所属:['港'], 身分:['学生']}});
+  assert.equal(e.tagPositions.年齢, 'below');
+  const edited = await store.saveEntry({...e, tagPositions:{年齢:'above', 身長:'bottom', 所属:'hidden', 身分:'below'}});
+  const oid = await history.save('タグ位置');
+  const partial = await store.saveEntry({id:e.id, kind:e.kind, name:e.name, desc:'人物'});
+  assert.deepEqual(partial.tagPositions, edited.tagPositions);
+  await store.saveEntry({...partial, tagPositions:{年齢:'invalid'}});
+  await history.save('位置変更'); await history.restore(oid);
+  assert.deepEqual((await store.load()).entries[0].tagPositions, edited.tagPositions);
+  await store.saveBoard({items:[{id:'b-card',type:'entry',ref:e.id,x:0,y:0}],links:[]});
+  const payload = await new BoardShare({store,dir:store.dir}).exportPayload();
+  const share = new BoardShare({store:receiver,dir:receiver.dir});
+  await share.importPayload(payload);
+  assert.deepEqual((await receiver.load()).entries[0].tagPositions, edited.tagPositions);
+  payload.entries[0].tagPositions.年齢 = 'invalid';
+  assert.throws(() => share.importPayload(payload), /タグ位置/);
+});

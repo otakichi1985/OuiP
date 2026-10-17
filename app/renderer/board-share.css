@@ -3,23 +3,44 @@
 #wspanel .wsh{flex-wrap:wrap;gap:8px}
 #wspanel .bs-tools button{white-space:nowrap}
 #board .bi.bs-card{width:240px;overflow-wrap:anywhere}
-#board .bs-image{display:block;width:100%;height:128px;object-fit:contain;background:var(--bg);margin:6px 0;pointer-events:none}
+#board .bs-image{display:block;width:100%;height:auto;background:var(--bg);margin:6px 0;pointer-events:none}
 #board .bs-title{display:flex;align-items:center;gap:8px;font-family:var(--display);font-size:17px;line-height:1.5}
 #board .bs-icon{width:32px;height:32px;object-fit:contain;flex:none;pointer-events:none}
 #board .bs-initial{display:grid;place-items:center;width:32px;height:32px;background:var(--raise);border-radius:6px;flex:none;font-family:var(--body)}
 #board .bs-reading{font-size:12px;color:var(--muted);margin-top:3px}
 #board .bs-desc,#board .bs-memo{white-space:pre-wrap;font-size:13px;line-height:1.65;margin-top:6px}
 #board .bs-image-error{color:var(--ng);font-size:12px;white-space:pre-wrap}
-#wspanel.bs-expanded{position:fixed;inset:12px;width:auto;height:auto;max-height:none;z-index:45;display:flex;flex-direction:column;background:var(--surface);padding:12px;border:1px solid var(--line);border-radius:10px}
-#wspanel.bs-expanded[hidden]{display:none}
-#wspanel.bs-expanded .boardwrap{flex:1;min-height:0;height:auto}
-#wspanel.bs-expanded > .row:has(#memo-new),#wspanel.bs-expanded > p,#wspanel.bs-expanded .acts{display:none}
-#wspanel.bs-expanded .bi{cursor:grab}
+#wspanel.bs-expanded,#wspanel.bs-present{position:fixed;inset:12px;width:auto;height:auto;max-height:none;z-index:45;display:flex;flex-direction:column;background:var(--surface);padding:12px;border:1px solid var(--line);border-radius:10px}
+#wspanel.bs-expanded[hidden],#wspanel.bs-present[hidden]{display:none}
 #wspanel .bs-status{color:var(--muted);font-size:12px;white-space:pre-wrap;margin:4px 0;overflow-wrap:anywhere}
 #wspanel .bs-status.bs-error{color:var(--ng)}
 #wspanel .bs-status:empty{display:none}
-#wspanel.bs-expanded #bd-hint,#wspanel.bs-expanded [data-bs-action="import"]{display:none}
 #wspanel .bs-tools .b{margin-left:0}
-#wspanel.bs-expanded .bi.sel,#wspanel.bs-expanded .bi.target{outline:none}
 #wspanel .bs-tools button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* 受け取ったボード: 見るだけの表示と、取り込む内容の選択。主要操作は本文のスクロールから独立させる。 */
+.viewer.bs-incoming-viewer{width:min(1100px,100%);height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.viewer.bs-incoming-viewer>.vh,.viewer.bs-incoming-viewer>p,.viewer.bs-incoming-viewer>.bs-preview-tools{flex-shrink:0;position:static}
+.viewer.bs-incoming-viewer>.modal-actions,.viewer.bs-incoming-viewer #bs-incoming-form>.modal-actions{position:static;flex-shrink:0;margin:0;padding-block:10px;justify-content:flex-end;flex-wrap:wrap}
+#bs-incoming-count{margin-right:auto}
+.bs-preview{flex:1;min-height:0;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;cursor:grab;overscroll-behavior:contain}
+.bs-preview.bs-dragging{cursor:grabbing}
+.bs-preview img{display:block;max-width:none;user-select:none;-webkit-user-drag:none}
+#bs-incoming-form{flex:1;min-height:0;display:flex;flex-direction:column}
+.bs-choices{flex:1;min-height:0;overflow:auto;display:grid;gap:10px;align-content:start;padding-bottom:6px}
+.bs-choice{border:1px solid var(--line);border-radius:10px;padding:8px 12px 10px;margin:0;display:flex;flex-wrap:wrap;gap:4px 16px}
+.bs-choice legend{padding:0 4px;overflow-wrap:anywhere}
+.bs-choice label{display:flex;align-items:center;gap:6px;min-height:32px}
+.bs-duplicate{flex-basis:100%;margin:0;color:var(--warn)}
+
+/* 拡大表示: ウィンドウいっぱいで、通常のボードと同じく編集できる作業用。 */
+#wspanel.bs-expanded .boardwrap,#wspanel.bs-present .boardwrap{flex:1;min-height:0;height:auto}
+/* 発表表示: 全画面の閲覧専用。ボードだけを見せ、操作は右下の小さなボタンに絞る。 */
+#wspanel.bs-present{inset:0;padding:0;border:0;border-radius:0;background:var(--bg)}
+#wspanel.bs-present>.wsh,#wspanel.bs-present>.bs-status,#wspanel.bs-present>.row,#wspanel.bs-present>p,#wspanel.bs-present .acts{display:none}
+#wspanel.bs-present .boardwrap{border:0;border-radius:0;background-image:none;cursor:grab}
+#wspanel.bs-present .bi.sel,#wspanel.bs-present .bi.target{outline:none}
+#wspanel .bs-present-controls{display:none}
+#wspanel.bs-present .bs-present-controls{display:flex;gap:6px;position:absolute;right:16px;bottom:16px;z-index:2;transition:opacity .3s}
+#wspanel.bs-present.bs-idle .bs-present-controls{opacity:0;pointer-events:none}
+#wspanel.bs-present.bs-idle .boardwrap{cursor:none}
 @media(max-width:700px){#wspanel.bs-expanded{inset:4px;padding:8px}#wspanel .bs-tools{margin-left:0;width:100%}}

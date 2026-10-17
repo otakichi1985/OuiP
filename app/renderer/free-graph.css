@@ -1,0 +1,32 @@
+/* 自由関係図: 元の墨紺/青磁、明朝見出し/ゴシック本文を継承。 */
+.free-node,.free-edge{cursor:pointer}
+.free-node rect{fill:var(--surface);stroke:var(--node-color);stroke-width:2}
+.free-node text,.free-edge text{fill:var(--fg);font:16px var(--body);pointer-events:none}
+.free-node text{fill:var(--node-color)}
+.free-edge text{fill:var(--edge-color)}
+.free-node:focus-visible rect,.free-edge:focus-visible .free-edge-label{stroke:var(--fg);stroke-width:3}
+.free-edge-label{fill:var(--bg);stroke:var(--edge-color);stroke-width:1}
+.free-edge-hit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke}
+.free-edge-line{fill:none;stroke:var(--edge-color);stroke-width:2;pointer-events:none}
+.free-edge-leader{fill:none;stroke:var(--edge-color);stroke-width:1;stroke-dasharray:3 4;pointer-events:none}
+.free-edge-reference{fill:var(--fg);font:12px var(--body);paint-order:stroke;stroke:var(--bg);stroke-width:4px}
+.free-graph-toolbar{margin:8px 0}
+.free-graph-toolbar label{display:flex;gap:6px;align-items:center;font-size:13px}
+.free-graph-toolbar input[type=number]{width:5em}
+.free-object-form{display:flex;flex-direction:column;min-height:0;overflow:hidden;gap:10px}
+.free-object-body{overflow:auto;min-height:0;display:grid;gap:8px}
+.free-object-body>label{display:grid;gap:4px}
+.free-object-body textarea,.free-object-body select,.free-object-body input[type=text]{width:100%}
+.free-coordinates{display:flex;gap:12px;flex-wrap:wrap}
+.free-coordinates label{display:grid;gap:4px;flex:1;min-width:100px}
+.free-coordinates input{width:100%}
+.free-object-form .modal-actions{flex:none;margin:0;padding:10px 0;background:var(--surface)}
+#viewer:has(.free-object-form){display:flex;flex-direction:column;overflow:hidden}
+#viewer:has(.free-object-form)>.vh{flex:none}
+.free-graph-list{margin-top:10px}
+.free-graph-list summary{min-height:44px;cursor:pointer}
+.free-graph-list .row{margin:6px 0}
+.free-graph-warning{color:var(--warn);border-left:2px solid var(--warn-line);padding-left:10px}
+.vis svg.free-graph{min-width:0;min-height:300px}/* 明るい配色では、ノードと矢印に選んだ淡い色をそのまま字に使うと白地で読みにくい。色味を残して暗くする（線と枠は選んだ色のまま）。 */
+:root[data-theme="light"] .free-node text{fill:color-mix(in oklab,var(--node-color) 50%,#000)}
+:root[data-theme="light"] .free-edge text{fill:color-mix(in oklab,var(--edge-color) 50%,#000)}

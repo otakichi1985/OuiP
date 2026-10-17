@@ -4,47 +4,75 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' ouip-data: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>OuiP</title>
+<script src="theme.js"></script>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="organizations.css">
+<link rel="stylesheet" href="character-stats.css">
+<link rel="stylesheet" href="editor-order.css">
+<link rel="stylesheet" href="timeline-tools.css">
+<link rel="stylesheet" href="sheet-export.css">
+<link rel="stylesheet" href="free-graph.css">
 </head>
 <body>
 <header class="top">
   <h1 class="logo">OuiP</h1>
   <span id="dev-badge" class="dev-badge" hidden title="UIの変更を自動反映する開発版。データは通常版と別です">開発版</span>
+  <details id="dev-dataset" hidden><summary>開発データ</summary><p class="small muted" id="dev-dataset-current"></p><label class="small">次回起動 <select id="dev-dataset-select"><option value="fixture">検証用の世界</option><option value="personal">入力済みの世界</option></select></label><p class="small muted" id="dev-dataset-status" role="status">切替は入力を確定して開発版を開き直すと反映されます。元のデータは消しません。</p></details>
   <nav class="nav" aria-label="場所">
-    <button type="button" data-page="world" aria-current="page">概要</button>
-    <button type="button" data-page="book">設定</button>
+    <button type="button" data-page="world" aria-current="page" data-icon="home">概要</button>
+    <button type="button" data-page="book" data-icon="book">設定資料</button>
+    <button type="button" id="ws-toggle" aria-pressed="false" aria-controls="wspanel" data-icon="board">ボード</button>
   </nav>
+  <!-- 結果の重さで分ける: 書き出し（外へ出す）・データ（保存と履歴）・アプリ（更新）を、表示の切替から離して別のまとまりにする。 -->
   <div class="tools">
-    <span class="small muted" id="dirty"></span>
-    <button class="b sm" type="button" id="save-btn" title="Ctrl+S">保存</button>
-    <button class="b sm quiet" type="button" id="hist-btn">履歴</button>
-    <button class="b sm quiet" type="button" id="update-btn">更新</button>
-    <button class="b sm" type="button" id="ws-toggle" aria-pressed="false" aria-controls="wspanel">ボード</button>
+    <div class="tool-group" role="group" aria-label="書き出し"><button class="b sm quiet" type="button" id="site-export-btn" data-icon="export">閲覧用ファイル</button></div>
+    <div class="tool-group tool-data" role="group" aria-label="データ"><span class="small muted" id="dirty" role="status" aria-live="polite" aria-atomic="true"></span><button class="b sm primary" type="button" id="save-btn" title="Ctrl+S" data-icon="save">保存</button><button class="b sm quiet" type="button" id="hist-btn" data-icon="history">履歴</button></div>
+    <div class="tool-group tool-app" role="group" aria-label="アプリ"><details class="menu theme-menu" id="theme-menu"><summary class="b sm quiet" data-icon="theme">外観</summary><div class="menu-pop" role="group" aria-label="外観"><button class="b quiet sm" type="button" data-theme-choice="auto" data-icon="auto">自動（OSに合わせる）</button><button class="b quiet sm" type="button" data-theme-choice="light" data-icon="light">ライト</button><button class="b quiet sm" type="button" data-theme-choice="dark" data-icon="dark">ダーク</button><hr><p class="menu-label" id="base-label">ベース色</p><div class="accent-swatches base-swatches" id="base-swatches" role="group" aria-labelledby="base-label" data-keep-menu></div><p class="menu-label" id="accent-label">差し色</p><div class="accent-swatches" id="accent-swatches" role="group" aria-labelledby="accent-label" data-keep-menu></div></div></details><button class="b sm quiet" type="button" id="update-btn" data-icon="update"><span class="label">アプリの更新</span></button></div>
   </div>
 </header>
 
+<div id="app-error" class="operation-error app-error" role="alert" hidden><span id="app-error-text"></span><button type="button" class="b quiet sm" id="app-error-close">閉じる</button></div>
 <main>
   <section id="update-notice" class="update-notice" role="status" aria-live="polite" aria-atomic="true" aria-label="アプリの更新通知" hidden></section>
+  <!-- 広い画面では左に世界の紹介、右に件数と未定（作業の入口）。狭い画面では件数と未定を紹介より先に出す。 -->
   <section class="page" id="p-world">
+    <div class="world-title">
     <label for="w-title" class="sr">世界の名前</label>
     <input class="wtitle" id="w-title" autocomplete="off" placeholder="世界の名前">
-    <div class="world-image" id="world-image"></div>
-    <label for="w-note" class="small muted">作者のことば</label>
-    <textarea id="w-note" rows="4" placeholder="この世界のこと、まだ決めていないこと"></textarea>
+    </div>
+    <aside class="world-side" aria-label="件数と未定">
     <div class="counts" id="counts"></div>
     <h2 class="sh">未定 <span class="c" id="open-n"></span></h2>
     <ul class="asks" id="opens"></ul>
+    <button class="b quiet sm" type="button" id="opens-more" hidden></button>
+    </aside>
+    <div class="world-main">
+    <div class="world-image" id="world-image"></div>
+    <label for="w-author" class="small muted">作者名</label>
+    <input class="inp" id="w-author" autocomplete="off" maxlength="200" placeholder="共有の画像やサイトに載せる名前">
+    <label for="w-note" class="small muted">作者のことば</label>
+    <textarea id="w-note" rows="4" placeholder="この世界のこと、まだ決めていないこと"></textarea>
+    </div>
   </section>
 
   <section class="page" id="p-book" hidden>
+    <!-- 種類のタブ・検索・見せ方・カードの大きさ・追加は、一覧をスクロールしても上に残す。 -->
+    <div class="book-toolbar">
     <div class="subtabs" id="booktabs" role="tablist" aria-label="設定の種類"></div>
     <div class="bookbar">
       <label for="q" class="sr">探す</label><input id="q" type="search" placeholder="探す" autocomplete="off">
       <div class="seg" id="bookview" role="group" aria-label="見せ方"></div>
+      <div class="seg card-size" id="card-size" role="group" aria-label="カードの大きさ"></div>
       <button class="b sm primary" type="button" id="addentry" style="margin-left:auto"></button>
     </div>
+    </div>
+    <div id="book-panel" role="tabpanel" tabindex="0">
+    <!-- 広い画面では絞り込みを左の列に固定し、一覧だけをスクロールさせる。 -->
+    <div class="book-layout">
     <div class="facets" id="facets"></div>
     <div id="bookbody"></div>
+    </div>
+    </div>
   </section>
 </main>
 
@@ -52,15 +80,33 @@
   <div class="wsh"><b>ボード</b><span class="small muted" id="bd-hint"></span><button class="b quiet sm" type="button" id="ws-close">閉じる</button></div>
   <div class="row"><label for="memo-new" class="sr">メモ</label><input id="memo-new" class="inp" placeholder="メモを書いて Enter" autocomplete="off" style="flex:1"></div>
   <div class="boardwrap"><div class="board" id="board"><svg class="links" id="links" width="1600" height="1000" aria-hidden="true"></svg></div></div>
-  <p class="small muted">設定のカードをここへドラッグ ・ 選んで「つなぐ」→ 相手を押す ・ Delete で外す</p>
+  <p class="small muted">設定のカードをここへドラッグ ・「接続」を選択して相手をクリック ・ Delete で取り外し</p>
 </aside>
 
 <aside class="drawer" id="drawer" hidden aria-label="詳細"></aside>
-<div class="veil" id="veil" hidden><div class="viewer" role="dialog" aria-modal="true" aria-labelledby="vt" id="viewer"></div></div>
+<div class="veil" id="veil" hidden><div class="viewer" role="dialog" aria-modal="true" aria-labelledby="vt" id="viewer" tabindex="-1"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="graph-layout.js"></script>
+<script src="free-graph.js"></script>
+<script src="character-stats.js"></script>
+<script src="character-units.js"></script>
+<script src="timeline-model.js"></script>
+<script src="timeline-view.js"></script>
+<script src="write-queue.js"></script>
+<script src="view-state.js"></script>
+<script src="timeline-tools.js"></script>
+<script src="ui-accessibility.js"></script>
+<script src="image-adjustment.js"></script>
+<script src="facet-range.js"></script>
+<script src="icons.js"></script>
 <script src="app.js"></script>
 <script src="canvas-tools.js"></script>
+<script src="organizations.js"></script>
+<script src="free-graph-ui.js"></script>
+<script src="editor-order.js"></script>
 <script src="updates.js"></script>
 <script src="board-share.js"></script>
+<script src="site-export.js"></script>
+<script src="sheet-export.js"></script>
 </body>
 </html>

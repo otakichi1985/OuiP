@@ -1,0 +1,14 @@
+/* 墨紺/青磁とシステム書体を継承。操作列だけ追加し、入力欄の幅を奪わない。 */
+#ef .editor-order-tools{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-bottom:4px}
+#ef .editor-order-tools .b{font-family:var(--body);min-height:34px;padding:2px 9px;font-size:12px;white-space:nowrap}
+#ef [data-editor-order="handle"]{cursor:grab;color:var(--accent);border-style:dashed}
+#ef [data-editor-order="handle"]:active{cursor:grabbing}
+#ef .editor-order-tools .b:disabled{opacity:.35;cursor:default}
+#ef [data-frow]>.editor-order-tools{grid-column:1/-1;margin:0}
+#ef [data-section]>summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+#ef [data-section]>summary>.editor-order-tools{margin:0 0 0 auto}
+#ef [data-section]>summary::before{content:'▸';color:var(--muted)}
+#ef [data-section][open]>summary::before{content:'▾'}
+#ef .editor-order-dragging{opacity:.55}
+#ef .editor-order-before{box-shadow:0 -3px 0 var(--accent)}
+#ef .editor-order-after{box-shadow:0 3px 0 var(--accent)}

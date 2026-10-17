@@ -1,6 +1,6 @@
 {
   "name": "ouip",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "未完成の創作を整理する手元のアプリ",
   "main": "main.js",

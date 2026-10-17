@@ -1,5 +1,5 @@
 // OuiP の入れ物。常駐しない: ウィンドウを閉じたら終わる。多重起動はせず、起動済みなら前に出す。
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, nativeImage, nativeTheme } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
@@ -27,7 +27,17 @@ if (!app.requestSingleInstanceLock()) {
   protocol.registerSchemesAsPrivileged([{ scheme: "ouip-data", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
   app.whenReady().then(async () => {
-    const dir = dataArg ? path.resolve(dataArg.slice(7)) : path.join(app.getPath("documents"), dev ? "OuiP-開発" : "OuiP");
+    const { ensureFixture, devDirectory } = require('./lib/dev-fixture');
+    const selectionFile = path.join(app.getPath('userData'), 'dev-dataset.json');
+    let selection = 'fixture';
+    if (dev && !dataArg) {
+      try {
+        const saved = JSON.parse(await fs.promises.readFile(selectionFile, 'utf8'));
+        if (saved.selection === 'personal') selection = 'personal';
+      } catch(error) { if(error.code !== 'ENOENT') throw error; }
+    }
+    const dir = devDirectory({documents:app.getPath('documents'),dev,explicit:dataArg?.slice(7),selection});
+    if (dev && !dataArg && selection === 'fixture') await ensureFixture(dir);
     const store = new Store(dir);
     const hist = new History(dir);
     await store.init();
@@ -43,7 +53,8 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     const h = (name, fn) => ipcMain.handle(name, (_ev, ...args) => fn(...args));
-    h("load", async () => ({ ...(await store.load()), dataDir: dir, changes: (await hist.changes()).length }));
+    // 一時JSONのrenameと履歴の走査を競合させず、同じ時点の表示を返す。
+    h("load", () => store.serial(async () => ({ ...(await store.load()), dataDir: dir, changes: (await hist.changes()).length })));
     h("updateWorld", (p) => store.updateWorld(p));
     h("saveEntry", (e) => store.saveEntry(e));
     h("moveEntry", (id, which, pos) => store.moveEntry(id, which, pos));
@@ -52,6 +63,29 @@ if (!app.requestSingleInstanceLock()) {
     h("saveBoard", (b) => store.saveBoard(b));
     const { BoardShare, LIMITS } = require('./lib/board-share');
     const boardShare = new BoardShare({ store, dir });
+    const { SiteExport } = require('./lib/site-export');
+    const siteExport = new SiteExport({store,dir});
+    h('exportSite', async selection => {
+      const html = await siteExport.build(selection);
+      const r = await dialog.showSaveDialog(win, {title:'閲覧用ファイル（HTML）を書き出す', defaultPath:'OuiP-閲覧用.html', filters:[{name:'閲覧専用HTML',extensions:['html']}]});
+      if(r.canceled || !r.filePath) return null;
+      return siteExport.write(r.filePath,html);
+    });
+    // キャラの設定シート（SNS向けの画像）。画面からはキャラのIDと選んだ項目だけを受け取る。
+    const { SheetExport } = require('./lib/sheet-export');
+    const sheetExport = new SheetExport({ store, dir, electron: { BrowserWindow, nativeImage, screen: require('electron').screen } });
+    h('sheetDefaults', (id) => sheetExport.defaults(id));
+    h('previewSheet', async (id, options) => {
+      const r = await sheetExport.render(id, options);
+      return { pages: r.pngs.map(png => 'data:image/png;base64,' + png.toString('base64')), sizes: r.pngs.map(png => png.length), overflow: r.overflow };
+    });
+    h('exportSheet', async (id, options) => {
+      const r = await sheetExport.render(id, options);
+      const safe = r.model.name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 60) || 'キャラ';
+      const d = await dialog.showSaveDialog(win, { title: '設定シートを画像で保存', defaultPath: safe + '-設定シート.png', filters: [{ name: 'PNG画像', extensions: ['png'] }] });
+      if (d.canceled || !d.filePath) return null;
+      return { ...(await sheetExport.save(d.filePath, r.pngs)), pages: r.pngs.length, overflow: r.overflow };
+    });
     h('exportBoardFile', async () => {
       const payload = await boardShare.exportPayload();
       const r = await dialog.showSaveDialog(win, { title: '共有ボードを書き出す', defaultPath: 'OuiP-board.ouip-board', filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
@@ -60,7 +94,9 @@ if (!app.requestSingleInstanceLock()) {
       await fs.promises.writeFile(r.filePath, JSON.stringify(payload));
       return { saved: true };
     });
-    h('importBoardFile', async () => {
+    // 受け取ったファイルは、まず見るだけで開く。選んだ分だけを後でimportBoardSelectionで書く。
+    let pendingBoard = null;
+    h('openBoardFile', async () => {
       const r = await dialog.showOpenDialog(win, { title: '共有ボードを読み込む', properties: ['openFile'], filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
       if (r.canceled || !r.filePaths[0]) return null;
       const handle = await fs.promises.open(r.filePaths[0], 'r');
@@ -73,8 +109,19 @@ if (!app.requestSingleInstanceLock()) {
         if (used > LIMITS.json) throw Error('共有ファイルは30MB以下にしてください');
         bytes = bytes.subarray(0, used);
       } finally { await handle.close(); }
-      return boardShare.importPayload(bytes);
+      const token = require('node:crypto').randomUUID();
+      const preview = await boardShare.preview(bytes);
+      pendingBoard = { token, bytes };
+      return { token, fileName: path.basename(r.filePaths[0]), ...preview };
     });
+    h('importBoardSelection', async (token, choices) => {
+      if (!pendingBoard || pendingBoard.token !== token) throw Error('共有ファイルを開き直してください');
+      const { bytes } = pendingBoard;
+      const result = await boardShare.importPayload(bytes, { choices, place: 'right' });
+      pendingBoard = null;
+      return result;
+    });
+    h('closeBoardFile', (token) => { if (pendingBoard?.token === token) pendingBoard = null; return true; });
     h('saveBoardPNG', async bytes => {
       if (!(bytes instanceof Uint8Array) || bytes.length > 30*1024*1024) throw Error('画像の大きさが不正です');
       const buffer = Buffer.from(bytes), image = nativeImage.createFromBuffer(buffer), size = image.getSize();
@@ -101,7 +148,7 @@ if (!app.requestSingleInstanceLock()) {
       if (image.isEmpty() || size.width * size.height > 16000000) throw new Error("画像の大きさが不正");
       return store.importEditedImage(bytes);
     });
-    h("changes", () => hist.changes());
+    h("changes", () => store.serial(() => hist.changes()));
     h("save", (msg) => store.serial(() => hist.save(msg)));
     h("log", () => hist.log());
     h("diffFiles", (oid) => hist.diffFiles(oid));
@@ -134,6 +181,14 @@ if (!app.requestSingleInstanceLock()) {
     h("pickCharacterImage", pickImage);
     h("pickImage", pickImage);
     h("devMode", () => dev);
+    h('devDataInfo', () => ({available:dev && !dataArg,current:dataArg?'explicit':selection}));
+    h('devDataSelection', async value => {
+      if (!dev || dataArg) throw Error('通常の開発版でのみ変更できます');
+      if (!['fixture','personal'].includes(value)) throw Error('データを選択してください');
+      const { writeJson } = require('./lib/store');
+      await writeJson(selectionFile,{selection:value});
+      return value;
+    });
     const { Updater } = require("./lib/updater");
     const runtimeRoot = path.dirname(process.execPath);
     let packaged = false;
@@ -166,7 +221,7 @@ if (!app.requestSingleInstanceLock()) {
       height: 860,
       minWidth: 720,
       minHeight: 520,
-      backgroundColor: "#12151c",
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f6f8", // 描く前の地。外観が自動のときに合う色（端末ごとの選択はrendererが当てる）
       title: "OuiP",
       autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },

@@ -3,6 +3,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {readJson, writeJson, KINDS} = require('./store');
+const CharacterStats = require('../renderer/character-stats');
+const CharacterUnits = require('../renderer/character-units');
 const LIMITS = Object.freeze({json:30*1024*1024, images:20*1024*1024, items:200, entries:100, links:1000});
 const IMAGE = /^assets\/(?:image|character)-([a-f0-9]{64})\.(png|jpg|jpeg|webp)$/;
 const fail = (text) => { throw new Error('共有ボード: '+text); };
@@ -32,11 +34,28 @@ function card(e) {
  const out={id:id(e.id),kind:e.kind,name:text(e.name,1000),desc:text(e.desc??'')};
  if(!out.name.trim()) fail('名前が空です');
  if(e.reading!==undefined) out.reading=text(e.reading,1000);
+ // 新枠だけを明示許可。旧共有で未指定なら従来どおり属性を追加しない。
+ if(Object.prototype.hasOwnProperty.call(e,'stats')) {
+   if(e.kind!=='人物') fail('ステータスは人物カード専用です');
+   try { out.stats=CharacterStats.validate(e.stats); } catch(error) { fail(error.message); }
+ }
  out.fields=list(e.fields??[],200).map(f=>({key:text(f.key,1000),value:f.value===null?null:text(f.value??''),open:!!f.open}));
  out.tags={};
  if(!e.tags||typeof e.tags!=='object'||Array.isArray(e.tags)) { if(e.tags!==undefined) fail('タグが不正です'); }
  for(const [key,values] of Object.entries(e.tags??{})) out.tags[text(key,1000)]=list(values,200).map(v=>text(v,1000));
  if(Object.keys(out.tags).length>200) fail('タグが多すぎます');
+  if(e.kind==='人物' && e.tagPositions!==undefined) {
+    if(!e.tagPositions || typeof e.tagPositions!=='object' || Array.isArray(e.tagPositions)) fail('タグ位置が不正です');
+    out.tagPositions={};
+    for(const key of Object.keys(out.tags)) {
+      const position=e.tagPositions[key]??'below';
+      if(!['above','below','bottom','hidden'].includes(position)) fail('タグ位置が不正です');
+      out.tagPositions[key]=position;
+    }
+  }
+  if(e.kind==='人物' && e.tagUnits!==undefined) {
+    try { out.tagUnits=CharacterUnits.normalize(out.tags,e.tagUnits); } catch(error) { fail(error.message); }
+  }
  if(e.kind==='人物') {out.sections=list(e.sections??[],200).map(s=>({title:text(s.title,1000),text:text(s.text??'')})); if(e.hue!==undefined){if(!Number.isFinite(e.hue)) fail('色が不正です');out.hue=e.hue;}}
  if(e.kind==='出来事') {const y=e.year??{};if(y.n!==null&&y.n!==undefined&&!Number.isFinite(y.n)) fail('年が不正です');out.year={n:y.n??null,label:text(y.label??'',1000)};}
  for(const key of ['image','icon']) if(e[key]) { if(!IMAGE.test(e[key])) fail('画像の場所が不正です');out[key]=e[key]; }
@@ -86,21 +105,53 @@ class BoardShare {
   for(const rel of paths){const file=await this.assetPath(rel),stat=await fs.stat(file);total+=stat.size;if(total>LIMITS.images)fail('画像の合計は20MB以下にしてください');const bytes=await fs.readFile(file);imageBytes(rel,bytes);images.push({path:rel,base64:bytes.toString('base64')});}
   const payload={format:'ouip-board',version:1,board:b,entries,images};parse(payload);return payload;
  });}
- importPayload(payload) {
+ // 書き込まずに中身を見せる。同じ種類・同じ名前の既存カードがあればduplicateで知らせる。
+ preview(payload) {
   const validated=parse(payload);
+  return this.store.serial(async()=>{
+   const state=await this.store.load(), names=new Set(state.entries.map(e=>e.kind+'\n'+e.name.trim()));
+   return {
+    board:validated.board,
+    entries:validated.entries.map(e=>({...e,duplicate:names.has(e.kind+'\n'+e.name.trim())})),
+    images:[...validated.images].map(([rel,bytes])=>({path:rel,dataURL:`data:image/${rel.split('.').pop().replace('jpg','jpeg')};base64,${bytes.toString('base64')}`})),
+   };
+  });
+ }
+ // choices.entries[id]: 'register'（設定として登録）| 'memo'（名前と説明のメモにする）| 'skip'。未指定は登録。
+ // choices.memos[id]: falseなら取り込まない。線は両端を取り込んだものだけ残す。
+ // place:'right' は今のボードの右の空いた所へ、受け取った並びのまま移す。
+ importPayload(payload,{choices={},place=null}={}) {
+  const validated=parse(payload);
+  const entryChoice=e=>{const c=choices.entries?.[e.id]??'register';if(!['register','memo','skip'].includes(c))fail('取り込み方が不正です');return c;};
+  const byRef=new Map(validated.entries.map(e=>[e.id,e]));
+  // 取り込み方は書き込みの前に確かめる。
+  const registered=validated.entries.filter(e=>entryChoice(e)==='register');
   return this.store.serial(async()=>{
    const state=await this.store.load(), added=[], mapping={}, itemMap={};
    const make=(prefix)=>prefix+'-'+crypto.randomBytes(16).toString('hex'), occupied=new Set(state.entries.map(e=>e.id));
-   for(const e of validated.entries){let fresh;do{fresh=make({人物:'c',用語:'t',場所:'p',出来事:'e'}[e.kind]);}while(occupied.has(fresh));occupied.add(fresh);mapping[e.id]=fresh;}
-   for(const i of validated.board.items)itemMap[i.id]=make('b');
-   const imported={items:validated.board.items.map(i=>({...i,id:itemMap[i.id],...(i.type==='entry'?{ref:mapping[i.ref]}:{})})),links:validated.board.links.map(l=>({...l,id:make('l'),from:itemMap[l.from],to:itemMap[l.to]}))};
+   for(const e of registered){let fresh;do{fresh=make({人物:'c',用語:'t',場所:'p',出来事:'e'}[e.kind]);}while(occupied.has(fresh));occupied.add(fresh);mapping[e.id]=fresh;}
+   const kept=[];
+   for(const i of validated.board.items){
+    if(i.type==='memo'){if(choices.memos?.[i.id]===false)continue;kept.push({...i});continue;}
+    const e=byRef.get(i.ref),c=entryChoice(e);
+    if(c==='register')kept.push({...i,ref:mapping[i.ref]});
+    else if(c==='memo')kept.push({id:i.id,type:'memo',x:i.x,y:i.y,text:[e.name+(e.reading?'（'+e.reading+'）':''),e.desc].filter(Boolean).join('\n').slice(0,4000)});
+   }
+   for(const i of kept)itemMap[i.id]=make('b');
+   let dx=0,dy=0;
+   if(place==='right'&&kept.length&&state.board.items.length){
+    dx=Math.max(...state.board.items.map(i=>i.x))+300-Math.min(...kept.map(i=>i.x));
+    dy=Math.min(...state.board.items.map(i=>i.y))-Math.min(...kept.map(i=>i.y));
+   }
+   const imported={items:kept.map(i=>({...i,id:itemMap[i.id],x:i.x+dx,y:i.y+dy})),links:validated.board.links.filter(l=>itemMap[l.from]&&itemMap[l.to]).map(l=>({...l,id:make('l'),from:itemMap[l.from],to:itemMap[l.to]}))};
    const next={items:[...state.board.items,...imported.items],links:[...state.board.links,...imported.links]};
    const worldFile=path.join(this.dir,'world.json'), originalWorld=await fs.readFile(worldFile), world=JSON.parse(originalWorld);
    let nextNo=Math.max(world.nextOpenNo||1,...state.entries.flatMap(e=>(e.fields||[]).map(f=>(Number(f.no)||0)+1)));
-   const entries=validated.entries.map(e=>({...e,id:mapping[e.id],fields:e.fields.map(f=>f.open?{...f,no:nextNo++}:f)}));
+   const entries=registered.map(e=>({...e,id:mapping[e.id],fields:e.fields.map(f=>f.open?{...f,no:nextNo++}:f)}));
+   const neededImages=new Set(registered.flatMap(e=>[e.image,e.icon].filter(Boolean)));
    let worldWritten=false;
    try {
-    for(const [rel,bytes] of validated.images){const dest=await this.assetPath(rel);let handle;try{handle=await fs.open(dest,'wx');}catch(e){if(e.code!=='EEXIST')throw e;imageBytes(rel,await fs.readFile(dest));continue;}added.push(dest);try{await handle.writeFile(bytes);}finally{await handle.close();}}
+    for(const [rel,bytes] of validated.images){if(!neededImages.has(rel))continue;const dest=await this.assetPath(rel);let handle;try{handle=await fs.open(dest,'wx');}catch(e){if(e.code!=='EEXIST')throw e;imageBytes(rel,await fs.readFile(dest));continue;}added.push(dest);try{await handle.writeFile(bytes);}finally{await handle.close();}}
     const entryDir=path.join(this.dir,'entries');if(await fs.realpath(entryDir)!==entryDir)fail('カードフォルダーのリンクは使用できません');
     for(const e of entries){const dest=path.join(entryDir,e.id+'.json'),handle=await fs.open(dest,'wx');added.push(dest);try{await handle.writeFile(JSON.stringify(e,null,2)+'\n');}finally{await handle.close();}}
     if(entries.length){await writeJson(worldFile,{...world,nextOpenNo:nextNo,order:[...(world.order||[]),...entries.map(e=>e.id)]});worldWritten=true;}
@@ -114,7 +165,7 @@ class BoardShare {
     if(failures.length)throw new AggregateError([error,...failures.map(m=>new Error(m))],'共有読み込み失敗。復旧を確認してください');
     throw error;
    }
-   return {board:next,entries,mapping,addedItems:imported.items.length};
+   return {board:next,entries,mapping,addedItems:imported.items.length,addedIds:imported.items.map(i=>i.id)};
   });
  }
 }

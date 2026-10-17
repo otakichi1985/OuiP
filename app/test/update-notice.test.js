@@ -1,8 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const { Updater } = require('../lib/updater');
 const release = { tag_name: 'v0.2.1', body: '- 交換を修正', assets: [{ name: 'ouip-win-x64-v0.2.1.zip', size: 100, digest: 'sha256:' + 'a'.repeat(64), browser_download_url: 'https://github.com/otakichi1985/OuiP/releases/download/v0.2.1/ouip-win-x64-v0.2.1.zip' }] };
 test('同時更新確認は1通信、通知情報と準備済みZIPを保持', async () => {
@@ -33,13 +31,12 @@ test('非対応は通信せず、確認失敗後は再試行できる', async ()
 async function screen(info) {
   const nodes = new Map();
   const get = id => {
-    if (!nodes.has(id)) nodes.set(id, { hidden: true, innerHTML: '', textContent: '', attrs: {}, classList: { toggle() {} }, setAttribute(name, value) { this.attrs[name] = value; }, focus() {}, querySelector() { return { focus() {} }; } });
+    if (!nodes.has(id)) nodes.set(id, { hidden: true, innerHTML: '', textContent: '', attrs: {}, classList: { toggle() {} }, setAttribute(name, value) { this.attrs[name] = value; }, focus() {}, querySelector(selector) { return selector === '.label' ? null : { focus() {} }; } });
     return nodes.get(id);
   };
   let listener, calls = 0, downloads = 0;
   const api = { startupUpdate: async () => { calls++; if (info instanceof Error) throw info; return info; }, updateInfo: async () => info, checkUpdate: async () => ({ ...info, kind: 'current' }), downloadUpdate: () => { downloads++; } };
-  const ctx = vm.createContext({ api, $: get, esc: value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]), document: { addEventListener: (_name, fn) => { listener = fn; } }, toast() {} });
-  vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../renderer/updates.js'), 'utf8'), ctx);
+  const ctx = require('../renderer/updates').createUpdatesUI({ api, $: get, esc: value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]), document: { addEventListener: (_name, fn) => { listener = fn; } }, toast() {} });
   await new Promise(resolve => setImmediate(resolve));
   const click = async dataset => { const b = { dataset, disabled: false, isConnected: true }; await listener({ target: { closest: () => b } }); };
   return { get, ctx, click, calls: () => calls, downloads: () => downloads };
@@ -55,7 +52,7 @@ test('起動時カードに版/変更点、安全なテキスト、あとで・�
   assert.doesNotMatch(card.innerHTML, /<img/);
   await s.click({ updateDismiss: '' });
   assert.equal(card.hidden, true);
-  assert.equal(s.get('update-btn').textContent, '更新あり');
+  assert.equal(s.get('update-btn').textContent, 'アプリの更新あり');
   await s.click({ updateOpen: '' });
   assert.equal(s.get('veil').hidden, false);
   assert.match(s.get('viewer').innerHTML, /data-update-download/);

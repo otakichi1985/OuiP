@@ -1,0 +1,27 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+const {Store}=require('../lib/store');
+const {History}=require('../lib/history');
+const FreeGraph=require('../renderer/free-graph');
+test('自由図は保存/部分更新/履歴復元し、キャラや組織の変更から独立する',async t=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'ouip-free-store-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const s=new Store(dir),h=new History(dir);await s.init();await h.init();
+  const person=await s.saveEntry({kind:'人物',name:'灯'});
+  const world=await s.updateWorld({organization:{name:'灯台'}});
+  const legacy=await s.saveDiagram('graphs',{name:'元図',members:[person.id],organizationIds:[world.organizations[0].id]});
+  const copy=FreeGraph.cloneLegacy(legacy,[person],world.organizations);
+  let g=await s.saveDiagram('graphs',{name:'自由図',...copy});
+  g=await s.saveDiagram('graphs',{id:g.id,edges:[{id:'e-one',a:g.nodes[0].id,b:g.nodes[1].id,text:'手動',writing:'vertical',color:'#cc8844',direction:'both'}]});
+  assert.deepEqual((await s.load()).world.graphs.find(x=>x.id===legacy.id),legacy);
+  const oid=await h.save('自由図');
+  const saved=structuredClone(g);await s.updateWorld({deleteOrganization:world.organizations[0].id});await s.deleteEntry(person.id);
+  assert.deepEqual((await s.load()).world.graphs.find(x=>x.id===g.id),saved);
+  g=await s.saveDiagram('graphs',{id:g.id,name:'改名'});assert.deepEqual(g.nodes,saved.nodes);assert.deepEqual(g.edges,saved.edges);
+  await assert.rejects(s.saveDiagram('graphs',{id:legacy.id,format:'free'}),/複製/);
+  const before=await fs.readFile(s.p('world.json'));
+  await assert.rejects(s.saveDiagram('graphs',{id:g.id,edges:[{id:'e-one',a:'n-missing',b:g.nodes[0].id}]}),/端点/);
+  assert.deepEqual(await fs.readFile(s.p('world.json')),before);
+  g=await s.saveDiagram('graphs',{id:g.id,nodes:g.nodes.slice(0,1)});assert.equal(g.edges.length,0);
+  await h.save('削除');await h.restore(oid);
+  assert.deepEqual((await s.load()).world.graphs.find(x=>x.id===g.id),saved);
+});

@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 function watchRenderer(dir, notify, interval = 250) {
-  const files = ["style.css", "index.html", "app.js", "canvas-tools.js", "updates.js"];
+  const files = ["style.css", "index.html", "app.js", "canvas-tools.js", "updates.js", "timeline-model.js", "timeline-view.js", "timeline-tools.js"];
   const pending = new Set();
   let timer;
   let closed = false;

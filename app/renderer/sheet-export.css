@@ -1,0 +1,21 @@
+/* 設定シートの書き出し: 左で載せるものを選び、右で仕上がりを見る。主要操作は本文のスクロールから独立させる。 */
+.viewer.sheet-export-viewer{width:min(1180px,100%);height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.viewer.sheet-export-viewer>.vh{position:static;flex-shrink:0}
+#sheet-form{flex:1;min-height:0;display:flex;flex-direction:column}
+.sheet-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:16px}
+.sheet-options{min-height:0;overflow:auto;padding-right:4px}
+.sheet-options fieldset{border:1px solid var(--line);border-radius:10px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:2px}
+.sheet-options legend{padding:0 4px}
+.sheet-options label{display:flex;align-items:center;gap:6px;min-height:32px;overflow-wrap:anywhere}
+.sheet-options label .small{margin-left:4px}
+.sheet-group{display:flex;flex-direction:column;gap:2px;margin:4px 0 2px 4px;padding-left:10px;border-left:2px solid var(--line)}
+.sheet-author{display:block;margin-top:4px}
+#sheet-author{width:100%}
+.sheet-preview{min-height:0;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
+#sheet-status{margin:0 0 8px}
+#sheet-pages{display:grid;gap:12px}
+#sheet-pages figure{margin:0}
+#sheet-pages img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+#sheet-pages figcaption{color:var(--muted);font-size:12px;margin-top:4px}
+.viewer.sheet-export-viewer #sheet-form>.modal-actions{position:static;flex-shrink:0;margin:0;padding-block:10px;justify-content:flex-end}
+@media(max-width:760px){.sheet-body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.sheet-options{max-height:40dvh}}

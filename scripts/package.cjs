@@ -56,7 +56,7 @@ async function build() {
   const target = path.join(runtime, 'resources', 'app');
   fs.mkdirSync(target, { recursive: true });
   for (const name of ['main.js', 'preload.js', 'package.json']) fs.copyFileSync(path.join(app, name), path.join(target, name));
-  for (const name of ['lib', 'renderer']) copyTree(path.join(app, name), path.join(target, name));
+  for (const name of ['lib', 'renderer', 'share']) copyTree(path.join(app, name), path.join(target, name));
   const production = Object.entries(lock.packages).filter(([key, entry]) => key && entry.dev !== true);
   assert(production.length > 0, 'No production dependencies');
   for (const [key, entry] of production) {

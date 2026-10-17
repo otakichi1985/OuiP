@@ -1,0 +1,51 @@
+/* 墨紺/青磁と既存の明朝見出しを継承。既存.tlよりspecificityを高くする。 */
+#bookbody .timeline-controls{margin-bottom:8px;gap:6px 10px;font-size:13px}
+#bookbody .timeline-controls label{white-space:nowrap}
+#bookbody .timeline-controls select{min-height:34px}
+#bookbody .timeline-era-note{margin:0 0 10px}
+#bookbody .tl.timeline-layout{max-width:none;width:100%}
+#bookbody .tl.timeline-layout .year-group{display:grid;grid-template-columns:11.5em minmax(0,1fr);position:relative;border-top:1px solid transparent;padding-top:4px}
+#bookbody .tl.timeline-layout .year-head{padding:4px 14px 8px 0;min-width:0}
+#bookbody .tl.timeline-layout .year-actions{display:flex;justify-content:flex-end;gap:3px;flex-wrap:wrap;margin-top:5px}
+#bookbody .tl.timeline-layout .year-actions .b{padding:2px 6px;min-width:44px;min-height:44px;font-size:13px;font-family:var(--body);font-weight:400;color:var(--muted);border-color:transparent;background:none;white-space:nowrap}
+#bookbody .tl.timeline-layout .year-actions .b:hover:not(:disabled){color:var(--accent);border-color:var(--line)}
+#bookbody .tl.timeline-layout .year-actions .b:disabled{opacity:.45;cursor:default}
+#bookbody .tl.timeline-layout .year-group{cursor:grab}
+#bookbody .tl.timeline-layout .year-group.timeline-dragging{cursor:grabbing}
+#bookbody .tl.timeline-layout .year-group button{cursor:pointer}
+#bookbody .tl.timeline-layout .year-group:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#bookbody .tl.timeline-layout .year-events{list-style:none;margin:0;padding:0;min-width:0}
+#bookbody .tl.timeline-layout .ev{display:block;min-width:0}
+#bookbody .tl.timeline-layout .year-label{margin:0 0 2px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+#bookbody .tl.timeline-layout .body{overflow-wrap:anywhere}
+#bookbody .tl.timeline-layout .era{padding-left:calc(11.5em + 20px)}
+#bookbody .tl.timeline-layout .year-group.noyear .year-head{color:var(--warn)}
+#bookbody .tl.timeline-layout.timeline-top .year-group{grid-template-columns:minmax(0,1fr);margin-bottom:8px}
+#bookbody .tl.timeline-layout.timeline-top .year-head{display:flex;gap:4px 12px;align-items:center;flex-wrap:wrap;text-align:left;padding:4px 0 6px 18px;border-left:2px solid var(--line)}
+#bookbody .tl.timeline-layout.timeline-top .year-actions{justify-content:flex-start;margin-top:0}
+#bookbody .tl.timeline-layout.timeline-top .era{padding-left:20px}
+#bookbody .tl.timeline-layout .timeline-dragging{opacity:.55}
+#bookbody .tl.timeline-layout .timeline-drop-before{box-shadow:0 -3px 0 var(--accent)}
+#bookbody .tl.timeline-layout .timeline-drop-after{box-shadow:0 3px 0 var(--accent)}
+#bookbody .tl.timeline-layout .year-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#bookbody .timeline-track{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;align-items:stretch}
+#bookbody .timeline-flow{display:flex;flex-direction:column;align-items:center;color:var(--muted);padding:4px 0 12px;pointer-events:none}
+#bookbody .timeline-flow span{writing-mode:vertical-rl;font-size:11px;white-space:nowrap;letter-spacing:.1em;margin-bottom:6px}
+#bookbody .timeline-flow::before{content:"";order:1;flex:1;min-height:44px;border-left:1.5px solid currentColor}
+#bookbody .timeline-flow svg{order:2;width:20px;height:20px;flex:none;overflow:visible}
+#bookbody .timeline-flow path{fill:none;stroke:currentColor;stroke-width:1.5;vector-effect:non-scaling-stroke}
+#bookbody .timeline-settings summary{min-height:44px;color:var(--fg)}
+#bookbody .timeline-settings .er{align-items:center;flex-wrap:wrap}
+#bookbody .timeline-settings .er>input{flex:1;min-width:120px}
+#bookbody .timeline-settings .timeline-era-row{display:grid;grid-template-columns:minmax(8em,1fr) minmax(0,2fr);gap:10px}
+#bookbody .timeline-settings .timeline-era-row label{display:grid;gap:4px;min-width:0}
+#bookbody .timeline-settings .timeline-era-row input{width:100%;min-width:0}
+#bookbody .timeline-settings input:focus-visible,#bookbody .timeline-controls select:focus-visible,#bookbody .timeline-settings summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+@media(max-width:760px){
+  #bookbody .timeline-track{grid-template-columns:18px minmax(0,1fr);gap:4px}
+  #bookbody .timeline-controls select{max-width:100%}
+  #bookbody .tl.timeline-layout.timeline-side .year-group{grid-template-columns:9em minmax(0,1fr)}
+  #bookbody .tl.timeline-layout.timeline-side .year-head{padding-right:10px}
+  #bookbody .tl.timeline-layout.timeline-side .era{padding-left:calc(9em + 20px)}
+}

@@ -6,9 +6,10 @@ const { root, app, dist, assert, files, reset } = require('./package.cjs');
 function prepare(outputName = 'public-source') {
   const selections = ['README.md', 'RELEASE_NOTES.md', 'scripts/package.cjs', 'scripts/prepare-public.cjs',
     'app/main.js', 'app/preload.js', 'app/package.json', 'app/package-lock.json'];
-  for (const dir of ['lib', 'renderer', 'test']) {
+  for (const dir of ['lib', 'renderer', 'share', 'test']) {
     for (const file of files(path.join(app, dir))) {
-      assert(/\.(js|cjs|html|css|json|ps1)$/.test(file), `Review new source type before export: app/${dir}/${file}`);
+      // 同梱アイコン（Lucide）のライセンス全文は、表示義務のため公開ソースにも含める。
+      assert(/\.(js|cjs|html|css|json|ps1)$/.test(file) || `${dir}/${file}` === 'renderer/icons-LICENSE.txt', `Review new source type before export: app/${dir}/${file}`);
       selections.push(`app/${dir}/${file}`);
     }
   }

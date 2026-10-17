@@ -5,6 +5,11 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const GraphLayout = require("../renderer/graph-layout");
+const CharacterStats = require("../renderer/character-stats");
+const CharacterUnits = require("../renderer/character-units");
+const FreeGraph = require('../renderer/free-graph');
+const { normalizeOrganizations, membershipIds } = require("./organizations");
 
 const SCHEMA = 1;
 const KINDS = ["人物", "用語", "場所", "出来事"];
@@ -42,6 +47,7 @@ function defaultWorld() {
     nextOpenNo: 1,
     map: { image: null },
     termTabs: [],
+    organizations: [],
   };
 }
 
@@ -123,6 +129,8 @@ class Store {
     return this.serial(async () => {
       const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
       for (const k of ["title", "note", "calendar"]) if (k in patch) w[k] = String(patch[k] ?? "");
+      // 作者名は共有の画像やサイトに載せる名前。前後の空白を除き、長すぎる値は拒否する。
+      if ("author" in patch) { const author = String(patch.author ?? "").trim(); if (author.length > 200) throw new Error("作者名は200文字以内にしてください"); w.author = author; }
       if ("image" in patch) w.image = this.checkImage(patch.image);
       if ("eras" in patch)
         w.eras = (patch.eras || [])
@@ -130,10 +138,63 @@ class Store {
           .map((e) => ({ from: Number(e.from), label: String(e.label).trim() }))
           .sort((a, b) => a.from - b.from);
       if ("termTabs" in patch) w.termTabs = patch.termTabs;
+      if ("timeline" in patch) {
+        const value = patch.timeline;
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('年表の設定が不正です');
+        const next = {yearPosition:'side', order:[], ...w.timeline, ...value};
+        if (!['side','top'].includes(next.yearPosition) || !Array.isArray(next.order) || next.order.length > 10000) throw new Error('年表の設定が不正です');
+        if (next.order.some(key => typeof key !== 'string' || (key !== 'year:unknown' && (!key.startsWith('year:') || !Number.isFinite(Number(key.slice(5))) || key !== 'year:' + String(Number(key.slice(5))))))) throw new Error('年表の順序が不正です');
+        // 旧保存順は手動として読む。明示されたモードだけを保存し、既存の形を保つ。
+        if ('sortMode' in next && !['asc','desc','manual'].includes(next.sortMode)) throw new Error('年表の並び順が不正です');
+        w.timeline = {yearPosition:next.yearPosition, order:[...new Set(next.order)], ...('sortMode' in next ? {sortMode:next.sortMode} : {})};
+      }
       if ("map" in patch) w.map = { ...w.map, ...patch.map };
+      // 1組織ずつの部分更新で、古いrendererスナップショットの上書きを避ける。
+      const oldOrganizations = w.organizations;
+      if ("organizations" in patch) w.organizations = normalizeOrganizations(patch.organizations);
+      if ("organization" in patch) {
+        const input = patch.organization;
+        const previous = w.organizations.find((o) => o.id === input.id);
+        if (input.id && !previous) throw new Error("組織が見つかりません");
+        const organization = { ...previous, ...input, id: previous?.id || newId("org") };
+        w.organizations = normalizeOrganizations(previous ? w.organizations.map((o) => o.id === previous.id ? organization : o) : [...w.organizations, organization]);
+      }
+      if ("deleteOrganization" in patch) {
+        const id = patch.deleteOrganization;
+        if (!w.organizations.some((o) => o.id === id)) throw new Error("組織が見つかりません");
+        w.organizations = normalizeOrganizations(w.organizations.filter((o) => o.id !== id).map((o) => o.parentId === id ? { ...o, parentId: null } : o));
+      }
+      const remaining = new Set(w.organizations.map((o) => o.id));
+      const removed = new Set(oldOrganizations.filter((o) => !remaining.has(o.id)).map((o) => o.id));
+      if (removed.size) await this.cleanOrganizationReferences(w, removed);
       await writeJson(this.p("world.json"), w);
       return w;
     });
+  }
+
+  async cleanOrganizationReferences(world, removed) {
+    const keepRelation = (r) => !removed.has(r.a) && !removed.has(r.b);
+    for (const graph of world.graphs || []) {
+      if(graph.format==='free') continue;
+      graph.organizationIds = (graph.organizationIds || []).filter((id) => !removed.has(id));
+      for (const id of removed) if (graph.positions) delete graph.positions[id];
+      graph.relations = (graph.relations || []).filter(keepRelation);
+    }
+    for (const n of (await fsp.readdir(this.p("entries"))).filter((n) => n.endsWith(".json"))) {
+      const e = await readJson(this.p("entries", n));
+      let changed = false;
+      for (const key of ["organizationIds", "refs"]) if (e[key]?.some((id) => removed.has(id))) {
+        e[key] = e[key].filter((id) => !removed.has(id)); changed = true;
+      }
+      if (changed) await writeJson(this.p("entries", n), e);
+    }
+    const relations = await readJson(this.p("relations.json"), []);
+    await writeJson(this.p("relations.json"), relations.filter(keepRelation));
+    const board = await readJson(this.p("board.json"), { items: [], links: [] });
+    const gone = new Set(board.items.filter((i) => removed.has(i.ref)).map((i) => i.id));
+    board.items = board.items.filter((i) => !gone.has(i.id));
+    board.links = board.links.filter((l) => !gone.has(l.from) && !gone.has(l.to));
+    await writeJson(this.p("board.json"), board);
   }
 
   saveDiagram(type, input) {
@@ -143,18 +204,34 @@ class Store {
       const prev = world[type].find((d) => d.id === input.id) || {};
       const d = { ...prev, ...input, id: prev.id || newId(type === "maps" ? "map" : "graph"), name: String(input.name ?? prev.name ?? "").trim() };
       if (!d.name) throw new Error("図の名前を入れてください");
-      const allowed = new Set(entries.filter((e) => e.kind === (type === "maps" ? "場所" : "人物")).map((e) => e.id));
-      d.positions = Object.fromEntries(Object.entries(d.positions || {}).filter(([id]) => allowed.has(id)).map(([id, p]) => {
+      if (type === 'graphs' && (input.format === 'free' || prev.format === 'free')) {
+        if (prev.id && prev.format !== 'free') throw Error('旧関係図は複製して編集してください');
+        const free = {id:d.id,name:d.name,...FreeGraph.normalize(input,prev)};
+        world.graphs = world.graphs.some(g => g.id === free.id) ? world.graphs.map(g => g.id === free.id ? free : g) : [...world.graphs,free];
+        await writeJson(this.p('world.json'),world); return free;
+      }
+      const people = new Set(entries.filter((e) => e.kind === "人物").map((e) => e.id));
+      const orgs = new Set(world.organizations.map((o) => o.id));
+      const allowed = new Set(type === "maps" ? entries.filter((e) => e.kind === "場所").map((e) => e.id) : [...people, ...orgs]);
+      // 関係図の部分保存でも他の人物の確定済み位置を落とさない。
+      const savedPositions = type === "graphs" ? { ...prev.positions, ...input.positions } : d.positions;
+      d.positions = Object.fromEntries(Object.entries(savedPositions || {}).filter(([id]) => allowed.has(id)).map(([id, p]) => {
         if (!Array.isArray(p) || p.length !== 2 || !p.every(Number.isFinite)) throw new Error("位置が不正");
-        return [id, p.map(Math.round)];
+        return [id, type === "graphs" ? [...p] : p.map(Math.round)];
       }));
       if (type === "maps") {
         if (d.image && !/^assets\/map\.(png|jpg|jpeg|webp)$/.test(d.image)) this.checkImage(d.image);
         d.image = d.image || null;
       } else {
-        d.members = [...new Set(d.members || [])].filter((id) => allowed.has(id));
-        const ids = new Set(d.members);
-        d.positions = Object.fromEntries(Object.entries(d.positions).filter(([id]) => ids.has(id)));
+        d.members = [...new Set(d.members || [])].filter((id) => people.has(id));
+        d.organizationIds = [...new Set(d.organizationIds || [])].filter((id) => orgs.has(id));
+        d.groupDisplay = d.groupDisplay === "nodes" ? "nodes" : "frames";
+        const ids = new Set([...d.members, ...d.organizationIds]);
+        // 人物の未配置算出順は従来通り。組織追加・表示切替で人物位置を変えない。
+        const personPositions = GraphLayout.positions(d.members, d.positions, entries);
+        const organizationPositions = Object.fromEntries(d.organizationIds.map((id, i) => [id, d.positions[id] || [100 + (i % 6) * 150, 80 + Math.floor(i / 6) * 100]]));
+        d.positions = { ...personPositions, ...organizationPositions };
+        d.grid = GraphLayout.normalizeGrid(input.grid === undefined ? prev.grid : { ...prev.grid, ...input.grid });
         d.relations = (d.relations || []).filter((r) => ids.has(r.a) && ids.has(r.b) && r.a !== r.b).map((r) => ({ id: r.id || newId("r"), a: r.a, b: r.b, label: String(r.label || ""), style: ["family", "friend", "rival"].includes(r.style) ? r.style : "friend" }));
       }
       world[type] = world[type].some((x) => x.id === d.id) ? world[type].map((x) => x.id === d.id ? d : x) : [...world[type], d];
@@ -210,16 +287,26 @@ class Store {
         }
       }
       if (e.kind === "人物") {
+        e.tagUnits = CharacterUnits.normalize(e.tags, input.tagUnits === undefined ? prev.tagUnits ?? {} : input.tagUnits);
+        const placements = input.tagPositions ?? prev.tagPositions ?? {};
+        e.tagPositions = Object.fromEntries(Object.keys(e.tags).map((key) => [key, ["above", "below", "bottom", "hidden"].includes(placements[key]) ? placements[key] : "below"]));
         e.reading = String(input.reading ?? prev.reading ?? "").trim();
         e.sections = (input.sections ?? prev.sections ?? []).map((s) => ({ title: String(s.title ?? "").trim(), text: String(s.text ?? "") })).filter((s) => s.title || s.text);
         if (e.sections.some((s) => !s.title)) throw new Error("文章の見出しを入れてください");
         e.hue = Number.isFinite(input.hue) ? input.hue : prev.hue ?? [...name].reduce((s, c) => s + c.codePointAt(0) * 37, 0) % 360;
         e.relPos = input.relPos ?? prev.relPos ?? null;
+        e.organizationIds = membershipIds(input.organizationIds === undefined ? prev.organizationIds || [] : input.organizationIds, w.organizations);
+        const stats = CharacterStats.normalize(input.stats, prev.stats);
+        if (stats !== undefined) e.stats = stats;
       }
       if (e.kind === "場所") e.geo = input.geo !== undefined ? input.geo : prev.geo ?? null;
       if (e.kind === "出来事") {
-        const n = Number(input.year?.n ?? prev.year?.n);
-        e.year = { n: Number.isFinite(n) ? n : null, label: String(input.year?.label ?? prev.year?.label ?? "") };
+        // null（未定）と未指定（前の値を保持）を区別する。Number(null) は0になる。
+        const raw = input.year && Object.hasOwn(input.year, "n") ? input.year.n : prev.year?.n;
+        const blank = raw == null || (typeof raw === "string" && !raw.trim());
+        const n = blank ? null : Number(raw);
+        if (!blank && !Number.isFinite(n)) throw new Error("年は数値で入力してください");
+        e.year = { n, label: String(input.year?.label ?? prev.year?.label ?? "") };
         e.refs = (input.refs ?? prev.refs ?? []).filter((r) => typeof r === "string");
       }
       if (isNew) w.order.push(id);
