@@ -362,13 +362,8 @@ function assetURL(rel) {
   return esc("ouip-data://local/" + rel.split("/").map(encodeURIComponent).join("/"));
 }
 function characterIcon(e) {
-  const face = ImageSet.faceOf(e);
+  const face = e.image || e.icon;
   return e.kind === "人物" && face ? `<img class="character-icon" src="${assetURL(face)}" alt="" draggable="false">` : "";
-}
-// 名前横・関係図に出す顔の選択肢。ない方は選べない。未指定なら今ある方（両方あればカード画像）。
-function faceOptions(e) {
-  const sel = e.face === "icon" || e.face === "image" ? e.face : (e.image && e.icon ? "image" : e.icon ? "icon" : "image");
-  return `<option value="image"${sel === "image" ? " selected" : ""}${e.image ? "" : " disabled"}>カード画像</option><option value="icon"${sel === "icon" ? " selected" : ""}${e.icon ? "" : " disabled"}>アイコン</option>`;
 }
 function readingLabel(e) {
   return e.kind === "人物" && e.reading ? `<span class="name-reading">${esc(e.reading)}</span>` : "";
@@ -439,7 +434,7 @@ function relmap(list) {
   const nodes = list
     .map((e) => {
       const [x, y] = P[e.id];
-      const face = (ImageSet.faceOf(e)) ? `<defs><clipPath id="clip-${e.id}"><circle r="22"/></clipPath></defs><image href="${assetURL(ImageSet.faceOf(e))}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${e.id})"/>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0] || "")}</text>`;
+      const face = (e.image || e.icon) ? `<defs><clipPath id="clip-${e.id}"><circle r="22"/></clipPath></defs><image href="${assetURL(e.image || e.icon)}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${e.id})"/>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0] || "")}</text>`;
       return `<g class="nd" data-node="${e.id}" data-which="rel" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="${esc(e.name)}"><circle r="22" fill="hsl(${Number(e.hue) || 0} 45% 62%)"/>${face}<text y="46" text-anchor="middle">${esc(e.name)}</text></g>`;
     })
     .join("");
@@ -874,7 +869,6 @@ function openForm(id, focusKey) {
   const pageBasic = makePage("basic", "基本", `
     <div class="field"><label class="l" for="f-name">名前</label><input type="text" id="f-name" value="${esc(e.name)}" required autocomplete="off"></div>
     ${e.kind === "人物" ? `<h4 class="form-heading">画像</h4>${imageSetControl(e)}` : e.kind === "用語" ? `<h4 class="form-heading">画像</h4><div class="character-images">${imageControl("image", e.image, e.imageAdjust)}</div><p class="small muted">カード・名前横・関係図に使う1枚の画像です。PNG・JPEG／20MBまで</p>${imageCropControl(e)}` : ""}
-    ${e.kind === "人物" ? `<div class="character-images">${imageControl("icon", e.icon, e.iconAdjust)}</div><div class="row"><label class="small">名前横の顔<select data-face aria-label="名前横と関係図に出す顔">${faceOptions(e)}</select></label></div>` : ""}
     ${e.kind === "人物" ? `<div class="field"><label class="l" for="f-reading">読み仮名</label><input type="text" id="f-reading" value="${esc(e.reading || "")}" autocomplete="off" placeholder="例: あかり"></div>` : ""}
     <div class="field field-wide"><label class="l" for="f-desc">説明</label><textarea id="f-desc" rows="3">${esc(e.desc)}</textarea></div>
     ${["人物", "用語"].includes(e.kind) ? `<details open class="detail-group editor-optional"><summary>設定項目・未定</summary><div id="f-fields">${(e.fields || []).map(fieldRow).join("")}</div><button class="b quiet sm" type="button" data-addfield style="align-self:flex-start">＋ 項目</button></details>` : ""}
@@ -964,10 +958,6 @@ function readForm(form) {
     e.image = draft.thumb || draft.images[0]?.image || null;
     const thumbItem = e.images.find((item) => item.image === e.image);
     e.imageAdjust = thumbItem?.adjust || null;
-    e.icon = $("f-icon").value || null;
-    e.iconAdjust = readImageAdjust(form.querySelector('[data-image-control="icon"]'));
-    const faceSel = form.querySelector('[data-face]')?.value;
-    if (faceSel === "icon" || faceSel === "image") e.face = faceSel;
     const crop = form.querySelector("[data-image-crop]");
     e.imageCrop = e.image && crop && crop.dataset.cropFit === "cover"
       ? { fit: "cover", x: Number(crop.dataset.cropX), y: Number(crop.dataset.cropY) }
@@ -1416,16 +1406,6 @@ document.addEventListener("click", async (ev) => {
     if (d.cropPos) { box.dataset.cropFit = "cover"; [box.dataset.cropX, box.dataset.cropY] = d.cropPos.split(","); }
     else box.dataset.cropFit = d.cropFitChoice;
     syncCropBox(box);
-    // 切り取りは下書きへ即時反映する（サムネイル切替などの描き直しで消えないように）。
-    const form = b.closest("#ef");
-    if (form?.querySelector("[data-image-set]")) {
-      const draft = imageDraft(form), item = draft.images.find((x) => x.image === draft.thumb);
-      if (item) {
-        if (box.dataset.cropFit === "cover") item.crop = { fit: "cover", x: Number(box.dataset.cropX), y: Number(box.dataset.cropY) };
-        else delete item.crop;
-        form.querySelector("#f-images").value = JSON.stringify(draft.images);
-      }
-    }
   } else if (b.id === "reorder-btn") {
     reorder = !reorder;
     renderBook();

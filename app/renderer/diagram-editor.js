@@ -4,10 +4,10 @@
 // 必要なもの（状態の取得・保存・読み直し・項目を開く・画像のURL・座標変換）は引数で受け取り、app.js の変数を直接見ない。
 (function (root, factory) {
   const isNode = typeof module === 'object' && module.exports;
-  const api = factory(isNode ? require('./diagram-model') : root.DiagramModel, isNode ? require('./image-set') : root.ImageSet);
+  const api = factory(isNode ? require('./diagram-model') : root.DiagramModel);
   if (isNode) module.exports = api;
   else root.DiagramEditor = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (D, ImageSet) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (D) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const KIND_LABEL = { 人物: 'キャラ', 用語: '用語', 場所: '場所', 出来事: '出来事' };
   const SHAPES = [['box', '文字の箱'], ['ellipse', '楕円'], ['balloon', '吹き出し'], ['cloud', '雲の吹き出し']];
@@ -72,7 +72,7 @@
     function resolveRef(ref) {
       const { entries, world } = getState();
       const e = entries.find((x) => x.id === ref);
-      if (e) { const face = ImageSet.faceOf(e); return { name: e.name, kind: KIND_LABEL[e.kind] || e.kind, image: face ? assetURL(face) : null, color: e.kind === '人物' ? `hsl(${Number(e.hue) || 0} 45% 62%)` : null }; }
+      if (e) return { name: e.name, kind: KIND_LABEL[e.kind] || e.kind, image: (e.icon || e.image) ? assetURL(e.icon || e.image) : null, color: e.kind === '人物' ? `hsl(${Number(e.hue) || 0} 45% 62%)` : null };
       const o = (world.organizations || []).find((x) => x.id === ref);
       return o ? { name: o.name, kind: '組織', image: null, color: '#91b8e8' } : null;
     }

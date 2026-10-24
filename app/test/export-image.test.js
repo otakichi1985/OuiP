@@ -46,16 +46,11 @@ test('閲覧用HTMLは同じ画像を1回だけ埋め込み、最初の1か所�
   assert.match(script, /data-ouip-id/);
 });
 
-test('変換に失敗した絵は除いて続け、項目名と理由を知らせる（原寸のまま黙って入れない）', async t => {
+test('変換に失敗したら、どの項目の画像かを知らせて止める（原寸のまま入れない）', async t => {
   const { dir, store, image } = await world(t);
   const a = await store.saveEntry({ kind: '人物', name: '灯', image });
   const broken = { createFromBuffer: () => ({ isEmpty: () => true }) };
-  const info = {};
-  const html = await new SiteExport({ store, dir, nativeImage: broken }).build({ title: '試験', includeIntro: false, entryIds: [a.id], organizationIds: [], graphIds: [], mapIds: [] }, info, () => {});
-  assert.equal(info.skipped.length, 1);
-  assert.equal(info.skipped[0].label, '灯');
-  assert.match(info.skipped[0].reason, /変換できませんでした/);
-  assert.doesNotMatch(html, /data-ouip-id="0"/, '読めなかった絵は入れない');
+  await assert.rejects(new SiteExport({ store, dir, nativeImage: broken }).build({ title: '試験', includeIntro: false, entryIds: [a.id], organizationIds: [], graphIds: [], mapIds: [] }), /「灯」の画像を変換できませんでした/);
   await assert.rejects(new BoardShare({ store, dir, nativeImage: broken }).exportPayload({ items: [{ id: 'i-a', type: 'entry', ref: a.id, x: 0, y: 0 }], links: [] }), /「灯」の画像を変換できませんでした/);
 });
 

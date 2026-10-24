@@ -80,7 +80,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       const r = await dialog.showSaveDialog(win, {title:'閲覧用ファイル（HTML）を書き出す', defaultPath:'OuiP-閲覧用.html', filters:[{name:'閲覧専用HTML',extensions:['html']}]});
       if(r.canceled || !r.filePath) return null;
-      return { ...(await siteExport.write(r.filePath,html)), kept: info.kept || 0, skipped: info.skipped || [], bytes: info.bytes, warn: !!info.warn };
+      return { ...(await siteExport.write(r.filePath,html)), kept: info.kept || 0, bytes: info.bytes, warn: !!info.warn };
     });
     // キャラの設定シート（SNS向けの画像）。画面からはキャラのIDと選んだ項目だけを受け取る。
     const { SheetExport } = require('./lib/sheet-export');
@@ -88,14 +88,14 @@ if (!app.requestSingleInstanceLock()) {
     h('sheetDefaults', (id) => sheetExport.defaults(id));
     h('previewSheet', async (id, options) => {
       const r = await sheetExport.render(id, options);
-      return { pages: r.pngs.map(png => 'data:image/png;base64,' + png.toString('base64')), sizes: r.pngs.map(png => png.length), overflow: r.overflow, skipped: r.skipped || [] };
+      return { pages: r.pngs.map(png => 'data:image/png;base64,' + png.toString('base64')), sizes: r.pngs.map(png => png.length), overflow: r.overflow };
     });
     h('exportSheet', async (id, options) => {
       const r = await sheetExport.render(id, options);
       const safe = r.model.name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 60) || 'キャラ';
       const d = await dialog.showSaveDialog(win, { title: '設定シートを画像で保存', defaultPath: safe + '-設定シート.png', filters: [{ name: 'PNG画像', extensions: ['png'] }] });
       if (d.canceled || !d.filePath) return null;
-      return { ...(await sheetExport.save(d.filePath, r.pngs)), pages: r.pngs.length, overflow: r.overflow, skipped: r.skipped || [] };
+      return { ...(await sheetExport.save(d.filePath, r.pngs)), pages: r.pngs.length, overflow: r.overflow };
     });
     h('exportBoardFile', async () => {
       const info = {}, payload = await boardShare.exportPayload(undefined, info);

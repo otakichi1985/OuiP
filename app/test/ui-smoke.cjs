@@ -1733,46 +1733,6 @@ async function featureScenario(personId) {
     check($('viewer').querySelector('.art-gallery-stage figcaption')?.textContent !== beforeCaption, 'gallery page flips');
     click('[data-vclose]'); $('drawer').hidden = true; cur = null;
   });
-  await stage('icon registration/adjustment and face choice', async () => {
-    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
-    openEntry(personId); click('[data-edit]');
-    check(document.querySelector('[data-image-control="icon"]'), 'icon registration is back in character edit');
-    {
-      const face = document.querySelector('[data-face]');
-      check(face && [...face.options].map(o => o.value).join(',') === 'image,icon', 'face choice offers image and icon');
-    }
-    // 切り取り編集中にサムネイル切替の描き直しが入っても、下書きの切り取りは残る。
-    click('[data-crop-fit-choice="cover"]');
-    const thumbs = [...document.querySelectorAll('[data-image-thumb]')];
-    if (thumbs.length < 2) throw Error('need two images for the crop draft check');
-    const thumb0 = document.querySelector('[data-image-set]').dataset.thumbnail;
-    const first = JSON.parse($('f-images').value).find(i => i.image !== thumbs[1].value)?.image || JSON.parse($('f-images').value)[0].image;
-    thumbs[1].click(); await wait();
-    check(JSON.parse($('f-images').value).find(i => i.image === first)?.crop?.fit === 'cover', 'crop edit survives a thumbnail redraw');
-    [...document.querySelectorAll('[data-image-thumb]')].find(el => el.value === thumb0).click(); await wait();
-    // 顔の指定をアイコンへ変えると、名前横の顔が変わる。
-    const asset = (await ouip.load()).entries.find(e => e.id === personId).images[0].image;
-    await ouip.saveEntry({ id: personId, kind: '人物', name: (await ouip.load()).entries.find(e => e.id === personId).name, icon: asset });
-    await refresh(); openEntry(personId); click('[data-edit]');
-    const faceSel = document.querySelector('[data-face]');
-    faceSel.value = 'icon'; faceSel.dispatchEvent(new Event('change', { bubbles: true }));
-    $('ef').requestSubmit(); await wait();
-    check((await ouip.load()).entries.find(e => e.id === personId).face === 'icon', 'face choice saves');
-    openEntry(personId);
-    const shown = document.querySelector('#drawer .character-icon');
-    check(shown && shown.src.endsWith(asset.split('/').pop()), 'viewer face follows the icon choice');
-    click('[data-edit]');
-    document.querySelector('[data-face]').value = 'image';
-    document.querySelector('[data-face]').dispatchEvent(new Event('change', { bubbles: true }));
-    $('ef').requestSubmit(); await wait();
-    check((await ouip.load()).entries.find(e => e.id === personId).face === 'image', 'face choice switches back');
-    // 旧アイコンだけの項目には、詳細にアイコン調整が出る。
-    const legacyIcon = await ouip.saveEntry({ kind: '人物', name: '旧アイコンの人', icon: asset });
-    await refresh(); openEntry(legacyIcon.id); await wait();
-    check(document.querySelector('[data-adjust-detail="icon"]'), 'icon-only entry offers icon adjustment in detail');
-    $('drawer').hidden = true; cur = null;
-    await ouip.deleteEntry(legacyIcon.id); await refresh();
-  });
   // 画面を開く操作を一通り押し、例外が出ないことを見る（押されない画面の不具合を見逃さないため）。
   await stage('status definitions / organization dialogs open, round-trip and close without errors', async () => {
     let thrown = 0; const count = () => { thrown++; };

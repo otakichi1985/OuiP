@@ -36,12 +36,5 @@
   function paths(entry) {
     return list(entry).map(item => item.image);
   }
-  // 名前横・関係図に出す顔。faceで明示した方を出し、なければ今までどおりカード画像を優先する。
-  function faceOf(entry) {
-    if (!entry || entry.kind !== "人物") return entry?.image || entry?.icon || null;
-    if (entry.face === "icon" && entry.icon) return entry.icon;
-    if (entry.face === "image" && entry.image) return entry.image;
-    return entry.image || entry.icon || null;
-  }
-  return Object.freeze({ list, thumbnail, paths, faceOf });
+  return Object.freeze({ list, thumbnail, paths });
 });

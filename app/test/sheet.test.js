@@ -54,21 +54,6 @@ test('設定シートに使う絵を複数画像から選べる', () => {
   assert.equal(fallback.image, 'assets/a.png', '知らない画像はサムネイルへ戻す');
 });
 
-test('使う絵がサムネイルで枠切り指定ならシートの絵にも切り取りを反映する', () => {
-  const cropped = { ...entry, image: 'assets/a.png', imageCrop: { fit: 'cover', x: 0, y: 100 } };
-  const local = { ...state, entries: [cropped] };
-  const m = Sheet.sheetModel(local, 'c-aa', { ...Sheet.defaultOptions(cropped, state.world), image: true });
-  assert.deepEqual(m.imageCrop, { fit: 'cover', x: 0, y: 100 });
-  assert.match(Sheet.renderSheetHTML(m), /object-fit:cover;object-position:0% 100%/);
-  const multi = { ...cropped, images: [{ image: 'assets/a.png' }, { image: 'assets/b.png' }] };
-  const other = Sheet.sheetModel({ ...state, entries: [multi] }, 'c-aa', { ...Sheet.defaultOptions(multi, state.world), image: true, imagePath: 'assets/b.png' });
-  assert.equal(other.imageCrop, null, 'サムネイル以外の絵には切り取りを付けない');
-  assert.doesNotMatch(Sheet.renderSheetHTML(other), /object-fit:cover/);
-  const containEntry = { ...cropped, imageCrop: { fit: 'contain', x: 50, y: 50 } };
-  const contain = Sheet.sheetModel({ ...state, entries: [containEntry] }, 'c-aa', { ...Sheet.defaultOptions(containEntry, state.world), image: true });
-  assert.equal(contain.imageCrop, null, '全体収納では切り取りを付けない');
-});
-
 test('不正な指定は拒否し、キャラ以外は書き出さない', () => {
   assert.throws(() => Sheet.sheetModel(state, 'c-aa', { size: 'poster' }), /大きさ/);
   assert.throws(() => Sheet.sheetModel(state, 'c-aa', { tags: ['無い'] }), /タグ/);

@@ -2,11 +2,10 @@
 // 純粋な描画APIはnode:testからも使用。DOM・保存は後半の統合関数に限定する。
 (function (root, factory) {
   const layout = typeof module === "object" && module.exports ? require("./graph-layout") : root.GraphLayout;
-  const ImageSet = typeof module === "object" && module.exports ? require("./image-set") : root.ImageSet;
-  const api = factory(layout, ImageSet);
+  const api = factory(layout);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.OrganizationGraph = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (layout, ImageSet) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (layout) {
   const escape = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   function descendants(id, organizations) {
     const found = new Set([id]);
@@ -58,8 +57,7 @@
     }).join("");
     const people = m.people.map((e) => {
       const [x, y] = p[e.id], id = escape(e.id);
-      const src = ImageSet.faceOf(e);
-      const face = src ? `<defs><clipPath id="clip-${id}"><circle r="22"/></clipPath></defs><image href="${escape(assetURL(src))}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${id})"/>` : `<text class="ini" y="6" text-anchor="middle">${escape([...e.name][0])}</text>`;
+      const face = (e.image || e.icon) ? `<defs><clipPath id="clip-${id}"><circle r="22"/></clipPath></defs><image href="${escape(assetURL(e.image || e.icon))}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${id})"/>` : `<text class="ini" y="6" text-anchor="middle">${escape([...e.name][0])}</text>`;
       return `<g class="nd" data-node="${id}" data-which="rel" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="${escape(e.name)}"><circle r="22" fill="hsl(${Number(e.hue) || 0} 45% 62%)"/>${face}<text y="46" text-anchor="middle">${escape(e.name)}</text></g>`;
     }).join("");
     const nodes = m.groups.map((o) => { const [x,y] = p[o.id]; return `<g class="nd organization-node" data-node="${escape(o.id)}" data-organization-node data-which="rel" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="組織 ${escape(o.name)}"><rect x="-65" y="-18" width="130" height="36" rx="5"/><text y="5" text-anchor="middle">${escape(o.name.length > 10 ? o.name.slice(0,9) + "…" : o.name)}</text><title>${escape(o.name)}</title></g>`; }).join("");
