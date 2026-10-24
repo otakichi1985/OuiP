@@ -69,7 +69,7 @@
         if(typeof api.exportSite!=='function')throw Error('編集を確定して開発版を閉じ、開き直すと書き出しが使えます。');
         await waitForSaves();
         const result=await api.exportSite(selection);
-        if(result?.saved) {$('veil').hidden=true;toast('閲覧用ファイル（HTML）を書き出しました'+(result.kept?`。WebPの画像${result.kept}枚は小さくできず、元の大きさのまま入れました`:''));}
+        if(result?.saved) {$('veil').hidden=true;const skipped=result.skipped||[];toast('閲覧用ファイル（HTML）を書き出しました'+(result.kept?`。WebPの画像${result.kept}枚は小さくできず、元の大きさのまま入れました`:'')+(skipped.length?`。読めなかった絵${skipped.length}枚（${skipped.map(s=>s.label).join('、')}）を除きました`:''));}
         else $('site-selection-count').textContent='書き出しを取り消しました。選択は残っています。';
       } catch(error) {reportError(String(error.message||error),form);$('site-selection-count').textContent='選択を残しました。内容を確認して再試行できます。';}
       finally {unsubscribe?.();if(progress)progress.hidden=true;delete form.dataset.submitting;controls.forEach(({el,disabled})=>el.disabled=disabled);}

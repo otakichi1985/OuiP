@@ -447,6 +447,10 @@ class Store {
         } else {
           e.image = null;
         }
+        // 名前横・関係図に出す顔の指定。指す先がない指定は持たない（表示はカード画像優先に戻る）。
+        const face = input.face === undefined ? prev.face : input.face;
+        if ((face === "image" && e.image) || (face === "icon" && e.icon)) e.face = face;
+        else delete e.face;
       }
       if (e.kind === "人物") {
         e.tagUnits = CharacterUnits.normalize(e.tags, input.tagUnits === undefined ? prev.tagUnits ?? {} : input.tagUnits);

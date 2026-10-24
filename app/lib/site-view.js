@@ -7,6 +7,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const CharacterStats = require('../renderer/character-stats');
 const CharacterUnits = require('../renderer/character-units');
+const ImageSet = require('../renderer/image-set');
 const TimelineModel = require('../renderer/timeline-model');
 const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
 // 閲覧用スクリプトは、数値の範囲で絞る部品（アプリと同じ）と、図の収め方、固定の閲覧コードをつないだもの。
@@ -94,7 +95,7 @@ function renderEntry(entry, context) {
   const thumbCaption = entry.kind === '人物' ? (Array.isArray(entry.images) ? entry.images.find(item => item.image === entry.image)?.caption : '') || '' : '';
   return `<article class="entry-card" id="${esc(id('entry', entry.id))}" data-record data-unset="${isUnset}"${thumbCaption ? ` data-image-caption="${esc(thumbCaption)}"` : ''}>
     ${picture || placeholder ? `<a class="picture-link" href="#${esc(id('entry', entry.id))}" aria-label="${esc(entry.name)}の詳細">${picture || placeholder}</a>` : ''}
-    <div class="card-head"><h3>${image(entry.image || entry.icon, '', 'entry-icon')}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
+    <div class="card-head"><h3>${image(ImageSet.faceOf(entry), '', 'entry-icon')}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
     ${cardStats ? `<div class="card-stats">${cardStats}</div>` : ''}
     <details class="entry-detail" data-entry-detail><summary>詳細を読む</summary><div class="entry-body">
       ${renderGallery(entry)}${renderTags(entry)}${sections}${renderFields(entry)}${stats ? `<div class="stats-wrap">${stats}</div>` : ''}

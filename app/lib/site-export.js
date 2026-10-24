@@ -51,6 +51,7 @@ function entry(input,entryIds,organizationIds) {
     out.refs=(e.refs||[]).filter(key=>entryIds.has(key));
   }
   for(const key of ['image','icon']) if(e[key]) out[key]=text(e[key],200);
+  if(e.face === 'image' || e.face === 'icon') out.face = e.face;
   if(e.kind==='人物') {
     const images=ImageSet.list(e).map(item=>({image:text(item.image,200),...(item.caption?{caption:text(item.caption,1000)}:{})}));
     if(images.length) out.images=images;
@@ -128,7 +129,8 @@ class SiteExport {
     const hash=/-(\w{64})\./.exec(rel);if(hash&&crypto.createHash('sha256').update(bytes).digest('hex')!==hash[1])fail('画像の内容とハッシュが一致しません');
     return {bytes,type:ext==='jpg'?'jpeg':ext};
   }
-  // 変換に失敗したら、どの項目の画像かを添えて止める（原寸のまま黙って入れない）。WebPは読めないので元のまま入れ、kept で知らせる。
+  // 変換に失敗したら、その絵だけ除いて続け、呼び出し側へ知らせる（全体は止めない）。WebPは読めないので元のまま入れ、kept で知らせる。
+  // info.skipped: 読めなかった絵（場所・形式・変換のいずれかで失敗。{label, reason}）。
   async convert(rel,label,encode,type) {
     const {bytes,type:original}=await this.read(rel);
     if(this.nativeImage&&ExportImage.isWebP(bytes)) return {uri:`data:image/webp;base64,${bytes.toString('base64')}`,size:bytes.length,kept:true};
@@ -155,9 +157,15 @@ class SiteExport {
     let done=0;
     const take=async(rel,label)=>{
       if(!images.has(rel)) {
-        const image=await this.image(rel,label);total+=image.size;
-        if(image.kept)info.kept=(info.kept||0)+1;
-        const n=images.size;table[n]=image.uri;images.set(rel,`ouip-img:${n}`);
+        let ref=null;
+        try {
+          const image=await this.image(rel,label);total+=image.size;
+          if(image.kept)info.kept=(info.kept||0)+1;
+          const n=images.size;table[n]=image.uri;ref=`ouip-img:${n}`;
+        } catch(e) {
+          (info.skipped||(info.skipped=[])).push({label:label||'名称未定',reason:String(e.message||e)});
+        }
+        images.set(rel,ref);
         done++;
         onProgress({phase:"images",done,total:allImages.size});
       }

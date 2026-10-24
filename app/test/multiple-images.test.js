@@ -60,6 +60,17 @@ test('古い1枚データは保存し直すと1枚のimagesになり、画像を
   assert.equal(kept.images[0].image, a); assert.equal(kept.image, a);
 });
 
+test('読めない画像があっても書き出し全体は止めず、項目名を知らせる', async t => {
+  const { dir, store, a, b } = await fixture(t);
+  const entry = await store.saveEntry({ kind: '人物', name: '灯', images: [{ image: a }, { image: b }], image: a });
+  await fs.rm(path.join(dir, b));
+  const info = {};
+  const html = await new SiteExport({ store, dir }).build({ title: '試験', includeIntro: false, entryIds: [entry.id], organizationIds: [], graphIds: [], mapIds: [] }, info, () => {});
+  assert.equal(info.skipped.length, 1);
+  assert.equal(info.skipped[0].label, '灯');
+  assert.match(html, /data-ouip-id="0"/, '読めた画像は入る');
+});
+
 test('閲覧用HTMLは全画像とキャプションを詳細に入れ、ページめくりを同梱する', async t => {
   const { dir, store, a, b } = await fixture(t);
   const entry = await store.saveEntry({ kind: '人物', name: '灯', images: [{ image: a, caption: '制服' }, { image: b, caption: '私服' }], image: a });
@@ -73,4 +84,22 @@ test('閲覧用HTMLは全画像とキャプションを詳細に入れ、ペー�
   assert.match(html, /class="gallery-image"/);
   const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
   assert.match(script, /function enhanceGallery/); assert.match(script, /entry-gallery-viewer/); assert.match(script, /ArrowLeft/);
+});
+
+test('名前横の顔は明示した方を出し、指す先がない指定は持たない', async t => {
+  const ImageSet = require('../renderer/image-set');
+  const both = { kind: '人物', image: 'a', icon: 'b' };
+  assert.equal(ImageSet.faceOf({ ...both, face: 'icon' }), 'b');
+  assert.equal(ImageSet.faceOf({ ...both, face: 'image' }), 'a');
+  assert.equal(ImageSet.faceOf(both), 'a', '未指定ならカード画像を優先');
+  assert.equal(ImageSet.faceOf({ kind: '人物', icon: 'b' }), 'b');
+  assert.equal(ImageSet.faceOf({ kind: '人物', image: 'a', face: 'icon' }), 'a', '指す先がない指定は無視する');
+  const { store, a, b } = await fixture(t);
+  const e = await store.saveEntry({ kind: '人物', name: '顔', image: a, icon: b, face: 'icon' });
+  assert.equal(e.face, 'icon');
+  assert.equal(ImageSet.faceOf(e), b);
+  const e2 = await store.saveEntry({ id: e.id, kind: '人物', name: '顔', face: 'image' });
+  assert.equal(e2.face, 'image');
+  const e3 = await store.saveEntry({ id: e.id, kind: '人物', name: '顔', face: 'nothing' });
+  assert.ok(!('face' in e3), '不正な指定は持たない');
 });
