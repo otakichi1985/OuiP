@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("ouip", {
   importEditedImage: call("importEditedImage"),
   changes: call("changes"),
   save: call("save"),
+  migrateStatus: call("migrateStatus"),
   log: call("log"),
   diffFiles: call("diffFiles"),
   readAt: call("readAt"),
@@ -35,6 +36,7 @@ contextBridge.exposeInMainWorld("ouip", {
   devMode: call("devMode"),
   devDataInfo: call('devDataInfo'),
   devDataSelection: call('devDataSelection'),
+  devResetSample: call('devResetSample'),
   updateInfo: call("updateInfo"),
   startupUpdate: call("startupUpdate"),
   checkUpdate: call("checkUpdate"),
@@ -45,5 +47,10 @@ contextBridge.exposeInMainWorld("ouip", {
     const listener = (_event, change) => callback(change);
     ipcRenderer.on("dev-change", listener);
     return () => ipcRenderer.removeListener("dev-change", listener);
+  },
+  onExportProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on("export-progress", listener);
+    return () => ipcRenderer.removeListener("export-progress", listener);
   },
 });

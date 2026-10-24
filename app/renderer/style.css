@@ -33,6 +33,8 @@ body.wsopen main,body.wsopen .top{margin-right:calc(min(600px,46vw) + 16px)}
 .b.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .b.quiet{background:none}
 .b.sm{min-height:34px;padding:2px 12px;font-size:13px}
+/* ↑↓の並べ替えは、どの縦一列の一覧でも同じ大きさ・字で示す。 */
+.b[data-sa-move],.b[data-block-up],.b[data-block-down]{min-width:34px;font-size:15px;line-height:1;padding:2px 6px}
 .b.danger{color:var(--ng)}
 .b[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -92,6 +94,12 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .facets{font-size:13px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .facets:empty{display:none}
 .viewer.site-export-viewer:has(#site-export-form){height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.export-progress{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.export-progress-track{height:8px;border-radius:999px;background:var(--raise);overflow:hidden}
+.export-progress-track span{display:block;height:100%;width:0;background:var(--accent);transition:width .18s ease}
+.busy-bar{height:4px;border-radius:999px;background:var(--raise);overflow:hidden;margin-top:6px}
+.busy-bar span{display:block;width:35%;height:100%;background:var(--accent);animation:busy-slide 1.1s ease-in-out infinite}
+@keyframes busy-slide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}
 .site-export-viewer:has(#site-export-form)>.vh{position:static;flex-shrink:0}
 #site-export-form{display:flex;flex-direction:column;min-height:0;flex:1}
 .site-export-body{overflow:auto;min-height:0;flex:1;padding:4px 2px 16px}
@@ -101,6 +109,9 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .site-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:4px 12px;margin-top:8px}
 .site-options label,.site-intro{display:flex;gap:8px;align-items:start;min-height:44px;padding-block:8px;overflow-wrap:anywhere}
 .site-options input,.site-intro input{flex:none;margin-top:5px}
+.site-select-all{margin-top:8px;border-top:1px solid var(--line);color:var(--fg);font-weight:700}
+.site-template{display:flex;gap:8px;align-items:center;min-height:44px;padding-block:8px;overflow-wrap:anywhere}
+.site-template select{flex:0 1 240px;min-width:0}
 .facets summary{cursor:pointer;min-height:44px;padding:8px 2px;overflow-wrap:anywhere}
 .facet-selection{color:var(--accent);margin-left:12px;font-variant-numeric:tabular-nums}
 .facet-groups{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;align-items:start;padding-top:4px}
@@ -122,11 +133,36 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .character-name{display:flex;align-items:center;gap:8px;min-width:0}
 .character-icon{width:32px;height:32px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--raise)}
 .character-detail-image{display:block;width:auto;height:auto;max-width:100%;max-height:60vh;background:var(--surface);border-radius:6px}
+.entry-image-single{margin:8px 0 0}
+.entry-image-single figcaption,.entry-image-caption{font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.entry-image-panel{margin-top:10px}
+.entry-image-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(132px,100%),1fr));gap:8px}
+.entry-image-thumb{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:0;min-width:0;padding:5px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);cursor:zoom-in;text-align:left}
+.entry-image-thumb img{display:block;width:100%;height:140px;object-fit:contain;border-radius:5px;background:var(--surface)}
+.entry-image-thumb:hover{border-color:var(--accent)}
+.entry-image-thumb.is-thumbnail{border-color:var(--accent)}
+.entry-image-badge{position:absolute;left:9px;top:9px;font-size:10px;line-height:1.6;padding:0 6px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:700}
+.entry-image-tools{margin-top:8px;align-items:center;gap:8px}
+.viewer.art-gallery-viewer{width:min(1100px,calc(100% - 24px));height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden}
+.art-gallery-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 8px;flex-shrink:0}
+.art-gallery-stage{flex:1;min-height:0;display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:10px;align-items:center}
+.art-gallery-stage figure{margin:0;min-width:0;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.art-gallery-stage img{display:block;max-width:100%;max-height:calc(100dvh - 170px);object-fit:contain;border-radius:6px;background:var(--bg)}
+.art-gallery-stage figcaption{font-size:13px;color:var(--muted);overflow-wrap:anywhere;text-align:center}
+.art-gallery-grid{flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;align-content:start;padding-bottom:8px}
+.art-gallery-thumb{display:flex;flex-direction:column;gap:3px;min-width:0;padding:5px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);cursor:zoom-in}
+.art-gallery-thumb img{width:100%;height:150px;object-fit:contain;border-radius:5px;background:var(--surface)}
+.art-gallery-thumb span{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.art-gallery-thumb.is-current{border-color:var(--accent)}
+@media(max-width:760px){.art-gallery-stage{grid-template-columns:36px minmax(0,1fr) 36px}.entry-image-thumb img{height:110px}}
 .entry-section{border-top:1px solid var(--line);margin-top:20px;padding-top:12px}
 .entry-section h4{font-family:var(--display);font-size:18px;margin:0 0 8px}
 .entry-section p{margin:0;overflow-wrap:anywhere}
 .drawer .form-heading{font-size:14px;margin:20px 0 8px;padding-top:12px;border-top:1px solid var(--line);color:var(--fg)}
-.tag-editor{padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+.tag-editor{padding:6px 8px;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+.tag-more{margin-top:4px}
+.tag-more>summary{display:flex;align-items:center;min-height:24px;color:var(--muted);font-size:12px;cursor:pointer}
+.tag-more[open]>summary{margin-bottom:4px}
 .tag-values:empty{display:none}
 .tag-values{margin-top:6px}
 #tag-picker{margin:8px 0}
@@ -136,11 +172,38 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .chipbtn:disabled{opacity:.35;cursor:default}
 .en[draggable="false"]{cursor:default}
 .character-images{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px}
+.image-set{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.image-set-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(168px,100%),1fr));gap:10px}
+.image-set-item{display:flex;flex-direction:column;gap:5px;min-width:0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.image-set-item.is-thumbnail{border-color:var(--accent)}
+.image-set-item>img{display:block;width:100%;height:150px;object-fit:contain;border-radius:5px;background:var(--surface);cursor:grab}
+/* 画像の並べ替えはドラッグだけ。掴む形と、落とす位置の線で示す。 */
+.image-set-item.dragging{opacity:.5}
+.image-set-item.dragging>img{cursor:grabbing}
+.image-set-item.drop-before{box-shadow:inset 3px 0 0 var(--accent)}
+.image-set-item.drop-after{box-shadow:inset -3px 0 0 var(--accent)}
+.image-set-hint{margin:0}
+.image-set-thumb{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+.image-set-item input[type="text"]{min-width:0;width:100%}
+.image-set-actions{gap:4px}
+.image-set-actions .b{padding-inline:6px}
 .image-control{display:flex;flex-direction:column;gap:6px;flex:1 1 180px;min-width:0}
 .image-preview{min-height:120px;background:var(--surface);border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;overflow:hidden}
 .image-preview img{display:block;max-width:100%;width:auto;height:auto;max-height:240px}
 .icon-preview{width:120px;height:120px}
 .icon-preview img{width:100%;height:100%;object-fit:cover}
+/* カードのサムネ: 絵の全体を収めるか、四角の枠いっぱいに切って位置を選ぶ。 */
+.image-crop{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.crop-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.crop-preview{flex:none;width:104px;height:104px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg);display:grid;place-items:center}
+.crop-preview img{width:100%;height:100%;display:block}
+.crop-controls{display:flex;flex-direction:column;gap:6px;min-width:0}
+.image-crop .crop-controls>.seg{align-self:flex-start;width:max-content;max-width:100%}
+.crop-grid{display:none;grid-template-columns:repeat(3,auto);gap:4px;width:max-content}
+.image-crop.is-cover .crop-grid{display:grid}
+.crop-grid button{width:32px;height:28px;border:1px solid var(--line);border-radius:6px;background:var(--raise);color:var(--muted);cursor:pointer;font-size:9px;line-height:1;padding:0}
+.crop-grid button:hover{border-color:var(--hover-line)}
+.crop-grid button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .en .k{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .en .t{font-weight:700;min-width:0;overflow-wrap:anywhere}
 .en p{margin:0;font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -157,7 +220,17 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .vis .nd .ini{fill:var(--on-color);stroke:none;font-family:var(--display);font-size:18px}
 .vis .pt{cursor:grab}.vis .pt circle{fill:var(--accent);stroke:var(--bg);stroke-width:3}
 .vis .pt text{fill:var(--fg);font-size:13px;font-weight:700;paint-order:stroke;stroke:var(--bg);stroke-width:4px}
+/* 固定したピン: 二重の輪と鍵の印で見分ける。ドラッグでは動かない。 */
+.vis .pt.locked{cursor:default}
+.vis .pt.locked>circle{stroke:var(--warn);stroke-width:3}
+.vis .pt .pin-lock circle{fill:var(--warn);stroke:var(--bg);stroke-width:1.5}
+.vis .pt .pin-lock path{fill:none;stroke:var(--bg);stroke-width:1.5}
+.pin-menu{position:fixed;z-index:60;display:flex;flex-direction:column;min-width:200px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.pin-menu button{min-height:38px;text-align:left;border:0;border-radius:6px;background:none;color:var(--fg);font:inherit;padding:6px 10px;cursor:pointer}
+.pin-menu button:hover,.pin-menu button:focus-visible{background:var(--raise)}
 .vis .grid{stroke:var(--line);stroke-width:1}
+.vis .map-grid line{stroke:var(--line);stroke-width:1}
+.vis .map-grid.over-image line{stroke:var(--fg);stroke-opacity:.22;stroke-width:1}.vis .map-grid.over-image{pointer-events:none}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:8px 0}
 .unplaced{margin-top:10px;font-size:13px}
 .tl{list-style:none;margin:0;padding:0;max-width:52em}
@@ -185,9 +258,37 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 /* 引き出し */
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--line);padding:0;overflow:hidden;display:flex;flex-direction:column;z-index:40;box-shadow:-12px 0 30px rgba(0,0,0,.4)}
 .drawer h3{font-family:var(--display);font-size:24px;margin:8px 0 2px;overflow-wrap:anywhere}
+/* 作業領域は任意の幅に変えられる。全画面と狭幅はボタンで切り替え、左端のつまみでドラッグしてもよい。 */
 .drawer.editor-expanded{width:100%}
+.drawer.editor-narrow{width:min(340px,100%)}
+.drawer-resize{position:absolute;left:0;top:0;bottom:0;width:10px;cursor:col-resize;z-index:3;touch-action:none}
+.drawer-resize::after{content:'';position:absolute;left:3px;top:50%;transform:translateY(-50%);width:4px;height:44px;border-radius:3px;background:var(--control-line);opacity:.5}
+.drawer-resize:hover::after,.drawer-resize:focus-visible::after{opacity:1;background:var(--accent)}
 .editor-toolbar{background:var(--surface);padding:10px 16px;border-bottom:1px solid var(--line);z-index:2;flex-shrink:0}
-.editor-toolbar [data-editor-expand]{margin-left:auto}
+.editor-toolbar .editor-width{margin-left:auto;display:flex;gap:4px}
+/* ページ分割: タブは作業領域の上に固定して目立たせる。 */
+.edit-pages{display:none;gap:2px;flex-wrap:wrap;flex-shrink:0;margin:0;padding:0 8px;border-bottom:1px solid var(--line);background:var(--surface)}
+.drawer.editor-layout-pages .edit-pages{display:flex}
+.drawer.editor-layout-pages .edit-page{display:none}
+.drawer.editor-layout-pages .edit-page.edit-page-active{display:grid}
+.edit-pages button{min-height:46px;border:0;border-bottom:3px solid transparent;background:none;border-radius:0;padding:6px 14px;color:var(--muted);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.edit-pages-sortable button{cursor:grab}
+/* 並べ替えられるタブだけ、ドラッグで動かせることを画面に書く。 */
+.edit-pages-hint{display:none;margin:0;padding:0 14px 6px;background:var(--surface);font-size:12px}
+.drawer.editor-layout-pages .edit-pages-hint{display:block}
+.edit-pages button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.edit-pages button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* 節の中は、狭いときは1列、広いときは自動で列を増やす。要素を縦に連ねるだけでなく横にも並べる。 */
+.edit-page{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:8px 14px;align-content:start;align-items:start;min-width:0}
+.edit-page>:is(.field-wide,.row,h4,p,details,.entry-head,.character-images,.image-set,.image-crop,.cs-editor,#f-stats,fieldset,.chips,.l){grid-column:1/-1}
+.field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.edit-page #f-tags,.edit-page #f-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),var(--pair-max-item)));gap:6px;align-items:start}
+/* 操作の枠や「名前と値」の組は、作業領域が広くても伸ばしすぎない（名前と値が離れて視線が左右に散るため）。読む・書く文章は全幅のまま使う。 */
+.drawer{--pair-max:720px;--pair-max-item:420px}
+.drawer :is(.character-stats,.stat-block),.section-editor>.row{max-width:var(--pair-max)}
+.edit-page-title{display:none}
+/* 狭い画面では節を縦に並べるので、節の見出しを出す。 */
+.drawer.editor-layout-scroll .edit-page-title{display:block;grid-column:1/-1;margin:10px 0 0;font-size:13px;color:var(--accent)}
 .editor-title{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45%}
 .drawer-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 16px}
 .drawer #ef{flex:1;min-height:0;gap:0}
@@ -198,14 +299,9 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .drawer .term{max-width:100%;overflow-wrap:anywhere}
 .rels li{flex-wrap:wrap;min-width:0}
 .editor-actions{flex-shrink:0;padding:10px 16px;border-top:1px solid var(--line);background:var(--surface)}
-.drawer.editor-expanded .editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;align-items:start;gap:6px 16px}
-.drawer.editor-expanded .editor-fields>label,.drawer.editor-expanded .editor-fields>h4,.drawer.editor-expanded .editor-fields>.character-images,.drawer.editor-expanded .editor-fields>#f-tags,.drawer.editor-expanded .editor-fields>#tag-picker,.drawer.editor-expanded .editor-fields>#f-sections,.drawer.editor-expanded .editor-fields>#f-fields,.drawer.editor-expanded .editor-fields>.row,.drawer.editor-expanded .editor-fields>.chips,.drawer.editor-expanded .editor-fields>p{grid-column:1/-1}
-.drawer.editor-expanded .editor-fields>input,.drawer.editor-expanded .editor-fields>textarea{grid-column:1/-1}
-.drawer.editor-expanded #f-tags{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}
-.drawer.editor-expanded #f-sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));gap:8px}
-.name-reading{display:block;font-size:12px;color:var(--muted);font-weight:400;margin:2px 0 8px;overflow-wrap:anywhere}
-.drawer.editor-expanded .character-images{display:grid;width:100%;grid-template-columns:minmax(0,2fr) minmax(160px,1fr);gap:12px;margin-top:4px}
-.drawer.editor-expanded .icon-preview{width:100%}
+/* 決定・取消・削除の並びはどの画面でも同じ: 決定と取消は右下にまとめ、削除は左端へ離す。状態の文は左に置く。 */
+.editor-actions,.modal-actions{justify-content:flex-end}
+.editor-actions>[data-delentry],.modal-actions>.danger:first-child,.modal-actions>[role=status]:first-child{margin-right:auto}
 .editor-fields>button{justify-self:start}
 .tag-position{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:6px}
 .tag-position select{min-height:30px;padding:2px 6px;font-size:12px}
@@ -216,6 +312,8 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .card-tag{display:inline-flex;gap:4px;flex-wrap:wrap;max-width:100%;overflow-wrap:anywhere}
 .card-tag-key{color:var(--muted)}
 .card-tag-key::after{content:'：'}
+/* 見る・編集の上に並べる付与中のタグ。組どうしの間を値の中より広くあけ、どこで区切れるかを見せる。 */
+.attached-tags{margin:4px 0 8px;padding:0 8px;gap:4px 16px}
 .detail-group{margin-top:10px;border-top:1px solid var(--line)}
 .detail-group>summary,.section-editor>summary{cursor:pointer;font-weight:700;min-height:38px;padding-block:6px}
 .detail-group .entry-section{margin:0;padding:0;border:0}
@@ -254,6 +352,10 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .wspanel{position:fixed;top:0;right:0;bottom:0;width:min(600px,46vw);background:var(--surface);border-left:1px solid var(--line);z-index:30;padding:10px 14px 14px;display:flex;flex-direction:column;gap:8px}
 .wsh{display:flex;align-items:center;gap:10px}
 .wsh .b{margin-left:auto}
+.wspanel .board-help{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px}
+.wspanel .board-help summary{cursor:pointer}
+.wspanel .board-help ul{margin:6px 0 0;padding-left:1.2em}
+.wspanel .board-help li{margin:2px 0}
 .boardwrap{flex:1;min-height:0;overflow:hidden;touch-action:none;border:1px solid var(--line);border-radius:10px;background-color:var(--bg);background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:20px 20px}
 .board{position:relative;width:1600px;height:1000px;transform-origin:0 0}
 .board.over{outline:2px dashed var(--accent);outline-offset:-4px}
@@ -265,6 +367,9 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .bi.sel{outline:2px solid var(--accent)}
 .bi.target{outline:2px dashed var(--warn-line)}
 .bi .k{font-size:11px;color:var(--muted)}
+.bi .board-card-image{display:block;width:100%;max-height:110px;object-fit:contain;border-radius:4px;background:var(--bg);margin:4px 0 6px;pointer-events:none}
+.bi .board-image-pick{display:flex;align-items:center;gap:4px;margin-top:6px;color:var(--muted)}
+.bi .board-image-pick select{min-width:0;max-width:100%;font-size:12px}
 .bi .acts{display:flex;gap:4px;margin-top:6px}
 .bi textarea{font-size:13px;min-height:60px;padding:4px 6px}
 
@@ -335,7 +440,10 @@ body.modal-open{overflow:hidden}
 .book-toolbar .subtabs{margin-bottom:6px}
 .book-toolbar .bookbar{margin-bottom:0;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .seg button[aria-pressed="true"]{border-bottom-color:var(--accent);color:var(--fg);font-weight:700}
-.card-size::before{content:"大きさ";align-self:center;padding:0 6px 0 10px;color:var(--muted);font-size:12px}
+/* 表示（カードの大きさ）は文字ではなく、並びの形を描いたアイコンで選ぶ。 */
+.card-size .seg-label{align-self:center;padding:0 4px 0 10px;color:var(--muted);font-size:12px}
+.card-size button{display:inline-flex;align-items:center;justify-content:center;min-width:38px;padding:2px 8px}
+.card-size .icon{width:18px;height:18px}
 .book-layout{display:grid;grid-template-columns:minmax(200px,250px) minmax(0,1fr);gap:16px;align-items:start}
 .book-layout:has(>#facets:empty),.book-layout:has(>#facets[hidden]){grid-template-columns:minmax(0,1fr)}
 .book-layout:has(details[data-facet-tab]:not([open])){grid-template-columns:auto minmax(0,1fr)}
@@ -346,9 +454,16 @@ body.modal-open{overflow:hidden}
 .facets .range input{width:5.5em;min-height:34px}
 @media(max-width:999px){.book-layout,.book-layout:has(details[data-facet-tab]:not([open])){grid-template-columns:minmax(0,1fr)}.book-layout>#facets{position:static;max-height:none;padding-right:0;border-right:0;border-bottom:1px solid var(--line)}}
 /* カード: 絵の有無・文の長さに関係なく同じ大きさ。絵は正方形の枠に全体を収め、各行の場所をいつも取る。 */
-.entries{--card-min:220px;--desc-lines:2;grid-template-columns:repeat(auto-fill,minmax(min(var(--card-min),100%),1fr));align-items:stretch}
+.entries{--card-min:220px;--desc-lines:3;grid-template-columns:repeat(auto-fill,minmax(min(var(--card-min),100%),1fr));align-items:stretch}
 .entries[data-card-size="small"]{--card-min:160px;--desc-lines:0}
-.entries[data-card-size="large"]{--card-min:320px;--desc-lines:4}
+/* 大は横長（2026-10-23、おたきちの判断）: 左に1:√2の縦の枠の絵（同人誌・画集の比率）、中に名前・タグ・説明、右にステータスを1行ずつ。
+   縦に伸ばさず横に広げて、横画面でも1画面に数人を並べる。一覧が狭いときはステータスを下へ回す。 */
+.entries[data-card-size="large"]{--card-min:600px;--desc-lines:3;--frame-w:150px;container-type:inline-size}
+.entries[data-card-size="large"] .en{display:grid;grid-template-columns:minmax(0,1fr) auto}
+.entries[data-card-size="large"] .en .open-btn{display:grid;grid-template-columns:var(--frame-w) minmax(0,1fr);column-gap:14px;row-gap:2px;align-content:start}
+.entries[data-card-size="large"] .en .open-btn>.face{grid-row:1/span 20;align-self:start;aspect-ratio:1/1.4142;margin:0}
+.entries[data-card-size="large"] .en .open-btn>:not(.face){grid-column:2}
+.entries[data-card-size="large"] .en .face-initial{font-size:56px}
 .en .face,.en .face:has(img){aspect-ratio:1/1;display:grid;place-items:center;width:100%;background:var(--bg)}
 .en .face img{width:100%;height:100%;object-fit:contain}
 .en .face-initial{font-size:clamp(28px,calc(var(--card-min) / 4),80px)}
@@ -361,9 +476,38 @@ body.modal-open{overflow:hidden}
 .en .pills{min-height:24px}
 .entries[data-card-size="small"] .en :is(.card-tags,.name-reading,.card-desc,.k){display:none}
 .en .card-stats{display:none}
-.entries[data-card-size="large"] .en .card-stats{display:block;height:170px;overflow:hidden;border-top:1px solid var(--line)}
-.card-stats>.cs-card{margin:0;padding:10px 12px;border-top:0;cursor:default}
+.entries[data-card-size="large"] .en .card-stats{display:block;width:240px;padding:12px 12px 12px 0;cursor:default}
+.entries[data-card-size="large"] .en .card-stats:empty{display:none}
+/* ステータスは「名前 値」を1行ずつ。長い値は…で切り、入らない項目は「ほかN項目」で知らせる（CharacterStats.renderLines）。 */
+.cs-lines{list-style:none;margin:0;padding:0;font-size:13px}
+/* 名前は中身の幅まで（最大6割）、残りを値に。短い名前は切らず、長い値は…で切る。値は右へ寄せる。 */
+.cs-lines li{display:grid;grid-template-columns:fit-content(62%) minmax(0,1fr);column-gap:8px;align-items:baseline;line-height:1.7;border-bottom:1px solid var(--line)}
+.cs-line-name{min-width:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-line-value{min-width:0;text-align:right;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-lines .cs-lines-more{display:block;border-bottom:0;color:var(--muted);font-size:12px}
+/* グラフ表示はレーダー・棒・ドットだけの簡易表示。値の文字の列は出さない（CharacterStats.renderCardGraph）。 */
+.cs-graph-lines{margin-top:6px}
+.cs-graph-lines li{line-height:1.4;border-bottom:0;padding:2px 0;grid-template-columns:7em minmax(0,1fr)}
+.cs-graph-lines .cs-track,.cs-graph-lines .cs-dots{grid-column:2;margin-inline:0;max-width:none}
+.cs-card-graph .cs-radar{margin:0 auto}
+/* 一覧が狭い（600px未満）ときは、ステータスを絵と文の下へ回す。上の大のカードの指定より後に置く。 */
+@container (max-width:599px){
+  .entries[data-card-size="large"] .en{grid-template-columns:minmax(0,1fr)}
+  .entries[data-card-size="large"] .en .card-stats{width:auto;padding:8px 12px 12px;border-top:1px solid var(--line)}
+}
 .en .character-name{min-height:32px}
+/* 並び替え: カードのドラッグだけで動かす。カードを開く操作は止める。 */
+/* 一覧全体の破線枠・カードの破線・ボタンの塗りで「並び替え中」を示す。カードに操作要素は重ねない。 */
+#reorder-btn[aria-pressed="true"]{background:var(--accent-soft)}
+.reorder-note{margin:0 0 16px}
+.entries.reordering{outline:2px dashed var(--accent);outline-offset:8px;border-radius:10px}
+.entries.reordering .en{border-style:dashed;border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.entries.reordering .en:hover{border-color:var(--accent);box-shadow:0 6px 18px rgb(0 0 0 / .3)}
+.en.reordering{position:relative;cursor:grab}
+.en.reordering .open-btn{pointer-events:none}
+.en.dragging{opacity:.5}
+.en.drop-before{box-shadow:inset 3px 0 0 var(--accent)}
+.en.drop-after{box-shadow:inset -3px 0 0 var(--accent)}
 /* 概要: 左に世界の紹介、右に件数と未定。右の列は固定し、未定は列の中だけでスクロールする。 */
 #p-world[hidden]{display:none}
 .world-title{grid-area:title;min-width:0}
@@ -373,6 +517,12 @@ body.modal-open{overflow:hidden}
 .world-side .counts button{min-width:0;padding:8px 10px}
 .world-side .sh{margin-top:14px}
 .world-side #opens{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+/* 未定の1行は、行そのものが編集を開くボタン。文字の「編集」を並べず、押せる範囲を広くする。 */
+#opens li.open-item{display:block;padding:0}
+.open-row{display:grid;grid-template-columns:3.2em auto minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:6px 10px;border:0;background:none;color:inherit;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.open-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.open-go{color:var(--muted);font-size:18px;line-height:1}
+.world-side .open-row{grid-template-columns:3em auto minmax(0,1fr) auto;gap:8px;padding:6px}
 .world-side .asks li{grid-template-columns:3em auto minmax(0,1fr) auto;gap:8px;padding:6px 6px}
 #opens-more{display:none}
 @media(max-width:999px){
@@ -549,3 +699,12 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:6px}
 
 /* ベース色の見本は差し色より少し大きく、地と面の2色が見えるようにする */
 .base-swatches .swatch{width:16px;height:16px;box-shadow:inset 0 0 0 1px var(--hover-line)}
+/* 地図で選んだピンと範囲選択、図の上の「操作のしかた」 */
+.vis .pt.is-selected>circle{stroke:var(--warn);stroke-width:4}
+.vis .pt.is-selected text{fill:var(--warn)}
+.map-band{fill:rgba(108,196,180,.08);stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+.canvas-guide .menu-pop{min-width:min(360px,80vw)}
+.canvas-guide dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;margin:0;font-size:12px}
+/* したいことを先に目立たせ、操作（押すボタンなど）は補足の色で後ろに */
+.canvas-guide dt{color:var(--fg);font-weight:700}
+.canvas-guide dd{margin:0;color:var(--muted);font-size:12px}

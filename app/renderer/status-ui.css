@@ -1,0 +1,112 @@
+/* ステータスの割り当て・定義・移行の画面。名前と値の組なので、作業領域が広くても伸ばしすぎない（--pair-max）。 */
+.status-assign{display:flex;flex-direction:column;gap:10px;max-width:var(--pair-max,720px);min-width:0}
+.sa-hide-all.small,.sa-hide-all,.sa-hide{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+/* 割り当て画面の先頭の「今の見え方」。読み取り専用で、入力のたびに中だけ変わる。 */
+.sa-preview{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);margin-bottom:4px;min-width:0}
+.sa-preview-card{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sa-preview-card .cs-lines{font-size:12px}
+.sa-view-row{justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.sa-card-view{display:inline-flex;align-items:center;gap:6px}
+.sa-card-view select{min-height:34px;max-width:10em}
+.status-card-view-row{gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.status-card-view-row select{min-height:34px}
+.sa-set{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--bg);min-width:0}
+.sa-head{justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.sa-head h5{margin:0;font-size:14px}
+.sa-items{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column}
+.sa-item{display:grid;grid-template-columns:minmax(6em,10em) minmax(0,1fr) auto;gap:4px 10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);min-width:0}
+.sa-item:first-child{border-top:0}
+.sa-item.is-hidden .sa-name,.sa-item.is-hidden .sa-control{opacity:.45}
+.sa-name{overflow-wrap:anywhere;font-size:13px}
+.sa-control{min-width:0}
+.sa-number{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.sa-number input{width:6em;min-height:34px;text-align:right;font-variant-numeric:tabular-nums}
+.sa-number .b{min-width:34px;min-height:34px;padding:0 8px}
+.sa-levels{display:flex;gap:4px;flex-wrap:wrap}
+.sa-text{width:100%;min-width:0}
+.sa-add{gap:6px;align-items:center}
+.legacy-stats{margin-top:14px;border-top:1px dashed var(--line);padding-top:10px;min-width:0}
+.legacy-stats h5{margin:0 0 4px;font-size:14px}
+@container (max-width:420px){.sa-item{grid-template-columns:minmax(0,1fr) auto}.sa-control{grid-column:1/-1;grid-row:2}}
+.status-assign{container-type:inline-size}
+
+/* 定義の編集 */
+.viewer.status-set-viewer{width:min(1120px,96vw)}
+.ss-form-body{display:flex;flex-direction:column;gap:6px;min-width:0;container-type:inline-size}
+.ss-frames{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:8px}
+.ss-frames label,.ss-head label,.ss-number label,.ss-rough>label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);min-width:0}
+.ss-item{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0;min-width:0}
+.ss-item legend{padding:0 5px;color:var(--muted);font-size:12px}
+.ss-head{display:grid;grid-template-columns:minmax(8em,1fr) minmax(80px,.35fr) minmax(100px,.45fr) minmax(110px,.45fr) auto;gap:8px;align-items:end}
+.ss-actions{gap:4px;flex-wrap:nowrap}
+.ss-actions .ss-move{min-width:34px;font-size:15px;line-height:1;padding:2px 6px}
+.ss-number{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px;max-width:480px}
+.ss-rough{margin-top:6px}
+.ss-rough>label{max-width:200px}
+.ss-levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(5.5em,1fr));gap:4px;margin-top:6px}
+.ss-levels input{min-width:0;width:100%}
+.status-set-viewer form{min-height:0;overflow:auto}
+@container (max-width:700px){.ss-head{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ss-head>label:first-child,.ss-actions{grid-column:1/-1}}
+
+/* 一覧の上の道具 */
+.status-sets-tools{gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.status-enabled{display:inline-flex;align-items:center;gap:6px;margin-left:auto;color:var(--muted)}
+
+/* 移行の案内と画面 */
+.status-migrate-banner{border:1px solid var(--warn-line,var(--warn));border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--surface);max-width:960px}
+.status-migrate-banner p{margin:0 0 8px;overflow-wrap:anywhere}
+.viewer.status-migrate-viewer{width:min(960px,96vw)}
+.mg-set-name{width:14em;max-width:100%;display:inline-block}
+.mg-table-wrap{overflow:auto;max-height:50vh;border:1px solid var(--line);border-radius:6px}
+.mg-table{border-collapse:collapse;width:100%;font-size:13px}
+.mg-table th,.mg-table td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:middle}
+.mg-table th{position:sticky;top:0;background:var(--surface);color:var(--muted);font-size:12px}
+.mg-table input{width:100%;min-width:8em}
+.sa-hidden-list{margin-top:4px}
+.sa-hidden-list>summary{cursor:pointer;color:var(--muted);min-height:28px;display:flex;align-items:center}
+.sa-row-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.sa-place{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}
+.sa-place select{min-height:28px;padding:1px 4px;font-size:12px;max-width:9.5em}
+/* カードの名前の上・下・下部に出すステータスの項目（二つ名・固有スキルなど） */
+.card-status-epithet{color:var(--accent);font-size:12px;font-weight:700;overflow-wrap:anywhere}
+.card-status-chip{border:1px solid var(--accent);border-radius:6px;padding:0 6px;color:var(--accent)}
+.card-status-chip .card-tag-key{color:var(--accent);opacity:.8}
+.sort-by{min-height:34px;padding:2px 8px;font-size:13px;max-width:16em}
+/* 定義の編集の見本: 広いときは左に置き、入力欄とは別々にスクロールする。狭いときは上に並べる。 */
+/* 定義の編集: 見本を左、入力欄を右に分け、それぞれでスクロールする（一緒に流れない）。 */
+#status-set-form{display:grid;grid-template-columns:minmax(320px,400px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:14px;align-items:stretch;overflow:hidden;max-height:calc(100dvh - 250px);min-height:0}
+#status-set-form>.ss-form-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:2px}
+#status-set-form>.ss-preview{position:static;align-self:stretch;max-height:none;min-height:0;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);min-width:0}
+.ss-preview-label{margin:0 0 6px;color:var(--muted);font-size:12px;font-weight:700}
+/* 見本の切替タブ（横長カード／詳細）。編集中ずっと見える位置に置く。 */
+.ss-preview-tabs{display:flex;gap:2px;margin:-2px -2px 8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.ss-preview-tabs button{flex:1;min-height:34px;border:1px solid transparent;background:none;border-radius:6px;color:var(--muted);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.ss-preview-tabs button[aria-selected="true"]{color:var(--accent);border-color:var(--accent)}
+.ss-preview-card{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);margin-bottom:8px}
+.ss-preview-face{display:block;width:120px;height:150px;border-radius:6px;background:linear-gradient(160deg,var(--accent-soft),var(--surface))}
+.ss-preview-card-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ss-preview-kicker{color:var(--muted);font-size:11px}
+.ss-preview-reading{color:var(--muted);font-size:12px}
+.ss-preview-name{font-size:15px}
+.ss-preview-detail{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);margin-bottom:6px}
+/* 見本の中の項目・チップはボタンで、押すとその編集欄へ移る。 */
+.ss-preview-chip{display:inline-flex;gap:6px;align-items:baseline;margin:0 4px 4px 0;padding:0 8px;min-height:28px;border:1px solid var(--accent);border-radius:6px;background:none;color:var(--accent);font:inherit;font-size:12px;cursor:pointer}
+.ss-preview-chip .card-tag-key{opacity:.8}
+.ss-preview-sublabel{margin:10px 0 4px;color:var(--muted);font-size:12px;font-weight:700}
+.ss-preview-focus{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:2px}
+.ss-preview-row{display:flex;justify-content:space-between;gap:8px;width:100%;min-height:32px;padding:2px 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--fg);font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.ss-preview-row:hover{border-color:var(--line)}
+.ss-preview-row-value{color:var(--muted);overflow-wrap:anywhere}
+.ss-preview-view{display:flex;gap:4px;margin:0 0 6px}
+.ss-preview-view button{flex:1;min-height:32px;border:1px solid var(--line);background:none;border-radius:6px;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
+.ss-preview-view button[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+.ss-preview-graph .cs-values{font-size:12px}
+.ss-flash{outline:2px solid var(--accent);outline-offset:2px;border-radius:10px}
+.ss-preview .character-stats{margin:0}
+@media (max-width:860px){#status-set-form{grid-template-columns:minmax(0,1fr);overflow:auto;max-height:none}#status-set-form>.ss-form-body{overflow:visible}.ss-preview{max-height:32vh;overflow:auto;z-index:1;box-shadow:0 6px 12px rgba(0,0,0,.25)}}
+/* ステータスタブの一覧の見本（折りたためる）。カードと詳細を横に並べ、狭いときは縦に。 */
+.status-concept-list .organization-row{flex-wrap:wrap}
+.ss-row-preview{flex-basis:100%;min-width:0}
+.ss-row-preview>summary{cursor:pointer;color:var(--muted);min-height:28px;padding-block:4px}
+.ss-preview-inline{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:4px 14px;max-width:960px}
+.ss-preview-inline>.small.muted{grid-column:1/-1}

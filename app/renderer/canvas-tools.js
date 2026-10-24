@@ -20,15 +20,32 @@ async function openGraphArrange() {
 const selectedDiagram = { maps: null, graphs: null };
 function activeDiagram(type) {
   const list = S.world[type] || [];
-  return list.find((d) => d.id === selectedDiagram[type]) || (type === 'graphs' ? list.find(d => d.format === 'free') : null) || list[0] || null;
+  return list.find((d) => d.id === selectedDiagram[type]) || (type === 'graphs' ? list.find(d => d.format === 'canvas') || list.find(d => d.format === 'free') : null) || list[0] || null;
 }
 // 図の外には「どの図か」と図そのものの操作だけを置き、描く・見る操作はキャンバスの上に重ねる。
 function diagramToolbar(type) {
   const current = activeDiagram(type);
   const label = type === "maps" ? "地図" : "関係図";
-  const clone = type === "graphs" ? `<button class="b quiet sm" data-free-clone>${Icons.icon("copy")}${current?.format === "free" ? "この図を複製" : "自由ノードの図として複製"}</button>` : "";
-  const menu = current ? `<details class="menu" data-menu><summary class="b sm quiet">${Icons.icon("more")}この${label}</summary><div class="menu-pop" role="group" aria-label="この${label}の操作"><button class="b quiet sm" data-edit-diagram="${type}">${Icons.icon("rename")}名前を変更</button>${clone}<hr><button class="b quiet sm danger" data-delete-diagram="${type}" data-keep-menu>${Icons.icon("remove")}<span class="label">削除</span></button></div></details>` : "";
-  return `<label class="small diagram-label" for="diagram-select">${Icons.icon(type === "maps" ? "map" : "graph")}${label}</label><select id="diagram-select" data-diagram-select="${type}">${(S.world[type] || []).map((d) => `<option value="${esc(d.id)}" ${d.id === current?.id ? "selected" : ""}>${esc(d.name)}${type === 'graphs' && d.format !== 'free' ? '（旧図）' : ''}</option>`).join("")}</select><button class="b sm" data-new-diagram="${type}">${Icons.icon("add")}新しい${label}</button>${menu}`;
+  const clone = type === "graphs" ? `<button class="b quiet sm" data-free-clone>${Icons.icon("copy")}${["free", "canvas"].includes(current?.format) ? "この図を複製" : "ノードで作る図として複製"}</button>` : "";
+  const menu = current ? `<details class="menu" data-menu><summary class="b sm quiet">${Icons.icon("more")}${label}の変更・削除</summary><div class="menu-pop" role="group" aria-label="この${label}の操作"><button class="b quiet sm" data-edit-diagram="${type}">${Icons.icon("rename")}名前を変更</button>${clone}<hr><button class="b quiet sm danger" data-delete-diagram="${type}" data-keep-menu>${Icons.icon("remove")}<span class="label">削除</span></button></div></details>` : "";
+  return `<label class="small diagram-label" for="diagram-select">${Icons.icon(type === "maps" ? "map" : "graph")}${label}</label><select id="diagram-select" data-diagram-select="${type}">${(S.world[type] || []).map((d) => `<option value="${esc(d.id)}" ${d.id === current?.id ? "selected" : ""}>${esc(d.name)}${type === 'graphs' && !['free', 'canvas'].includes(d.format) ? '（旧図）' : ''}</option>`).join("")}</select><button class="b sm" data-new-diagram="${type}">${Icons.icon("add")}新しい${label}</button>${menu}`;
+}
+// 図の上の操作のしかた（関係図と地図で同じ操作・同じ言葉）。kind: 'diagram' | 'map'
+function canvasGuide(kind) {
+  const rows = [
+    ['クリック', kind === 'map' ? 'ピンを選ぶ（離すと詳細を開く）' : '選ぶ'],
+    ['Shift＋クリック', '選ぶものを足す・外す'],
+    ['空いている所を左ドラッグ', '範囲で選ぶ'],
+    ['選んだものをドラッグ', 'まとめて動かす'],
+    ['中ボタンでドラッグ／Space＋ドラッグ', '図を動かす'],
+    ['ホイール／＋−', '拡大・縮小'], ['「全体」ボタン', '全体を表示'],
+    ...(kind === 'map' ? [['右クリック', 'ピンを固定する・編集する']] : [
+      ['項目の右の丸をドラッグ', '矢印でつなぐ'],
+      ['Ctrl+Z／Ctrl+Y', '元に戻す／やり直す'],
+      ['Ctrl+C／V／D', '写す／貼る／複製'],
+      ['Delete', '消す'], ['矢印キー（Shiftで10ずつ）', '少しずつ動かす']]),
+  ];
+  return `<details class="menu menu-up canvas-guide" data-keep-menu><summary class="b quiet sm">操作のしかた</summary><div class="menu-pop" role="note" aria-label="操作のしかた"><dl>${rows.map(([k, v]) => `<dt>${v}</dt><dd>${k}</dd>`).join('')}</dl></div></details>`;
 }
 // キャンバスの右下に重ねる見る操作。extraは左に足す（表示の設定など）。
 function canvasViewControls(key, label, extra = "") {
@@ -48,6 +65,7 @@ function decorateDiagram(v) {
   const box = $("bookbody");
   box.insertAdjacentHTML("afterbegin", `<div class="diagram-toolbar row">${diagramToolbar(type)}</div>`);
   if (type === 'graphs' && d?.format === 'free') { decorateFreeGraph(d); return; }
+  if (type === 'graphs' && d?.format === 'canvas') { diagramEditor.decorate(d, { canvasStage, canvasViewControls, guide: canvasGuide('diagram') }); return; }
   if (!d) {
     box.querySelectorAll(".vis,.legend,#unplaced,.row:not(.diagram-toolbar)").forEach((e) => e.remove());
     box.insertAdjacentHTML("beforeend", type === "maps"
@@ -56,7 +74,7 @@ function decorateDiagram(v) {
     return;
   }
   box.querySelector(".legend")?.remove();
-  if (type === "graphs") box.querySelector(".diagram-toolbar").insertAdjacentHTML("afterend", '<p class="small muted">旧関係図の人物・組織の位置はドラッグで変更できます。ノードや矢印の編集は「この関係図」の「自由ノードの図として複製」で、元を残して行えます。</p>');
+  if (type === "graphs") box.querySelector(".diagram-toolbar").insertAdjacentHTML("afterend", '<p class="small muted">旧関係図の人物・組織の位置はドラッグで変更できます。ノードや矢印の編集は「関係図の変更・削除」の「ノードで作る図として複製」で、元を残して行えます。</p>');
   const svg = box.querySelector(".vis svg");
   if (svg) {
     const key = type + ":" + d.id;
@@ -75,7 +93,9 @@ function decorateDiagram(v) {
       // 案内は場所をまだ1つも置いていないときだけ、地図を隠さない左下に小さく出す。
       if (!Object.keys(d.positions || {}).length) hint = d.image ? "下の「未配置」から場所を置きます。ピンはドラッグで動かし、押すと詳細を開きます。" : "背景の画像を選ぶか、そのまま下の「未配置」から場所を置けます。";
     }
-    canvasStage(box.querySelector(".vis"), `${edit ? `<div class="canvas-overlay canvas-edit">${edit}</div>` : ""}${canvasViewControls(key, type === "maps" ? "地図" : "関係図")}${hint ? `<p class="canvas-hint small${type === "maps" ? " canvas-hint-corner" : ""}">${hint}</p>` : ""}`);
+    const gridSize = Number(d.gridSize) || 50;
+    const viewExtra = type === "maps" ? `<details class="menu menu-up" data-keep-menu ${viewState.openAttr('map-view:' + d.id, false)}><summary class="b quiet sm">${Icons.icon("grid")}表示</summary><div class="menu-pop" role="group" aria-label="地図のグリッド" data-map-controls="${esc(d.id)}"><label><input type="checkbox" data-map-grid ${d.grid === true ? "checked" : ""}>画像にグリッドを重ねる</label><label>間隔 <input type="number" data-map-grid-size min="10" max="200" step="1" value="${gridSize}" aria-label="グリッド間隔"> px</label><p class="small muted">重ねている間は、ピンが格子に揃います。</p></div></details>` : "";
+    canvasStage(box.querySelector(".vis"), `${edit ? `<div class="canvas-overlay canvas-edit">${edit}</div>` : ""}${canvasViewControls(key, type === "maps" ? "地図" : "関係図", (type === "maps" ? canvasGuide("map") : "") + viewExtra)}${hint ? `<p class="canvas-hint small${type === "maps" ? " canvas-hint-corner" : ""}">${hint}</p>` : ""}`);
     svg.classList.toggle("pen-mode", type === "graphs" && penMode);
   }
 }
@@ -83,7 +103,7 @@ function diagramForm(type, existing = null, adding = '') {
   const people = S.entries.filter((e) => e.kind === "人物");
   const organizations = [...new Set(people.flatMap((e) => e.tags?.所属 || []))];
   const tagOptions = [...new Map(people.flatMap(e => Object.entries(e.tags || {}).flatMap(([k, vs]) => vs.map(v => [JSON.stringify([k,v]), `${k}: ${v}`])))).entries()];
-  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${adding ? (adding === 'characters' ? '図にキャラを追加' : '図に組織を追加') : type === "maps" ? "地図の名前" : "関係図の名前・キャラ・組織"}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="diagram-form" data-type="${type}" data-id="${existing?.id || ""}" data-adding="${adding}"><div ${adding ? 'hidden' : ''}><label class="l" for="diagram-name">${type === "maps" ? "国・大陸などの名前" : "関係図の名前"}</label><input id="diagram-name" type="text" required value="${esc(existing?.name || "")}" placeholder="${type === "maps" ? "例: 北方大陸" : "例: 灯台守の仲間"}"></div>${type === "graphs" ? `<div class="diagram-picker-tools row"><label for="diagram-search">候補を検索</label><input id="diagram-search" type="search" autocomplete="off" placeholder="名前・説明"><details ${adding === 'organizations' ? 'hidden' : ''}><summary>タグで絞り込む</summary><select id="diagram-tag" aria-label="候補のタグ"><option value="">すべて</option>${tagOptions.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select></details></div><section ${adding === 'organizations' ? 'hidden' : ''}><details><summary>旧「所属」タグからまとめて選択</summary><div class="chips">${organizations.map((o) => `<button type="button" class="chipbtn" data-organization="${esc(o)}">${esc(o)}</button>`).join("")}</div></details><div class="chips"><button type="button" class="chipbtn" data-all-members>候補を全員選択</button><button type="button" class="chipbtn" data-no-members>選択を外す</button></div><div class="member-picker">${people.map((e) => `<label><input type="checkbox" data-member value="${e.id}" ${existing?.members.includes(e.id) ? "checked" : ""}>${characterIcon(e)}<span>${esc(e.name)}<small class="muted">${esc(Object.values(e.tags || {}).flat().join(' ・ '))}</small></span></label>`).join("") || '<p class="small muted">キャラタブでキャラを登録してください。</p>'}</div></section><section ${adding === 'characters' ? 'hidden' : ''}>${typeof organizationDiagramControl === "function" ? organizationDiagramControl(existing || {}) : ""}</section><p class="small muted" id="diagram-picker-empty" hidden>候補がありません。検索・タグの条件を変更してください。</p>` : ""}<div class="modal-actions row"><button class="b quiet" type="button" data-vclose>取消</button><button class="b primary" type="submit">${adding ? '図に追加' : existing ? "決定" : "追加"}</button></div></form>`;
+  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${adding ? (adding === 'characters' ? '図にキャラを追加' : '図に組織を追加') : type === "maps" ? "地図の名前" : "関係図の名前・キャラ・組織"}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="diagram-form" data-type="${type}" data-id="${existing?.id || ""}" data-adding="${adding}"><div ${adding ? 'hidden' : ''}><label class="l" for="diagram-name">${type === "maps" ? "国・大陸などの名前" : "関係図の名前"}</label><input id="diagram-name" type="text" value="${esc(existing?.name || "")}" placeholder="${type === "maps" ? "空欄なら名称未設定の地図" : "空欄なら名称未設定の関係図"}"></div>${type === "graphs" ? `<div class="diagram-picker-tools row"><label for="diagram-search">候補を検索</label><input id="diagram-search" type="search" autocomplete="off" placeholder="名前・説明"><details ${adding === 'organizations' ? 'hidden' : ''}><summary>タグで絞り込む</summary><select id="diagram-tag" aria-label="候補のタグ"><option value="">すべて</option>${tagOptions.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select></details></div><section ${adding === 'organizations' ? 'hidden' : ''}><details><summary>旧「所属」タグからまとめて選択</summary><div class="chips">${organizations.map((o) => `<button type="button" class="chipbtn" data-organization="${esc(o)}">${esc(o)}</button>`).join("")}</div></details><div class="chips"><button type="button" class="chipbtn" data-all-members>候補を全員選択</button><button type="button" class="chipbtn" data-no-members>選択を外す</button></div><div class="member-picker">${people.map((e) => `<label><input type="checkbox" data-member value="${e.id}" ${existing?.members.includes(e.id) ? "checked" : ""}>${characterIcon(e)}<span>${esc(e.name)}<small class="muted">${esc(Object.values(e.tags || {}).flat().join(' ・ '))}</small></span></label>`).join("") || '<p class="small muted">キャラタブでキャラを登録してください。</p>'}</div></section><section ${adding === 'characters' ? 'hidden' : ''}>${typeof organizationDiagramControl === "function" ? organizationDiagramControl(existing || {}) : ""}</section><p class="small muted" id="diagram-picker-empty" hidden>候補がありません。検索・タグの条件を変更してください。</p>` : ""}<div class="modal-actions row"><button class="b quiet" type="button" data-vclose>取消</button><button class="b primary" type="submit">${adding ? '図に追加' : existing ? "決定" : "追加"}</button></div></form>`;
   $("veil").hidden = false;
   (adding ? $('diagram-search') : $("diagram-name")).focus();
 }
@@ -106,6 +126,18 @@ document.addEventListener("change", (ev) => {
   const type = ev.target.dataset.diagramSelect;
   if (type) { selectedDiagram[type] = ev.target.value; penStart = null; renderBook(); }
   if (ev.target.id === "graph-arrange-mode") graphArrangeMode = ev.target.value;
+  const mapControls = ev.target.closest && ev.target.closest("[data-map-controls]");
+  if (ev.target.matches("[data-map-grid],[data-map-grid-size]") && mapControls?.dataset?.mapControls) {
+    const controls = mapControls, id = controls.dataset.mapControls;
+    const sizeInput = controls.querySelector("[data-map-grid-size]");
+    const size = Math.round(Math.min(200, Math.max(10, Number(sizeInput.value) || 50))); sizeInput.value = size;
+    const grid = controls.querySelector("[data-map-grid]").checked;
+    writes.write(async () => {
+      try { await api.saveDiagram("maps", { id, grid, gridSize: size }); await refresh(); }
+      catch (e) { toast(e.message); await refresh(); }
+    });
+    return;
+  }
   if (!ev.target.matches("[data-graph-grid],[data-graph-snap],[data-graph-grid-size]")) return;
   const controls = ev.target.closest("[data-graph-controls]"), id = controls.dataset.graphControls;
   const grid = GraphLayout.normalizeGrid({ visible: controls.querySelector("[data-graph-grid]").checked, snap: controls.querySelector("[data-graph-snap]").checked, size: controls.querySelector("[data-graph-grid-size]").value });
@@ -141,7 +173,8 @@ document.addEventListener("submit", async (ev) => {
     const form = ev.target;
     const type = form.dataset.type;
     const checked = type === 'graphs' ? { members: [...form.querySelectorAll('[data-member]:checked')].map(i => i.value), ...organizationDiagramSelection(form) } : {};
-    const name = $("diagram-name")?.value;
+    // 名前は後から付けられるように、空欄なら「名称未設定」で作る。
+    const name = ($("diagram-name")?.value || "").trim() || (type === "maps" ? "名称未設定の地図" : "名称未設定の関係図");
     try {
       await writes.write(async () => {
         const previous = S.world[type].find((d) => d.id === form.dataset.id);
@@ -202,7 +235,7 @@ document.addEventListener("click", async (ev) => {
     delete cameras[d.cameraReset]; const svg = document.querySelector(`[data-camera="${d.cameraReset}"]`);
     if (svg) {
       const graph = S.world.graphs.find(g => 'graphs:' + g.id === d.cameraReset);
-      if (graph) { if(graph.format === 'free') Object.assign(camera(d.cameraReset),freeGraphCameraFit(graph)); else if (typeof organizationCameraFit === "function") Object.assign(camera(d.cameraReset), organizationCameraFit(graph)); else { const points = Object.values(graph.positions); camera(d.cameraReset).z = Math.min(1, RW / Math.max(RW,...points.map(p=>p[0]+70)), RH / Math.max(RH,...points.map(p=>p[1]+70))); } }
+      if (graph) { if(graph.format === 'canvas') Object.assign(camera(d.cameraReset),diagramEditor.fit(graph),{fitted:true}); else if(graph.format === 'free') Object.assign(camera(d.cameraReset),freeGraphCameraFit(graph)); else if (typeof organizationCameraFit === "function") Object.assign(camera(d.cameraReset), organizationCameraFit(graph)); else { const points = Object.values(graph.positions); camera(d.cameraReset).z = Math.min(1, RW / Math.max(RW,...points.map(p=>p[0]+70)), RH / Math.max(RH,...points.map(p=>p[1]+70))); } }
       applyCamera(svg);
     }
   }
@@ -210,7 +243,7 @@ document.addEventListener("click", async (ev) => {
   else if ("adjustMap" in d) {
     // 地図は位置を丸ごと置き換えるので、画像だけを送る。古い位置でピンを戻さない。
     const map = activeDiagram("maps");
-    editImage(map.image, async (image) => { await run(() => api.saveDiagram("maps", { id: map.id, image })); });
+    editImage(map.image, async (image, adjust) => { await run(() => api.saveDiagram("maps", { id: map.id, image, imageAdjust: adjust })); }, null, map.imageAdjust);
   } else if ("clearMapImage" in d) {
     const id = activeDiagram("maps").id;
     await run(() => api.saveDiagram("maps", { id, image: null }));
@@ -273,10 +306,10 @@ function boardPoint(ev) {
   return { x: (ev.clientX - r.left) / c.z, y: (ev.clientY - r.top) / c.z };
 }
 const boardwrap = document.querySelector(".boardwrap");
-boardwrap.insertAdjacentHTML("beforebegin", `<div class="row"><button class="b quiet sm" data-board-reset>表示を戻す</button><span class="small muted">ホイールで拡大縮小 ・ 空白をドラッグで移動</span></div>`);
+boardwrap.insertAdjacentHTML("beforebegin", `<div class="row"><button class="b quiet sm" data-board-reset>最初の表示に戻す</button><span class="small muted">ホイールで拡大縮小 ・ 空白をドラッグで移動</span></div>`);
 boardwrap.tabIndex=0;
 document.addEventListener('keydown',(ev)=>{
-  const svg=ev.target.matches('svg[data-camera]')?ev.target:null;
+  const svg=ev.target.matches('svg[data-camera]:not([data-dg-canvas])')?ev.target:null;
   const board=ev.target===boardwrap;
   if(!svg&&!board) return;
   const c=camera(svg?svg.dataset.camera:'board');
@@ -303,44 +336,83 @@ document.addEventListener("wheel", (ev) => {
     c.x = x - (x - c.x) * c.z / old; c.y = y - (y - c.y) * c.z / old; applyBoardCamera();
   }
 }, { passive: false });
-let pan = null;
+let pan = null, mapBand = null, canvasSpace = false;
+document.addEventListener("keydown", (ev) => { if (ev.key === " " && ev.target.closest?.('svg[data-camera^="maps:"]')) { canvasSpace = true; ev.preventDefault(); } });
+document.addEventListener("keyup", (ev) => { if (ev.key === " ") canvasSpace = false; });
 document.addEventListener("pointerdown", (ev) => {
   if (ev.button !== 0 && ev.button !== 1) return;
-  if (ev.target.closest("[data-node],[data-free-node],[data-free-edge],.bi,button,input,textarea,select,[data-lk]")) return;
+  if (ev.target.closest("[data-node],[data-free-node],[data-free-edge],.bi,button,input,textarea,select,[data-lk],svg[data-dg-canvas]")) return;
   const svg = ev.target.closest("svg[data-camera]"), board = ev.target.closest(".boardwrap");
   if (!svg && !board) return;
+  if (svg?.dataset.camera.startsWith("maps:") && ev.button === 0 && !canvasSpace) {
+    const p = svgPoint(svg, ev); mapBand = { svg, x0: p.x, y0: p.y, moved: false, add: ev.shiftKey || ev.ctrlKey, pointer: ev.pointerId };
+    try { svg.setPointerCapture(ev.pointerId); } catch (_) { /* 同上 */ } ev.preventDefault(); return;
+  }
   const c = camera(svg ? svg.dataset.camera : "board"), r = svg?.getBoundingClientRect();
   pan = { svg, el: svg || boardwrap, c, x: ev.clientX, y: ev.clientY, ox: c.x, oy: c.y, factor: svg ? Math.max(+svg.dataset.width / r.width, +svg.dataset.height / r.height) / c.z : 1 };
   pan.el.setPointerCapture(ev.pointerId); ev.preventDefault();
 });
 document.addEventListener("pointermove", (ev) => {
+  if (mapBand && ev.pointerId === mapBand.pointer) {
+    const p = svgPoint(mapBand.svg, ev); mapBand.moved = mapBand.moved || Math.hypot(p.x - mapBand.x0, p.y - mapBand.y0) > 3;
+    let r = mapBand.svg.querySelector(".map-band"); if (!r) { mapBand.svg.insertAdjacentHTML("beforeend", '<rect class="map-band"/>'); r = mapBand.svg.querySelector(".map-band"); }
+    r.setAttribute("x", Math.min(p.x, mapBand.x0)); r.setAttribute("y", Math.min(p.y, mapBand.y0)); r.setAttribute("width", Math.abs(p.x - mapBand.x0)); r.setAttribute("height", Math.abs(p.y - mapBand.y0));
+    return;
+  }
   if (!pan) return;
   const direction = pan.svg ? -1 : 1;
   pan.c.x = pan.ox + (ev.clientX - pan.x) * pan.factor * direction;
   pan.c.y = pan.oy + (ev.clientY - pan.y) * pan.factor * direction;
   pan.svg ? applyCamera(pan.svg) : applyBoardCamera();
 });
-document.addEventListener("pointerup", () => { pan = null; });
-document.addEventListener("pointercancel", () => { pan = null; });
+document.addEventListener("pointerup", (ev) => {
+  pan = null;
+  if (!mapBand || ev.pointerId !== mapBand.pointer) return;
+  const b = mapBand; mapBand = null; b.svg.querySelector(".map-band")?.remove();
+  if (!b.moved) { if (!b.add) mapSelection.clear(); markMapSelection(b.svg); return; }
+  const p = svgPoint(b.svg, ev), x0 = Math.min(p.x, b.x0), x1 = Math.max(p.x, b.x0), y0 = Math.min(p.y, b.y0), y1 = Math.max(p.y, b.y0);
+  if (!b.add) mapSelection.clear();
+  b.svg.querySelectorAll('[data-node][data-which="geo"]').forEach((g) => { const t = g.getAttribute("transform")?.match(/translate\(([-\d.]+),([-\d.]+)\)/); if (t && +t[1] >= x0 && +t[1] <= x1 && +t[2] >= y0 && +t[2] <= y1) mapSelection.add(g.dataset.node); });
+  markMapSelection(b.svg);
+});
+document.addEventListener("pointercancel", () => { pan = null; if (mapBand) { mapBand.svg.querySelector(".map-band")?.remove(); mapBand = null; } });
 
 // 全画像をクリックして確認・調整。編集フォームでは確定前の値だけ更新する。
 let imageEdit = null;
-async function editImage(rel, accept, ratio = null) {
+// 保存した調整（元画像と見せ方）の形を確かめる。壊れていれば元画像の全体表示から始める。
+function validAdjust(adjust) {
+  return !!adjust && typeof adjust.source === 'string' && [adjust.w, adjust.h, adjust.base, adjust.scale, adjust.x, adjust.y].every(v => Number.isFinite(Number(v)));
+}
+// 仕上がり枠の選択肢: 印刷サイズ（縦・横）→画面・SNS→そのほかの順（ImageAdjustment.FRAME_GROUPS）。
+const frameOptions = () => ImageAdjustment.FRAME_GROUPS.map(group => `<optgroup label="${group.label}">${group.frames.map(frame => `<option value="${frame.value}">${frame.label}</option>`).join('')}</optgroup>`).join('') + '<optgroup label="そのほか"><option value="original">現在の画像と同じ</option></optgroup>';
+async function editImage(rel, accept, ratio = null, restore = null) {
   try {
-    const image = new Image(); image.src = await api.readImage(rel); await image.decode();
+    const saved = validAdjust(restore) ? restore : null;
+    const source = saved ? saved.source : rel;
+    const image = new Image(); image.src = await api.readImage(source); await image.decode();
     const icon = ratio === 1;
-    imageEdit = { image, accept, x: 0, y: 0, scale: 1, base: 1, status: 'editing', selectTrim: false };
-    $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${icon ? 'アイコンの調整' : '画像の調整'}</h3><button type="button" class="b quiet sm" data-vclose>取消</button></div>
-      <div class="image-controls"><div class="image-tools"><div class="image-tool-group"><label for="image-ratio">仕上がり枠</label><select id="image-ratio" ${icon ? 'disabled' : ''}><option value="original">現在の画像と同じ</option><option value="3">ヘッダー 3:1</option><option value="1.7777777777777777">横長 16:9</option><option value="1.6">横長 8:5</option><option value="1">正方形 1:1</option><option value="0.75">縦長 3:4</option></select></div>${icon ? '<span class="small muted">名前横・関係図で使う正方形</span>' : '<button type="button" class="b quiet sm" data-image-trim aria-pressed="false">自由に切り抜く</button>'}</div>
+    imageEdit = { image, accept, source, x: 0, y: 0, scale: 1, base: 1, status: 'editing', selectTrim: false };
+    $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${icon ? 'アイコンの調整' : '画像の調整'}</h3><button type="button" class="b quiet sm" data-vclose>閉じる</button></div>
+      <div class="image-controls"><div class="image-tools"><div class="image-tool-group"><label for="image-ratio">仕上がり枠</label><select id="image-ratio" ${icon ? 'disabled' : ''}>${frameOptions()}</select></div>${icon ? '<span class="small muted">名前横・関係図で使う正方形</span>' : '<button type="button" class="b quiet sm" data-image-trim aria-pressed="false">自由に切り抜く</button>'}</div>
       <div class="image-tools"><span>位置・大きさ</span><div class="image-tool-group"><button type="button" class="b sm" data-image-fit>全体を収める</button><button type="button" class="b sm" data-image-fill>余白なく収める</button></div><div class="image-tool-group"><button type="button" class="b sm" data-image-zoom="out" aria-label="画像を縮小">−</button><label class="sr" for="image-scale">画像の倍率</label><input id="image-scale" type="range" min="5" max="2000" step="1" value="100"><output id="image-scale-value" for="image-scale">100%</output><button type="button" class="b sm" data-image-zoom="in" aria-label="画像を拡大">＋</button></div><div class="image-tool-group" role="group" aria-label="画像の位置"><button type="button" class="b sm" data-image-move="left" aria-label="画像を左へ">←</button><button type="button" class="b sm" data-image-move="up" aria-label="画像を上へ">↑</button><button type="button" class="b sm" data-image-move="down" aria-label="画像を下へ">↓</button><button type="button" class="b sm" data-image-move="right" aria-label="画像を右へ">→</button></div></div>
       </div><div class="image-stage"><span class="image-frame-label">仕上がり範囲</span><div class="image-frame"><canvas id="image-canvas" tabindex="0" aria-label="仕上がり画像。ドラッグか矢印キーで移動、Ctrl＋ホイールか＋−キーで拡大縮小" aria-describedby="image-help"></canvas></div></div>
       <p class="small muted" id="image-help">枠の中が保存されます。ドラッグで位置調整・Ctrl＋ホイールで拡大縮小。市松模様は透明な余白です。</p>
       <form id="image-editor-form" class="modal-actions row"><span class="image-result" id="image-result" role="status" aria-live="polite"></span><button class="b quiet" type="button" data-image-reset>調整をリセット</button><button class="b primary" type="submit" id="image-apply">適用</button></form>`;
     $('viewer').classList.add('image-editor');
-    $('image-ratio').value = ratio === null ? 'original' : String(ratio);
-    const size = ImageAdjustment.frameSize(ratio ?? image.naturalWidth / image.naturalHeight);
-    Object.assign($('image-canvas'), size);
-    $('veil').hidden = false; fitImage(ratio === 3);
+    if (saved) {
+      Object.assign($('image-canvas'), { width: Math.round(saved.w), height: Math.round(saved.h) });
+      Object.assign(imageEdit, { base: Number(saved.base), scale: Number(saved.scale), x: Number(saved.x), y: Number(saved.y) });
+      const preset = ImageAdjustment.presetFor(saved.w / saved.h);
+      if (preset) $('image-ratio').value = preset.value;
+      else { const custom = document.createElement('option'); custom.dataset.customRatio = ''; custom.value = 'custom'; custom.textContent = '保存した切り抜き'; $('image-ratio').append(custom); $('image-ratio').value = 'custom'; }
+      drawImageEditor();
+    } else {
+      $('image-ratio').value = ratio === null ? 'original' : String(ratio);
+      const size = ImageAdjustment.frameSize(ratio ?? image.naturalWidth / image.naturalHeight);
+      Object.assign($('image-canvas'), size);
+      fitImage(ratio === 3);
+    }
+    $('veil').hidden = false;
     imageFrameResize.disconnect(); imageFrameResize.observe($('image-canvas').closest('.image-stage'));
   } catch (e) { imageError(e); }
 }
@@ -459,12 +531,12 @@ document.addEventListener("click", async (ev) => {
     const img = ev.target.closest("img"), control = img.closest("[data-image-control]");
     if (control) {
       const key = control.dataset.imageControl, rel = control.querySelector("input").value;
-      editImage(rel, async (image) => { control.outerHTML = imageControl(key,image); }, key === 'icon' ? 1 : null);
-    } else if (img.closest("#world-image")) editImage(S.world.image, async (image) => { await run(()=>api.updateWorld({image})); });
+      editImage(rel, async (image, adjust) => { control.outerHTML = imageControl(key,image,adjust); }, key === 'icon' ? 1 : null, readImageAdjust(control));
+    } else if (img.closest("#world-image")) editImage(S.world.image, async (image, adjust) => { await run(()=>api.updateWorld({image, imageAdjust:adjust})); }, null, S.world.imageAdjust);
     else {
       const e = byId(cur); if (!e) return;
-      const key = img.classList.contains("character-icon") ? "icon" : "image";
-      if (e[key]) editImage(e[key], async (image) => { await run(()=>{const latest=byId(e.id);if(!latest)throw new Error("項目が見つかりません。開き直してください。");return api.saveEntry({id:latest.id,kind:latest.kind,name:latest.name,[key]:image});}); }, key === 'icon' ? 1 : null);
+      const key = img.classList.contains("character-icon") && e.icon ? "icon" : "image";
+      if (e[key]) editImage(e[key], async (image, adjust) => { await run(()=>{const latest=byId(e.id);if(!latest)throw new Error("項目が見つかりません。開き直してください。");return api.saveEntry({id:latest.id,kind:latest.kind,name:latest.name,[key]:image,[key+'Adjust']:adjust});}); }, key === 'icon' ? 1 : null, e[key+'Adjust']);
     }
   }
 });
@@ -479,15 +551,35 @@ const imageButtons = new MutationObserver(() => {
   const detail=$('drawer').querySelector('.character-detail-image');
   if(detail && !detail.nextElementSibling?.matches('[data-adjust-detail]')) detail.insertAdjacentHTML('afterend','<button type="button" class="b quiet sm" data-adjust-detail="image">画像を調整</button>');
   const icon=$('drawer').querySelector('h3 .character-icon');
-  if(icon && !$('drawer').querySelector('[data-adjust-detail="icon"]')) icon.closest('h3').insertAdjacentHTML('afterend','<button type="button" class="b quiet sm" data-adjust-detail="icon">アイコンを調整</button>');
+  // 名前横の顔は画像があるなら画像そのもの（画像を調整で編める）。ボタンは旧アイコンだけを出している項目に限る。
+  const detailEntry=byId(cur);
+  if(icon && detailEntry && detailEntry.icon && !detailEntry.image && !$('drawer').querySelector('[data-adjust-detail="icon"]')) icon.closest('h3').insertAdjacentHTML('afterend','<button type="button" class="b quiet sm" data-adjust-detail="icon">アイコンを調整</button>');
 });
 imageButtons.observe(document.body,{childList:true,subtree:true});
 document.addEventListener('click',(ev)=>{
   const b=ev.target.closest('button'); if(!b) return;
-  if('editorExpand' in b.dataset){const drawer=$('drawer'),wide=drawer.classList.toggle('editor-expanded');b.textContent=wide?'縮小表示':'拡大表示';b.setAttribute('aria-pressed',wide);return;}
-  if('adjustImage' in b.dataset){ const control=b.closest('[data-image-control]'),key=control.dataset.imageControl; editImage(control.querySelector('input').value,async(image)=>{control.outerHTML=imageControl(key,image);},key === 'icon' ? 1 : null); }
-  else if('adjustWorld' in b.dataset) editImage(S.world.image,async(image)=>{await run(()=>api.updateWorld({image}));});
-  else if(b.dataset.adjustDetail){const e=byId(cur),key=b.dataset.adjustDetail;editImage(e[key],async(image)=>{await run(()=>{const latest=byId(e.id);if(!latest)throw new Error("項目が見つかりません。開き直してください。");return api.saveEntry({id:latest.id,kind:latest.kind,name:latest.name,[key]:image});});},key === 'icon' ? 1 : null);}
+  if('editorExpand' in b.dataset){
+    const drawer=$('drawer'), wide=!drawer.classList.contains('editor-expanded');
+    drawer.style.width=''; drawer.classList.remove('editor-narrow');
+    drawer.classList.toggle('editor-expanded', wide);
+    drawer.querySelector('[data-editor-narrow]')?.setAttribute('aria-pressed','false');
+    b.setAttribute('aria-pressed', wide);
+    saveDrawerWidth(wide?'full':'normal');
+    return;
+  }
+  if('editorNarrow' in b.dataset){
+    const drawer=$('drawer'), narrow=!drawer.classList.contains('editor-narrow');
+    drawer.style.width=''; drawer.classList.remove('editor-expanded');
+    drawer.classList.toggle('editor-narrow', narrow);
+    drawer.querySelector('[data-editor-expand]')?.setAttribute('aria-pressed','false');
+    b.setAttribute('aria-pressed', narrow);
+    saveDrawerWidth(narrow?'narrow':'normal');
+    return;
+  }
+  if('editPageTab' in b.dataset){ if (typeof selectEditPage === 'function') selectEditPage(b.dataset.editPageTab); return; }
+  if('adjustImage' in b.dataset){ const control=b.closest('[data-image-control]'),key=control.dataset.imageControl; editImage(control.querySelector('input').value,async(image,adjust)=>{control.outerHTML=imageControl(key,image,adjust);},key === 'icon' ? 1 : null,readImageAdjust(control)); }
+  else if('adjustWorld' in b.dataset) editImage(S.world.image,async(image,adjust)=>{await run(()=>api.updateWorld({image, imageAdjust:adjust}));},null,S.world.imageAdjust);
+  else if(b.dataset.adjustDetail){const e=byId(cur),key=b.dataset.adjustDetail;editImage(e[key],async(image,adjust)=>{await run(()=>{const latest=byId(e.id);if(!latest)throw new Error("項目が見つかりません。開き直してください。");return api.saveEntry({id:latest.id,kind:latest.kind,name:latest.name,[key]:image,[key+'Adjust']:adjust});});},key === 'icon' ? 1 : null,e[key+'Adjust']);}
 });
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && imageEdit) { imageEdit = null; imageDrag = null; $('viewer').classList.remove('image-editor'); }
@@ -508,7 +600,8 @@ document.addEventListener("submit", async (ev) => {
     const blob = await new Promise((r) => out.toBlob(r,"image/png"));
     if (!blob) throw Error('画像を生成できませんでした');
     const image = await api.importEditedImage(new Uint8Array(await blob.arrayBuffer()));
-    await e.accept(image); $("veil").hidden = true; imageEdit = null; $('viewer').classList.remove('image-editor');
+    await e.accept(image, { source: e.source, w: Math.round(c.width), h: Math.round(c.height), base: e.base, scale: e.scale, x: e.x, y: e.y });
+    $("veil").hidden = true; imageEdit = null; $('viewer').classList.remove('image-editor');
   } catch (error) {
     UIAccess.reportError('画像の調整を適用できませんでした: ' + String(error.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') + '。調整内容を保持しています。もう一度「適用」を押してください。'); e.status = 'editing';
     controls.forEach(([el, disabled]) => { el.disabled = disabled; });

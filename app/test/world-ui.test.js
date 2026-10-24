@@ -20,7 +20,7 @@ test("概要・用語画像、人物の基本タグ・長文、地図画像を�
     await s.importMapImage(src);
     const term = await s.saveEntry({ kind: "用語", name: "紋章", image });
     const person = await s.saveEntry({ kind: "人物", name: "灯", sections: [{ title: "生い立ち", text: "幼少期\n現在" }] });
-    assert.deepEqual(Object.keys(person.tags), ["年齢", "身長", "性別", "所属", "身分"]);
+    assert.deepEqual(Object.keys(person.tags), ["年齢", "身長", "性別", "所属", "身分", "誕生日"]);
     const first = await h.save("画像と文章");
     const edited = await s.saveEntry({ ...person, tags: { 体重: [], 所属: ["灯台"] }, sections: [] });
     assert.deepEqual(edited.tags, { 体重: [], 所属: ["灯台"] });

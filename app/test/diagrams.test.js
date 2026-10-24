@@ -45,3 +45,33 @@ test('旧図は読取のみで引き継ぎ、複数図の配置・人物・関�
     await assert.rejects(s.importEditedImage(new Uint8Array([1,2,3])),/PNG/);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+test('地図のグリッド表示は保存され、解除すると残らない',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'ouip-map-grid-'));
+  try{
+    const s=new Store(dir); await s.init();
+    const map=await s.saveDiagram('maps',{name:'大陸',grid:true,gridSize:25});
+    assert.equal(map.grid,true); assert.equal(map.gridSize,25);
+    assert.equal((await s.load()).world.maps.find(m=>m.id===map.id).gridSize,25);
+    const resized=await s.saveDiagram('maps',{id:map.id,grid:true,gridSize:999});
+    assert.equal(resized.gridSize,200,'間隔は10〜200に丸める');
+    const off=await s.saveDiagram('maps',{id:map.id,grid:false});
+    assert.equal('grid' in off,false); assert.equal('gridSize' in off,false);
+    assert.equal('gridSize' in (await s.load()).world.maps.find(m=>m.id===map.id),false);
+    const keep=await s.saveDiagram('maps',{id:map.id,name:'改名'});
+    assert.equal('grid' in keep,false);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+test('固定したピンは保存され、存在しない場所や解除で消える',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'ouip-pin-lock-'));
+  try{
+    const s=new Store(dir); await s.init();
+    const place=await s.saveEntry({kind:'場所',name:'港'});
+    const other=await s.saveEntry({kind:'人物',name:'灯'});
+    let map=await s.saveDiagram('maps',{name:'大陸',positions:{[place.id]:[10,20]},lockedPins:[place.id,other.id]});
+    assert.deepEqual(map.lockedPins,[place.id],'場所でないIDは外す');
+    assert.deepEqual((await s.load()).world.maps.find(m=>m.id===map.id).lockedPins,[place.id]);
+    map=await s.saveDiagram('maps',{id:map.id,lockedPins:[]});
+    assert.equal('lockedPins' in map,false);
+    assert.equal('lockedPins' in (await s.load()).world.maps.find(m=>m.id===map.id),false);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});

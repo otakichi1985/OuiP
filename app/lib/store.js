@@ -6,14 +6,18 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const GraphLayout = require("../renderer/graph-layout");
+const ImageSet = require("../renderer/image-set");
 const CharacterStats = require("../renderer/character-stats");
 const CharacterUnits = require("../renderer/character-units");
 const FreeGraph = require('../renderer/free-graph');
 const { normalizeOrganizations, membershipIds } = require("./organizations");
+const { normalizeStatusConcepts, needsItemIds } = require("./status-concepts");
+const StatusModel = require("../renderer/status-model");
+const DiagramModel = require("../renderer/diagram-model");
 
 const SCHEMA = 1;
 const KINDS = ["人物", "用語", "場所", "出来事"];
-const CHARACTER_TAGS = ["年齢", "身長", "性別", "所属", "身分"];
+const CHARACTER_TAGS = ["年齢", "身長", "性別", "所属", "身分", "誕生日"];
 
 function newId(prefix) {
   return prefix + "-" + crypto.randomBytes(5).toString("hex");
@@ -48,6 +52,8 @@ function defaultWorld() {
     map: { image: null },
     termTabs: [],
     organizations: [],
+    statusConcepts: [],
+    statusEnabled: true,
   };
 }
 
@@ -74,6 +80,26 @@ function normalizeTags(tags) {
     if (key) out[key] = list;
   }
   return out;
+}
+// カードのサムネの見せ方。既定（全体を収める・中央）は持たず、切り取るときだけ項目に残す。
+function normalizeImageCrop(value) {
+  if (!value || typeof value !== "object") return undefined;
+  const fit = value.fit === "cover" ? "cover" : "contain";
+  const at = (n) => ([0, 50, 100].includes(Number(n)) ? Number(n) : 50);
+  const crop = { fit, x: at(value.x), y: at(value.y) };
+  return crop.fit === "contain" && crop.x === 50 && crop.y === 50 ? undefined : crop;
+}
+// 画像の調整。元画像（取り込んだ元のファイル）と、そこから作った見せ方を一緒に残す。
+// もう一度調整するときは、切り抜き済みではなく元画像から作り直せる。
+function normalizeImageAdjust(value) {
+  if (!value || typeof value !== "object") return undefined;
+  if (typeof value.source !== "string") return undefined;
+  const number = (n, min, max) => (Number.isFinite(Number(n)) && Number(n) >= min && Number(n) <= max ? Number(n) : null);
+  const w = number(value.w, 1, 3000), h = number(value.h, 1, 3000);
+  const base = number(value.base, 0.0001, 100), scale = number(value.scale, 0.01, 100);
+  const x = number(value.x, -1e6, 1e6), y = number(value.y, -1e6, 1e6);
+  if ([w, h, base, scale, x, y].some((v) => v === null)) return undefined;
+  return { source: value.source, w: Math.round(w), h: Math.round(h), base, scale, x, y };
 }
 // 旧世界は読み込み時だけ変換する。最初に図を編集するまでは既存ファイルを変えない。
 function collections(world, entries, relations) {
@@ -104,12 +130,23 @@ class Store {
     return value;
   }
 
+  // 画像の調整の記録。元画像が実在するときだけ残す。
+  checkAdjust(value) {
+    const adjust = normalizeImageAdjust(value);
+    if (!adjust) return undefined;
+    try { this.checkImage(adjust.source); } catch { return undefined; }
+    return adjust;
+  }
+
   async init() {
     await fsp.mkdir(this.p("entries"), { recursive: true });
     await fsp.mkdir(this.p("assets"), { recursive: true });
     if (!fs.existsSync(this.p("world.json"))) await writeJson(this.p("world.json"), defaultWorld());
     if (!fs.existsSync(this.p("relations.json"))) await writeJson(this.p("relations.json"), []);
     if (!fs.existsSync(this.p("board.json"))) await writeJson(this.p("board.json"), { items: [], links: [] });
+    // ステータスの定義の項目にIDが無ければ一度だけ振って保存する（各キャラの値はIDでつながるため、読むたびに変わってはいけない）。
+    const world = await readJson(this.p("world.json"), defaultWorld());
+    if (needsItemIds(world.statusConcepts)) await writeJson(this.p("world.json"), { ...world, statusConcepts: normalizeStatusConcepts(world.statusConcepts) });
   }
 
   async load() {
@@ -131,7 +168,19 @@ class Store {
       for (const k of ["title", "note", "calendar"]) if (k in patch) w[k] = String(patch[k] ?? "");
       // 作者名は共有の画像やサイトに載せる名前。前後の空白を除き、長すぎる値は拒否する。
       if ("author" in patch) { const author = String(patch.author ?? "").trim(); if (author.length > 200) throw new Error("作者名は200文字以内にしてください"); w.author = author; }
-      if ("image" in patch) w.image = this.checkImage(patch.image);
+      if ("image" in patch) { w.image = this.checkImage(patch.image); if (!("imageAdjust" in patch)) delete w.imageAdjust; }
+      if ("imageAdjust" in patch) { const adjust = this.checkAdjust(patch.imageAdjust); if (w.image && adjust) w.imageAdjust = adjust; else delete w.imageAdjust; }
+      // 一覧の並び。存在する項目だけを重複なく並べ、送られなかった項目は元の順で末尾に残す。
+      if ("order" in patch) {
+        if (!Array.isArray(patch.order) || patch.order.some((id) => typeof id !== "string")) throw new Error("並び順が不正です");
+        const names = (await fsp.readdir(this.p("entries")).catch(() => [])).filter((n) => n.endsWith(".json"));
+        const exist = new Set(names.map((n) => n.slice(0, -5)));
+        const order = [];
+        for (const id of patch.order) if (exist.has(id) && !order.includes(id)) order.push(id);
+        for (const id of w.order) if (exist.has(id) && !order.includes(id)) order.push(id);
+        for (const id of [...exist].sort()) if (!order.includes(id)) order.push(id);
+        w.order = order;
+      }
       if ("eras" in patch)
         w.eras = (patch.eras || [])
           .filter((e) => String(e.label || "").trim() && Number.isFinite(Number(e.from)))
@@ -164,6 +213,20 @@ class Store {
         if (!w.organizations.some((o) => o.id === id)) throw new Error("組織が見つかりません");
         w.organizations = normalizeOrganizations(w.organizations.filter((o) => o.id !== id).map((o) => o.parentId === id ? { ...o, parentId: null } : o));
       }
+      if ("statusEnabled" in patch) w.statusEnabled = patch.statusEnabled !== false;
+      if ("linkTemplates" in patch) w.linkTemplates = DiagramModel.normalizeTemplates(patch.linkTemplates);
+      if ("statusConcepts" in patch) w.statusConcepts = normalizeStatusConcepts(patch.statusConcepts);
+      if ("statusConcept" in patch) {
+        const input = patch.statusConcept;
+        const previous = (w.statusConcepts || []).find((c) => c.id === input.id);
+        const concept = { ...previous, ...input, id: previous?.id || input.id || require('./status-concepts').newId() };
+        w.statusConcepts = normalizeStatusConcepts(previous ? (w.statusConcepts || []).map((c) => c.id === previous.id ? concept : c) : [...(w.statusConcepts || []), concept]);
+      }
+      if ("deleteStatusConcept" in patch) {
+        const id = patch.deleteStatusConcept;
+        if (!(w.statusConcepts || []).some((c) => c.id === id)) throw new Error("ステータスが見つかりません");
+        w.statusConcepts = normalizeStatusConcepts((w.statusConcepts || []).filter((c) => c.id !== id));
+      }
       const remaining = new Set(w.organizations.map((o) => o.id));
       const removed = new Set(oldOrganizations.filter((o) => !remaining.has(o.id)).map((o) => o.id));
       if (removed.size) await this.cleanOrganizationReferences(w, removed);
@@ -175,7 +238,7 @@ class Store {
   async cleanOrganizationReferences(world, removed) {
     const keepRelation = (r) => !removed.has(r.a) && !removed.has(r.b);
     for (const graph of world.graphs || []) {
-      if(graph.format==='free') continue;
+      if(graph.format==='free' || graph.format==='canvas') continue; // 自由配置の図は消えた項目を「削除された項目」と出す（書き換えない）
       graph.organizationIds = (graph.organizationIds || []).filter((id) => !removed.has(id));
       for (const id of removed) if (graph.positions) delete graph.positions[id];
       graph.relations = (graph.relations || []).filter(keepRelation);
@@ -204,6 +267,14 @@ class Store {
       const prev = world[type].find((d) => d.id === input.id) || {};
       const d = { ...prev, ...input, id: prev.id || newId(type === "maps" ? "map" : "graph"), name: String(input.name ?? prev.name ?? "").trim() };
       if (!d.name) throw new Error("図の名前を入れてください");
+      // 自由配置の関係図（形式 canvas）。項目・矢印は配列ごと置き換え、指定がなければ前のまま。
+      if (type === 'graphs' && (input.format === 'canvas' || prev.format === 'canvas')) {
+        if (prev.id && prev.format !== 'canvas') throw Error('この関係図はこの形式では保存できません');
+        const g = DiagramModel.normalize({ format: 'canvas', items: input.items ?? prev.items ?? [], links: input.links ?? prev.links ?? [], grid: input.grid ? { ...prev.grid, ...input.grid } : prev.grid });
+        const saved = { id: d.id, name: d.name, ...g };
+        world.graphs = world.graphs.some((x) => x.id === saved.id) ? world.graphs.map((x) => x.id === saved.id ? saved : x) : [...world.graphs, saved];
+        await writeJson(this.p('world.json'), world); return saved;
+      }
       if (type === 'graphs' && (input.format === 'free' || prev.format === 'free')) {
         if (prev.id && prev.format !== 'free') throw Error('旧関係図は複製して編集してください');
         const free = {id:d.id,name:d.name,...FreeGraph.normalize(input,prev)};
@@ -222,6 +293,13 @@ class Store {
       if (type === "maps") {
         if (d.image && !/^assets\/map\.(png|jpg|jpeg|webp)$/.test(d.image)) this.checkImage(d.image);
         d.image = d.image || null;
+        const adjust = this.checkAdjust("imageAdjust" in input ? input.imageAdjust : (input.image === undefined || input.image === prev.image ? prev.imageAdjust : undefined));
+        if (d.image && adjust) d.imageAdjust = adjust; else delete d.imageAdjust;
+        // 画像にグリッドを重ねて場所を置きやすくする。使わないときは保存しない。
+        if ("grid" in input) { if (input.grid) d.grid = true; else { delete d.grid; delete d.gridSize; } }
+        if (d.grid && "gridSize" in input) d.gridSize = Math.round(Math.min(200, Math.max(10, Number(input.gridSize) || 50)));
+        // 固定したピンは一覧で持ち、場所が消えたら落とす。
+        if ("lockedPins" in input && Array.isArray(input.lockedPins)) { const locks = [...new Set(input.lockedPins)].filter((id) => allowed.has(id)); if (locks.length) d.lockedPins = locks; else delete d.lockedPins; }
       } else {
         d.members = [...new Set(d.members || [])].filter((id) => people.has(id));
         d.organizationIds = [...new Set(d.organizationIds || [])].filter((id) => orgs.has(id));
@@ -261,6 +339,35 @@ class Store {
     });
   }
 
+  // 旧形式のステータス（キャラごとの項目）を、世界観の定義と割り当てへ移す。
+  // plan は StatusModel.applyMigration の結果。先に定義を足し、その後キャラごとに「割り当てを書く＋旧形式を消す」を1ファイルずつ行う。
+  // 途中で止まっても、各キャラは旧形式か新形式のどちらかで揃っている（両方を失わない）。
+  migrateStatus(plan) {
+    return this.serial(async () => {
+      if (!plan || typeof plan !== 'object' || typeof plan.entries !== 'object' || !plan.entries) throw new Error('移行の内容が不正です');
+      const w = { ...defaultWorld(), ...(await readJson(this.p('world.json'), defaultWorld())) };
+      if (plan.set) {
+        const set = StatusModel.normalizeSet(plan.set);
+        if ((w.statusConcepts || []).some((c) => c.id === set.id)) throw new Error('同じIDのステータスがあります');
+        w.statusConcepts = normalizeStatusConcepts([...(w.statusConcepts || []), set]);
+        await writeJson(this.p('world.json'), w);
+      }
+      let moved = 0;
+      for (const [id, sets] of Object.entries(plan.entries)) {
+        if (!/^c-[0-9a-f]+$/.test(id)) throw new Error('キャラのIDが不正です');
+        const file = this.p('entries', id + '.json');
+        const prev = await readJson(file, null);
+        if (!prev || prev.kind !== '人物') continue;
+        const next = { ...prev, statusSets: StatusModel.normalizeAssignments(sets) };
+        delete next.stats;
+        if (!next.statusSets.length) delete next.statusSets;
+        await writeJson(file, next);
+        moved++;
+      }
+      return { moved };
+    });
+  }
+
   // 項目を作る・直す。idが無ければ作る
   saveEntry(input) {
     return this.serial(async () => {
@@ -280,10 +387,65 @@ class Store {
         fields: normalizeFields(w, input.fields ?? prev.fields),
         tags: normalizeTags(input.tags ?? prev.tags ?? (input.kind === "人物" ? Object.fromEntries(CHARACTER_TAGS.map((k) => [k, []])) : {})),
       };
-      if (["人物", "用語"].includes(e.kind)) {
-        for (const key of e.kind === "人物" ? ["image", "icon"] : ["image"]) {
+      if (e.kind === "用語") {
+        for (const key of ["image"]) {
           const value = key in input ? input[key] : prev[key] ?? null;
           e[key] = this.checkImage(value);
+          const adjustKey = key + "Adjust";
+          const adjust = this.checkAdjust(adjustKey in input ? input[adjustKey] : prev[adjustKey]);
+          if (e[key] && adjust) e[adjustKey] = adjust;
+        }
+        const crop = normalizeImageCrop(input.imageCrop === undefined ? prev.imageCrop : input.imageCrop);
+        if (e.image && crop) e.imageCrop = crop;
+      }
+      if (e.kind === "人物") {
+        // 旧アイコンは互換のため別に保持する（カード画像の複数枚とは別）。
+        const icon = this.checkImage(input.icon === undefined ? prev.icon ?? null : input.icon);
+        e.icon = icon;
+        const iconAdjust = this.checkAdjust(input.iconAdjust === undefined ? prev.iconAdjust : input.iconAdjust);
+        if (e.icon && iconAdjust) e.iconAdjust = iconAdjust;
+        // 複数画像。古い1枚データ（image/imageAdjust/imageCrop）はここで1枚目として読む。
+        const source = input.images !== undefined ? input.images : ImageSet.list(prev);
+        const images = [], seen = new Set();
+        if (Array.isArray(source)) for (const raw of source) {
+          if (!raw || typeof raw.image !== "string" || !raw.image || seen.has(raw.image)) continue;
+          const image = this.checkImage(raw.image);
+          const adjust = this.checkAdjust(raw.adjust);
+          const crop = normalizeImageCrop(raw.crop);
+          const item = { image };
+          if (adjust) item.adjust = adjust;
+          if (crop) item.crop = crop;
+          const caption = String(raw.caption ?? "").trim().slice(0, 1000);
+          if (caption) item.caption = caption;
+          images.push(item); seen.add(image);
+        }
+        const requestedThumb = input.image !== undefined ? input.image : prev.image;
+        if (input.image === null) {
+          images.length = 0;
+        }
+        let thumb = requestedThumb == null ? null : images.find((item) => item.image === requestedThumb) || images[0] || null;
+        if (requestedThumb && !images.some((item) => item.image === requestedThumb)) {
+          const image = this.checkImage(requestedThumb);
+          if (image) { thumb = { image }; images.unshift(thumb); }
+        }
+        // 旧形式の1枚更新（imagesを送らない）では、送られた調整・切り取りをサムネイルへ当てる。
+        if (thumb && input.images === undefined && ("imageAdjust" in input || "imageCrop" in input)) {
+          if ("imageAdjust" in input) {
+            const adjust = this.checkAdjust(input.imageAdjust);
+            if (adjust) thumb.adjust = adjust; else delete thumb.adjust;
+          }
+          if ("imageCrop" in input) {
+            const crop = normalizeImageCrop(input.imageCrop);
+            if (crop) thumb.crop = crop; else delete thumb.crop;
+          }
+        }
+        if (images.length) e.images = images;
+        if (thumb) {
+          e.image = thumb.image;
+          if (thumb.adjust) e.imageAdjust = thumb.adjust;
+          if (thumb.crop) e.imageCrop = thumb.crop;
+        } else {
+          e.image = null;
         }
       }
       if (e.kind === "人物") {
@@ -296,8 +458,15 @@ class Store {
         e.hue = Number.isFinite(input.hue) ? input.hue : prev.hue ?? [...name].reduce((s, c) => s + c.codePointAt(0) * 37, 0) % 360;
         e.relPos = input.relPos ?? prev.relPos ?? null;
         e.organizationIds = membershipIds(input.organizationIds === undefined ? prev.organizationIds || [] : input.organizationIds, w.organizations);
-        const stats = CharacterStats.normalize(input.stats, prev.stats);
-        if (stats !== undefined) e.stats = stats;
+        const stats = CharacterStats.normalizeBlocks(input.stats, prev.stats);
+        if (stats !== undefined && stats.blocks.length) e.stats = stats;
+        // 世界観の定義への割り当てと、このキャラは出さない印。
+        const assigned = StatusModel.normalizeAssignments(input.statusSets === undefined ? prev.statusSets : input.statusSets);
+        if (assigned.length) e.statusSets = assigned;
+        if ((input.statusHidden === undefined ? prev.statusHidden : input.statusHidden) === true) e.statusHidden = true;
+        // 横長カードのステータスをグラフで出すキャラだけ印を持つ（既定は文字一覧）。
+        const cardView = input.statusCardView === undefined ? prev.statusCardView : input.statusCardView;
+        if (cardView === 'graph') e.statusCardView = 'graph'; else delete e.statusCardView;
       }
       if (e.kind === "場所") e.geo = input.geo !== undefined ? input.geo : prev.geo ?? null;
       if (e.kind === "出来事") {
@@ -375,7 +544,7 @@ class Store {
       const items = (board.items || []).map((i) => ({
         id: i.id || newId("b"),
         type: i.type === "entry" ? "entry" : "memo",
-        ...(i.type === "entry" ? { ref: i.ref } : { text: String(i.text || "") }),
+        ...(i.type === "entry" ? { ref: i.ref, ...(typeof i.imageId === "string" && i.imageId ? { imageId: i.imageId } : {}) } : { text: String(i.text || "") }),
         x: Math.round(Number(i.x) || 0),
         y: Math.round(Number(i.y) || 0),
       }));
@@ -401,14 +570,15 @@ class Store {
   importImage(src) {
     return this.serial(async () => {
       const ext = path.extname(src).toLowerCase();
-      if (![".png", ".jpg", ".jpeg", ".webp"].includes(ext)) throw new Error("PNG・JPEG・WebPを選んでください");
+      // WebPは新しく取り込まない（Electron 44の画像部品で読めず、調整も書き出しの縮小もできない。2026-10-22、おたきちの判断）。保存済みのWebPは読める。
+      if (ext === ".webp") throw new Error("WebPは取り込めません。PNGかJPEGで保存し直してから選んでください");
+      if (![".png", ".jpg", ".jpeg"].includes(ext)) throw new Error("PNG・JPEGを選んでください");
       const stat = await fsp.stat(src);
       if (stat.size > 20 * 1024 * 1024) throw new Error("画像は20MB以下にしてください");
       const bytes = await fsp.readFile(src);
       const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
       const jpg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-      const webp = bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
-      if (!(ext === ".png" ? png : ext === ".webp" ? webp : jpg)) throw new Error("画像の形式を確認してください");
+      if (!(ext === ".png" ? png : jpg)) throw new Error("画像の形式を確認してください");
       const hash = crypto.createHash("sha256").update(bytes).digest("hex");
       const rel = `assets/image-${hash}${ext}`;
       await fsp.writeFile(this.p(rel), bytes);

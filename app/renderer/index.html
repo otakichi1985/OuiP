@@ -8,16 +8,18 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="organizations.css">
 <link rel="stylesheet" href="character-stats.css">
+<link rel="stylesheet" href="status-ui.css">
 <link rel="stylesheet" href="editor-order.css">
 <link rel="stylesheet" href="timeline-tools.css">
 <link rel="stylesheet" href="sheet-export.css">
 <link rel="stylesheet" href="free-graph.css">
+<link rel="stylesheet" href="diagram-editor.css">
 </head>
 <body>
 <header class="top">
   <h1 class="logo">OuiP</h1>
   <span id="dev-badge" class="dev-badge" hidden title="UIの変更を自動反映する開発版。データは通常版と別です">開発版</span>
-  <details id="dev-dataset" hidden><summary>開発データ</summary><p class="small muted" id="dev-dataset-current"></p><label class="small">次回起動 <select id="dev-dataset-select"><option value="fixture">検証用の世界</option><option value="personal">入力済みの世界</option></select></label><p class="small muted" id="dev-dataset-status" role="status">切替は入力を確定して開発版を開き直すと反映されます。元のデータは消しません。</p></details>
+  <details id="dev-dataset" hidden><summary>開発データ</summary><p class="small muted" id="dev-dataset-current"></p><label class="small">次回起動 <select id="dev-dataset-select"><option value="fixture">検証用の世界</option><option value="personal">入力済みの世界</option><option value="migration">移行の試し（旧形式）</option></select></label><button class="b quiet sm" type="button" id="dev-reset-sample" hidden title="移行の試し用データを最初の状態に戻す">試し用を作り直す</button><p class="small muted" id="dev-dataset-status" role="status">切替は入力を確定して開発版を開き直すと反映されます。元のデータは消しません。</p></details>
   <nav class="nav" aria-label="場所">
     <button type="button" data-page="world" aria-current="page" data-icon="home">概要</button>
     <button type="button" data-page="book" data-icon="book">設定資料</button>
@@ -56,13 +58,15 @@
   </section>
 
   <section class="page" id="p-book" hidden>
-    <!-- 種類のタブ・検索・見せ方・カードの大きさ・追加は、一覧をスクロールしても上に残す。 -->
+    <!-- 種類のタブ・検索・表示（カードの大きさ）・追加は、一覧をスクロールしても上に残す。 -->
     <div class="book-toolbar">
     <div class="subtabs" id="booktabs" role="tablist" aria-label="設定の種類"></div>
     <div class="bookbar">
       <label for="q" class="sr">探す</label><input id="q" type="search" placeholder="探す" autocomplete="off">
       <div class="seg" id="bookview" role="group" aria-label="見せ方"></div>
-      <div class="seg card-size" id="card-size" role="group" aria-label="カードの大きさ"></div>
+      <div class="seg card-size" id="card-size" role="group" aria-label="表示"></div>
+      <select class="inp sort-by" id="sort-by" aria-label="並び" hidden></select>
+      <button class="b sm quiet" type="button" id="reorder-btn" aria-pressed="false" hidden></button>
       <button class="b sm primary" type="button" id="addentry" style="margin-left:auto"></button>
     </div>
     </div>
@@ -80,7 +84,14 @@
   <div class="wsh"><b>ボード</b><span class="small muted" id="bd-hint"></span><button class="b quiet sm" type="button" id="ws-close">閉じる</button></div>
   <div class="row"><label for="memo-new" class="sr">メモ</label><input id="memo-new" class="inp" placeholder="メモを書いて Enter" autocomplete="off" style="flex:1"></div>
   <div class="boardwrap"><div class="board" id="board"><svg class="links" id="links" width="1600" height="1000" aria-hidden="true"></svg></div></div>
-  <p class="small muted">設定のカードをここへドラッグ ・「接続」を選択して相手をクリック ・ Delete で取り外し</p>
+  <p class="small muted">設定資料のカードをここへドラッグして置けます。</p>
+  <details class="board-help">
+    <summary>操作のしかた</summary>
+    <ul>
+      <li>カードを選び「つなぐ」を押してから、つなぐ相手を選びます。Escでやめます。</li>
+      <li>カードや線を選んで Delete を押すと、ボードから取り外します。設定資料そのものは消えません。</li>
+    </ul>
+  </details>
 </aside>
 
 <aside class="drawer" id="drawer" hidden aria-label="詳細"></aside>
@@ -88,7 +99,11 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="graph-layout.js"></script>
 <script src="free-graph.js"></script>
+<script src="diagram-model.js"></script>
+<script src="diagram-editor.js"></script>
 <script src="character-stats.js"></script>
+<script src="status-model.js"></script>
+<script src="status-ui.js"></script>
 <script src="character-units.js"></script>
 <script src="timeline-model.js"></script>
 <script src="timeline-view.js"></script>
@@ -98,7 +113,9 @@
 <script src="ui-accessibility.js"></script>
 <script src="image-adjustment.js"></script>
 <script src="facet-range.js"></script>
+<script src="entry-order.js"></script>
 <script src="icons.js"></script>
+<script src="image-set.js"></script>
 <script src="app.js"></script>
 <script src="canvas-tools.js"></script>
 <script src="organizations.js"></script>

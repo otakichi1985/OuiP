@@ -46,6 +46,73 @@ test('保存の完了を待ってから書き出す', async () => {
   assert.deepEqual(order, ['export']);
 });
 
+// 項目のチェックと「すべて選択」を持つ、実際に近い形。
+function selectionHarness(checkedCount = 0) {
+  const listeners = {};
+  const items = Array.from({ length: 3 }, (_, i) => ({ checked: i < checkedCount }));
+  const selectAll = { id: 'site-select-all', checked: false, indeterminate: false, disabled: false };
+  const submit = { disabled: true };
+  const form = {
+    id: 'site-export-form', dataset: {},
+    querySelectorAll: selector => selector.endsWith(':checked') ? items.filter(item => item.checked) : items,
+    querySelector: selector => selector === '#site-select-all' ? selectAll : submit,
+  };
+  const nodes = new Map();
+  const $ = id => {
+    if (id === 'site-export-form') return form;
+    if (!nodes.has(id)) nodes.set(id, { id, checked: false, textContent: '', disabled: false, focus() {}, querySelector() { return { disabled: false }; }, querySelectorAll() { return []; } });
+    return nodes.get(id);
+  };
+  const document = { querySelector: () => null, addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); } };
+  const ctx = createSiteExportUI({
+    document, $, esc: value => String(value ?? ''), api: {}, toast() {}, reportError() {},
+    getState: () => ({ world: {}, entries: [] }), isEditing: () => false, waitForSaves: async () => {},
+  });
+  const change = target => listeners.change[0]({ target: { ...target, closest: selector => selector === '#site-export-form' ? form : null } });
+  return { ctx, items, selectAll, submit, $, change };
+}
+
+test('すべて選択のチェックで全項目を一括で選び、外すと全部解除する', () => {
+  const h = selectionHarness();
+  h.change({ id: 'site-select-all', checked: true });
+  assert.equal(h.items.every(item => item.checked), true);
+  assert.equal(h.$('site-selection-count').textContent, '選択 3件');
+  assert.equal(h.submit.disabled, false);
+  h.change({ id: 'site-select-all', checked: false });
+  assert.equal(h.items.some(item => item.checked), false);
+  assert.equal(h.submit.disabled, true);
+});
+
+test('すべて選択は、一部だけ選ぶと中間の印になる', () => {
+  const h = selectionHarness(1);
+  h.change({ id: 'site-intro', checked: false });
+  assert.equal(h.selectAll.checked, false);
+  assert.equal(h.selectAll.indeterminate, true);
+  assert.equal(h.$('site-selection-count').textContent, '選択 1件');
+  h.items.forEach(item => { item.checked = true; });
+  h.change({ id: 'site-intro', checked: false });
+  assert.equal(h.selectAll.checked, true);
+  assert.equal(h.selectAll.indeterminate, false);
+});
+
+test('書き出しの見た目テンプレートを選び、その選択をそのまま渡す', async () => {
+  const selections = [];
+  const h = harness({ api: { exportSite: async selection => { selections.push(selection); return { saved: true }; } } });
+  h.ctx.open();
+  const html = h.node('viewer').innerHTML;
+  assert.match(html, /<select id="site-template">/);
+  assert.match(html, /<option value="standard">/);
+  assert.match(html, /<option value="light">/);
+  assert.match(html, /<option value="paper">/);
+  h.node('site-template').value = 'paper';
+  const form = h.node('site-export-form');
+  const run = h.listeners.submit[0]({ target: form, preventDefault() {} });
+  await Promise.resolve();
+  h.resolveSaves();
+  await run;
+  assert.equal(selections[0].template, 'paper');
+});
+
 test('処理中は二重に書き出さない', async () => {
   let count = 0;
   const h = harness({ api: { exportSite: async () => { count++; return { saved: true }; } } });

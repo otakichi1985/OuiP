@@ -1,6 +1,7 @@
 'use strict';
 // 共有済みの表示モデルだけを受け取る。配置は変更せず、閲覧用SVGと文字の一覧を作る。
 const FreeGraph = require('../renderer/free-graph');
+const DiagramModel = require('../renderer/diagram-model');
 const OrganizationGraph = require('../renderer/organizations');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const styles = `<style>text{fill:#e4e6ec;font:14px sans-serif}.edge{stroke:#6cc4b4;stroke-width:2;fill:none}.friend{stroke-dasharray:6 5}.rival{stroke:#f0b866;stroke-dasharray:2 5}.elab{font-size:12px;paint-order:stroke;stroke:#12151c;stroke-width:4px;stroke-linejoin:round}.organization-frame rect{fill:#6cc4b4;fill-opacity:.035;stroke:#6cc4b4;stroke-opacity:.6}.organization-frame text{fill:#6cc4b4}.organization-node rect{fill:#222733;stroke:#6cc4b4}.ini{fill:#12151c;font-size:19px}a:focus{outline:2px solid #6cc4b4}</style>`;
@@ -37,6 +38,14 @@ function freeDiagram(graph) {
   const nodes = scene.boxes.map(b => `<g><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6" fill="#1a1e27" stroke="${b.node.color}" stroke-width="2"/>${textLines(b.node.text,b.node.writing,b,b.node.color)}</g>`).join('');
   return svg(graph.name,scene.bounds,lines+nodes,list.join('。')) + connectionList(list,scene.warning ? '一部の線または文字の接続は図で表示できません。以下の一覧でも確認できます。' : '');
 }
+// 自由配置の関係図。refs は書き出し時に選んだ範囲で引いた名前（選んでいない項目は名前だけ、顔は出さない）。
+function canvasDiagram(graph, refs, templates) {
+  const resolveRef = (ref) => refs[ref] || null;
+  const name = (id) => { const it = graph.items.find((x) => x.id === id); return it?.kind === 'entry' ? (resolveRef(it.ref)?.name || '削除された項目') : (it?.text || ''); };
+  const list = [...graph.items.map((it) => name(it.id)).filter(Boolean), ...graph.links.map((l) => `${name(l.a)} ${l.direction === 'both' ? '↔' : l.direction === 'none' ? '―' : '→'} ${name(l.b)}${l.text ? '：' + l.text : ''}`)];
+  const body = DiagramModel.renderSVG(graph, { resolveRef, templates, idPrefix: 'dg-' + graph.id });
+  return svg(graph.name, DiagramModel.bounds(graph), body, list.join('。')) + connectionList(list);
+}
 function legacyDiagram(graph, entries, organizations) {
   const m = OrganizationGraph.model(graph,entries,organizations), positions = m.positions;
   const all = [...m.people,...m.groups], names = new Map(all.map(e => [e.id,e.name]));
@@ -44,7 +53,7 @@ function legacyDiagram(graph, entries, organizations) {
   const lines = m.relations.map(r => {const a=positions[r.a],b=positions[r.b]; return `<line class="edge ${r.style}" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/><text class="elab" x="${(a[0]+b[0])/2}" y="${(a[1]+b[1])/2-4}" text-anchor="middle">${esc(r.label)}</text>`;}).join('');
   const nodes = all.map(e => {
     const [x,y] = positions[e.id], org = m.groups.includes(e), clip = `clip-${graph.id}-${e.id}`;
-    const face = e.icon ? `<defs><clipPath id="${clip}"><circle r="22"/></clipPath></defs><image href="${esc(e.icon)}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clip})"/>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0])}</text>`;
+    const face = (e.image || e.icon) ? `<defs><clipPath id="${clip}"><circle r="22"/></clipPath></defs><image href="${esc(e.image || e.icon)}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clip})"/>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0])}</text>`;
     return `<a href="#${org ? 'org' : 'entry'}-${e.id}" aria-label="${esc(e.name)}の詳細"><g class="${org ? 'organization-node' : 'nd'}" transform="translate(${x},${y})">${org ? `<rect x="-65" y="-18" width="130" height="36" rx="5"/><text y="5" text-anchor="middle">${esc(e.name.slice(0,10))}</text>` : `<circle r="22" fill="hsl(${e.hue || 0} 45% 62%)"/>${face}<text y="46" text-anchor="middle">${esc(e.name)}</text>`}<title>${esc(e.name)}</title></g></a>`;
   }).join('');
   const frames = m.display === 'frames' ? m.frames : [];
@@ -57,4 +66,4 @@ function mapDiagram(map, entries) {
   const bounds = extent([{x:0,y:0,width:1000,height:650},...places.map(e => ({x:map.positions[e.id][0]-10,y:map.positions[e.id][1]-18,width:30+[...e.name].length*16,height:40}))]);
   return svg(map.name,bounds,`${map.image ? `<image href="${esc(map.image)}" x="0" y="0" width="1000" height="650" preserveAspectRatio="xMidYMid meet"/>` : ''}${nodes}`,list.join('。'))+connectionList(list);
 }
-module.exports = {freeDiagram,legacyDiagram,mapDiagram};
+module.exports = {freeDiagram,canvasDiagram,legacyDiagram,mapDiagram};

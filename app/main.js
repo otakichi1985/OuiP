@@ -27,17 +27,18 @@ if (!app.requestSingleInstanceLock()) {
   protocol.registerSchemesAsPrivileged([{ scheme: "ouip-data", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
   app.whenReady().then(async () => {
-    const { ensureFixture, devDirectory } = require('./lib/dev-fixture');
+    const { ensureFixture, devDirectory, ensureMigrationSample } = require('./lib/dev-fixture');
     const selectionFile = path.join(app.getPath('userData'), 'dev-dataset.json');
     let selection = 'fixture';
     if (dev && !dataArg) {
       try {
         const saved = JSON.parse(await fs.promises.readFile(selectionFile, 'utf8'));
-        if (saved.selection === 'personal') selection = 'personal';
+        if (['personal', 'migration'].includes(saved.selection)) selection = saved.selection;
       } catch(error) { if(error.code !== 'ENOENT') throw error; }
     }
     const dir = devDirectory({documents:app.getPath('documents'),dev,explicit:dataArg?.slice(7),selection});
     if (dev && !dataArg && selection === 'fixture') await ensureFixture(dir);
+    if (dev && !dataArg && selection === 'migration') await ensureMigrationSample(dir);
     const store = new Store(dir);
     const hist = new History(dir);
     await store.init();
@@ -62,14 +63,24 @@ if (!app.requestSingleInstanceLock()) {
     h("saveRelations", (l) => store.saveRelations(l));
     h("saveBoard", (b) => store.saveBoard(b));
     const { BoardShare, LIMITS } = require('./lib/board-share');
-    const boardShare = new BoardShare({ store, dir });
+    const boardShare = new BoardShare({ store, dir, nativeImage });
     const { SiteExport } = require('./lib/site-export');
-    const siteExport = new SiteExport({store,dir});
+    const siteExport = new SiteExport({store,dir,nativeImage});
     h('exportSite', async selection => {
-      const html = await siteExport.build(selection);
+      const info = {}, html = await siteExport.build(selection, info, progress => {
+        if (!win.isDestroyed()) win.webContents.send('export-progress', progress);
+      });
+      if (info.warn) {
+        const answer = await dialog.showMessageBox(win, {
+          type: 'warning', title: '書き出しサイズの確認', message: `書き出すHTMLは約${Math.ceil(info.bytes / 1024 / 1024)}MBになります。`,
+          detail: '画像を多く含むため、閲覧する端末によっては開くのに時間がかかる場合があります。書き出しますか。',
+          buttons: ['書き出す', 'やめる'], defaultId: 0, cancelId: 1,
+        });
+        if (answer.response !== 0) return null;
+      }
       const r = await dialog.showSaveDialog(win, {title:'閲覧用ファイル（HTML）を書き出す', defaultPath:'OuiP-閲覧用.html', filters:[{name:'閲覧専用HTML',extensions:['html']}]});
       if(r.canceled || !r.filePath) return null;
-      return siteExport.write(r.filePath,html);
+      return { ...(await siteExport.write(r.filePath,html)), kept: info.kept || 0, bytes: info.bytes, warn: !!info.warn };
     });
     // キャラの設定シート（SNS向けの画像）。画面からはキャラのIDと選んだ項目だけを受け取る。
     const { SheetExport } = require('./lib/sheet-export');
@@ -87,12 +98,12 @@ if (!app.requestSingleInstanceLock()) {
       return { ...(await sheetExport.save(d.filePath, r.pngs)), pages: r.pngs.length, overflow: r.overflow };
     });
     h('exportBoardFile', async () => {
-      const payload = await boardShare.exportPayload();
+      const info = {}, payload = await boardShare.exportPayload(undefined, info);
       const r = await dialog.showSaveDialog(win, { title: '共有ボードを書き出す', defaultPath: 'OuiP-board.ouip-board', filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
       if (r.canceled || !r.filePath) return null;
       if (path.resolve(r.filePath).startsWith(dir + path.sep)) throw Error('創作データのフォルダー外へ書き出してください');
       await fs.promises.writeFile(r.filePath, JSON.stringify(payload));
-      return { saved: true };
+      return { saved: true, kept: info.kept || 0 };
     });
     // 受け取ったファイルは、まず見るだけで開く。選んだ分だけを後でimportBoardSelectionで書く。
     let pendingBoard = null;
@@ -150,6 +161,12 @@ if (!app.requestSingleInstanceLock()) {
     });
     h("changes", () => store.serial(() => hist.changes()));
     h("save", (msg) => store.serial(() => hist.save(msg)));
+    // ステータスの移行。書き換える前に今の状態を履歴に残す（未保存の変更があれば「ステータス移行の前」として保存。なければ直前の保存が移行前の状態）。
+    h("migrateStatus", async (plan) => {
+      const before = await store.serial(() => hist.save("ステータス移行の前"));
+      const result = await store.migrateStatus(plan);
+      return { ...result, checkpoint: before ? "saved" : "head" };
+    });
     h("log", () => hist.log());
     h("diffFiles", (oid) => hist.diffFiles(oid));
     h("readAt", (oid, f) => hist.readAt(oid, f));
@@ -161,7 +178,7 @@ if (!app.requestSingleInstanceLock()) {
       })
     );
     h("pickMapImage", async () => {
-      const r = await dialog.showOpenDialog(win, { title: "地図の画像", properties: ["openFile"], filters: [{ name: "画像", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+      const r = await dialog.showOpenDialog(win, { title: "地図の画像", properties: ["openFile"], filters: [{ name: "画像", extensions: ["png", "jpg", "jpeg"] }] });
       if (r.canceled || !r.filePaths[0]) return null;
       checkImageFile(r.filePaths[0]);
       return store.importMapImage(r.filePaths[0]);
@@ -172,7 +189,7 @@ if (!app.requestSingleInstanceLock()) {
       if (nativeImage.createFromPath(src).isEmpty()) throw new Error("画像を読み込めませんでした");
     }
     const pickImage = async () => {
-      const r = await dialog.showOpenDialog(win, { title: "画像を選ぶ", properties: ["openFile"], filters: [{ name: "画像", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+      const r = await dialog.showOpenDialog(win, { title: "画像を選ぶ", properties: ["openFile"], filters: [{ name: "画像", extensions: ["png", "jpg", "jpeg"] }] });
       if (r.canceled || !r.filePaths[0]) return null;
       const src = r.filePaths[0];
       checkImageFile(src);
@@ -181,10 +198,17 @@ if (!app.requestSingleInstanceLock()) {
     h("pickCharacterImage", pickImage);
     h("pickImage", pickImage);
     h("devMode", () => dev);
+    // 移行の試し用データを最初の状態に戻す（試し用の印があるフォルダーだけ）。
+    h('devResetSample', async () => {
+      if (!dev || dataArg || selection !== 'migration') throw Error('移行の試し用データを開いているときだけ作り直せます');
+      const rebuilt = await store.serial(() => ensureMigrationSample(dir, { reset: true }));
+      if (!rebuilt) throw Error('試し用の印がないフォルダーなので作り直しません');
+      return true; // 画面の読み直しは画面側で行う
+    });
     h('devDataInfo', () => ({available:dev && !dataArg,current:dataArg?'explicit':selection}));
     h('devDataSelection', async value => {
       if (!dev || dataArg) throw Error('通常の開発版でのみ変更できます');
-      if (!['fixture','personal'].includes(value)) throw Error('データを選択してください');
+      if (!['fixture','personal','migration'].includes(value)) throw Error('データを選択してください');
       const { writeJson } = require('./lib/store');
       await writeJson(selectionFile,{selection:value});
       return value;

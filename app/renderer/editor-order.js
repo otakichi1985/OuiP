@@ -23,10 +23,12 @@
       let tools = row.querySelector('[data-editor-order-tools]');
       if (!tools) {
         tools = doc.createElement('span'); tools.className = 'editor-order-tools'; tools.dataset.editorOrderTools = '';
-        for (const [action, text, label] of [['handle', '移動', 'ドラッグで順序を変更'], ['up', '上', '上へ移動'], ['down', '下', '下へ移動']]) {
+        // 形（つまみと矢印）で操作を示し、文字は読み上げ名とツールチップだけに残す。
+        for (const [action, text, label] of [['handle', '', 'ドラッグで順序を変更'], ['up', '↑', '上へ移動'], ['down', '↓', '下へ移動']]) {
           const button = doc.createElement('button'); button.type = 'button'; button.className = 'b quiet sm';
-          button.dataset.editorOrder = action; button.textContent = text; button.setAttribute('aria-label', label);
-          if (action === 'handle') { button.draggable = true; button.title = 'ドラッグで順序を変更（上・下でも変更できます）'; }
+          button.dataset.editorOrder = action; button.setAttribute('aria-label', label);
+          if (action === 'handle') { button.draggable = true; button.title = 'ドラッグで順序を変更（↑↓でも変更できます）'; button.innerHTML = '<span class="editor-order-grip" aria-hidden="true"></span>'; }
+          else { button.textContent = text; button.title = label; }
           tools.appendChild(button);
         }
         // 閉じた文章も操作可能。summaryを動かしたり再生成したりしない。

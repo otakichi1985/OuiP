@@ -11,6 +11,8 @@
 .sheet-group{display:flex;flex-direction:column;gap:2px;margin:4px 0 2px 4px;padding-left:10px;border-left:2px solid var(--line)}
 .sheet-author{display:block;margin-top:4px}
 #sheet-author{width:100%}
+.sheet-image-pick{flex-wrap:wrap;margin:2px 0 6px 22px}
+#sheet-image{min-width:0;flex:1}
 .sheet-preview{min-height:0;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
 #sheet-status{margin:0 0 8px}
 #sheet-pages{display:grid;gap:12px}

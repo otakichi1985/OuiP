@@ -9,7 +9,8 @@ function prepare(outputName = 'public-source') {
   for (const dir of ['lib', 'renderer', 'share', 'test']) {
     for (const file of files(path.join(app, dir))) {
       // 同梱アイコン（Lucide）のライセンス全文は、表示義務のため公開ソースにも含める。
-      assert(/\.(js|cjs|html|css|json|ps1)$/.test(file) || `${dir}/${file}` === 'renderer/icons-LICENSE.txt', `Review new source type before export: app/${dir}/${file}`);
+      // アーカイブ試験の説明も、試験の実行方法に要るため含める（2026-10-24確認・秘密情報なし）。
+      assert(/\.(js|cjs|html|css|json|ps1)$/.test(file) || `${dir}/${file}` === 'renderer/icons-LICENSE.txt' || `${dir}/${file}` === 'test/archive/README.md', `Review new source type before export: app/${dir}/${file}`);
       selections.push(`app/${dir}/${file}`);
     }
   }

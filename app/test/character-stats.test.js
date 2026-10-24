@@ -76,13 +76,14 @@ test('複数表示形式は可視テキストを併記し、大まかの実数�
   for(const format of ['bars','radar','dots','text']) {
     const html=Stats.renderCard({...data,card:format});
     assert.match(html,/体力/);assert.match(html,/50pt/);assert.match(html,/標準/);
-    assert.match(html,/数値/);assert.match(html,/大まか/);assert.match(html,/aria-label="未設定"/);
+    assert.match(html,/数値/);assert.match(html,/段階/);assert.match(html,/aria-label="未設定"/);
     assert.doesNotMatch(html,/NaN|Infinity|undefined/);
   }
   assert.equal(Stats.renderCard({...data,card:'hidden'}),'');
   assert.match(Stats.renderDetail({...data,card:'hidden'}),/ステータス/);
   const html=Stats.renderCard({items:[rough('印象',3)]});
-  assert.match(html,/やや高い/);assert.doesNotMatch(html,/>3<|60%|75%/);
+  assert.match(html,/やや高い/);assert.doesNotMatch(html,/>3</);
+  assert.match(html,/cs-seg/,'大まかは選んだ段階まで塗る区切り棒');
   const blank=Stats.renderCard({items:[number('未記入',null)]});
   assert.match(blank,/cs-empty/);assert.doesNotMatch(blank,/width:0/);
   assert.match(Stats.renderCard({items:[number('零',0)]}),/width:0%/);
@@ -96,6 +97,14 @@ test('レーダーは少項目・過多を棒へ、未設定を原点で結ば�
   assert.equal((html.match(/class="cs-radar-point/g)??[]).length,2);
   assert.match(Stats.renderDetail({detail:'radar',items:[number(),rough(),number('速さ')]}),/cs-radar-fill/);
 });
+test('レーダーの横向きの軸ラベルは外側へ寄せ、値を改行して図と重ねない',()=>{
+  const items=[0,1,2,3].map((i)=>({name:'軸'+i,mode:'number',min:0,max:10,unit:'',value:5}));
+  const html=Stats.renderDetail({detail:'radar',items});
+  assert.equal((html.match(/text-anchor="start"/g) || []).length,1,'右向きの軸は右寄せ');
+  assert.equal((html.match(/text-anchor="end"/g) || []).length,1,'左向きの軸は左寄せ');
+  assert.equal((html.match(/dy="1.2em"/g) || []).length,2,'横向きの2軸の値は改行して添える');
+  assert.equal(((html.match(/dx="4"/g) || []).length)+((html.match(/dy="1.2em"/g) || []).length),4,'全軸に値が付く');
+});
 test('HTML/属性/SVGエスケープと極端なfinite範囲も安全',()=>{
   const name='</text><script>alert(1)</script>', unit='" onmouseover="alert(1)';
   const data=Stats.normalize({detail:'radar',items:[{...number(name),unit},rough('<img src=x>'),number('c')]});
@@ -107,6 +116,22 @@ test('HTML/属性/SVGエスケープと極端なfinite範囲も安全',()=>{
   assert.doesNotMatch(Stats.renderDetail({detail:'radar',items:[huge,{...huge,name:'b'},{...huge,name:'c'}]}),/NaN|Infinity/);
   const tiny={...number(),min:0,max:Number.MIN_VALUE,value:Number.MIN_VALUE};assert.equal(Stats.ratio(tiny),1);
   const editor=Stats.renderEditor(Stats.createDraft(data));assert.match(editor,/<label>/);assert.match(editor,/role="alert"/);assert.match(editor,/Alt＋↑/);
+  assert.doesNotMatch(editor,/cs-graph/,'無段階のドラッグでは値を決めない（値は欄と段階で決める）');
+});
+test('項目ごとの見せ方を保存・検証し、表示に反映する',()=>{
+  const data=Stats.normalize({card:'bars',detail:'bars',items:[
+    {...number('体力'),show:'dots'},{...number('速さ'),show:'hidden'},
+    {...number('魔力'),show:'radar'},{...number('運'),show:'radar'},{...number('守り'),show:'radar'},number('攻撃')]});
+  assert.equal(data.items[0].show,'dots');
+  assert.deepEqual(Stats.validate(data),data);
+  assert.throws(()=>Stats.normalize({items:[{...number(),show:'unknown'}]}),/見せ方/);
+  const round=Stats.createDraft(data);round.items[0].show='text';assert.equal(Stats.fromDraft(round).items[0].show,'text');
+  const html=Stats.renderDetail(data);
+  assert.match(html,/cs-dots/,'ドットで出す項目');
+  assert.doesNotMatch(html,/速さ/,'非表示の項目は出さない');
+  assert.match(html,/cs-radar/,'レーダーの項目どうしをまとめて描く');
+  const noGauge=Stats.renderDetail(Stats.normalize({detail:'text',items:[{...number('体力'),show:'bars'}]}));
+  assert.match(noGauge,/cs-track/,'項目ごとに既定より優先する');
 });
 async function fixture(t) {
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'ouip-stats-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
@@ -119,23 +144,61 @@ async function seed(f) {
   await writeJson(f.store.p('entries',entry.id+'.json'),{...entry,stats:stats()});
   await f.store.saveBoard({items:[{id:'b-stats',type:'entry',ref:entry.id,x:0,y:0}],links:[]});return entry;
 }
+test('ブロック複数の保存・検証・旧単体から1ブロック化・上限・表示',()=>{
+  const a=stats(), b=Stats.normalize({card:'hidden',detail:'bars',items:[rough('気力',1)]});
+  const multi={version:1,blocks:[a,b]};
+  assert.deepEqual(Stats.validateBlocks(multi),multi);
+  assert.equal(Stats.blockList(multi).length,2);assert.equal(Stats.itemsOf(multi).length,4);
+  // 旧単体・配列・null・undefined。
+  assert.deepEqual(Stats.blockList(a),[a]);
+  assert.deepEqual(Stats.normalizeBlocks(a),{version:1,blocks:[a]});
+  assert.deepEqual(Stats.normalizeBlocks([a]),{version:1,blocks:[a]});
+  assert.deepEqual(Stats.normalizeBlocks(null),{version:1,blocks:[]});
+  assert.equal(Stats.normalizeBlocks(undefined),undefined);
+  const prev={version:1,blocks:[a]};
+  assert.deepEqual(Stats.normalizeBlocks(undefined,prev),prev);
+  // 旧JSONの単体を書き換えずに1ブロック化する（表示は複数ブロックを束ねて1節に）。
+  assert.deepEqual(Stats.validateBlocks(a),{version:1,blocks:[a]});
+  assert.equal(Stats.blockList(undefined).length,0);
+  for(const bad of [{version:2,blocks:[]},{version:1,extra:1},{version:1,blocks:Array(11).fill(a)},{version:1,blocks:[a,{version:2,card:'bars',detail:'bars',items:[]}]}])
+    assert.throws(()=>Stats.normalizeBlocks(bad),/ステータス/);
+  assert.throws(()=>Stats.validateBlocks({version:1,extra:1}));
+  // 2ブロックの表示はcs-blockで束ねる。片方が空（全項目hidden等）なら束ねない。
+  // 2ブロックとも見えるときはcs-blockで束ねる。見えないブロックは打ち捨てて束ねない（1ブロックと同じ見た目）。
+  const two=Stats.renderCard({version:1,blocks:[{...a,card:'bars'},{card:'bars',detail:'bars',items:[rough('気力',1)]}]});
+  assert.deepEqual((two.match(/cs-block/g)??[]).length,2);
+  assert.doesNotMatch(Stats.renderCard({version:1,blocks:[{card:'hidden',detail:'hidden',items:[{...number('体力'),show:'hidden'}]}]}) + Stats.renderDetail({version:1,blocks:[]}),/cs-block/);
+  assert.match(Stats.renderDetail({version:1,blocks:[a,b]}),/cs-block/);
+});
 test('共有の明示許可・往復・旧共有の未指定互換・タグ不複製',async t=>{
   const f=await fixture(t);await seed(f);const payload=await f.share.exportPayload();
-  assert.deepEqual(payload.entries[0].stats,stats());assert.deepEqual(payload.entries[0].tags,{所属:['港']});
-  const result=await f.incoming.importPayload(JSON.stringify(payload));assert.deepEqual(result.entries[0].stats,stats());
-  assert.deepEqual((await f.receiver.load()).entries[0].stats,stats());
+  assert.deepEqual(payload.entries[0].stats,{version:1,blocks:[stats()]});assert.deepEqual(payload.entries[0].tags,{所属:['港']});
+  const result=await f.incoming.importPayload(JSON.stringify(payload));assert.deepEqual(result.entries[0].stats,{version:1,blocks:[stats()]});
+  assert.deepEqual((await f.receiver.load()).entries[0].stats,{version:1,blocks:[stats()]});
+  // ブロック複数の共有もそのまま往復する。
+  await f.store.saveEntry({id:payload.entries[0].id,kind:'人物',name:'観測者',stats:{version:1,blocks:[stats(),{card:'hidden',detail:'bars',items:[rough('気力',1)]}]}});
+  const two=await f.share.exportPayload();const back=await f.incoming.importPayload(JSON.stringify(two));
+  const got=(await f.receiver.load()).entries.find(e=>e.id===back.entries[0].id);
+  assert.equal(got.stats.blocks.length,2);assert.deepEqual(got.stats.blocks[1],{version:1,card:'hidden',detail:'bars',items:[rough('気力',1)]});
   delete payload.entries[0].stats;
   const legacy=await f.incoming.importPayload(payload);assert.equal(Object.hasOwn(legacy.entries[0],'stats'),false);
+  // 旧共有の旧単体statsは1ブロックへ正規化して受け取る。
+  const legacyPayload=await f.share.exportPayload();delete legacyPayload.entries[0].stats;legacyPayload.entries[0].stats=stats();
+  const migrated=await f.incoming.importPayload(JSON.stringify(legacyPayload));
+  assert.deepEqual(migrated.entries[0].stats,{version:1,blocks:[stats()]});
 });
 test('共有の不正statsは入力側も出力側も拒否、受取データ/履歴は不変',async t=>{
   const f=await fixture(t), entry=await seed(f), payload=await f.share.exportPayload();
   const history=new History(f.receiver.dir);await history.init();await history.save('受取前');const head=await history.head();
   const before=await f.receiver.load();
-  const cases=[null,{}, {...stats(),card:'wrong'}, {...stats(),items:[{...number(),value:101}]}, {...stats(),items:[{...rough(),value:1.5}]}, {...stats(),items:[{...number(),extra:1}]}];
-  for(const invalid of cases) {const bad=structuredClone(payload);bad.entries[0].stats=invalid;assert.throws(()=>f.incoming.importPayload(bad),/ステータス/);}
-  const wrong=structuredClone(payload);wrong.entries[0].kind='場所';assert.throws(()=>f.incoming.importPayload(wrong),/人物カード専用/);
-  const nonfinite=structuredClone(payload);nonfinite.entries[0].stats.items[0].value=Infinity;assert.throws(()=>f.incoming.importPayload(nonfinite));
+  const cases=[{}, {...stats(),card:'wrong'}, {...stats(),items:[{...number(),value:101}]}, {...stats(),items:[{...rough(),value:1.5}]}, {...stats(),items:[{...number(),extra:1}]}, {version:1,blocks:[stats(),null]}, {version:1,blocks:Array(11).fill(stats())}, {version:2,blocks:[]}, {version:1,extra:1}];
+  for(const invalid of cases) {const bad=structuredClone(payload);bad.entries[0].stats=invalid;assert.throws(()=>f.incoming.importPayload(bad),/ステータス|blocks|版/);}
   assert.deepEqual(await f.receiver.load(),before);assert.equal(await history.head(),head);
+  // stats:nullは「表示なし」へ正規化して受け取る。
+  const empty=structuredClone(payload);empty.entries[0].stats=null;
+  assert.deepEqual((await f.incoming.importPayload(empty)).entries[0].stats,{version:1,blocks:[]});
+  const wrong=structuredClone(payload);wrong.entries[0].kind='場所';assert.throws(()=>f.incoming.importPayload(wrong),/人物カード専用/);
+  const nonfinite=structuredClone(payload);nonfinite.entries[0].stats.blocks[0].items[0].value=Infinity;assert.throws(()=>f.incoming.importPayload(nonfinite));
   await writeJson(f.store.p('entries',entry.id+'.json'),{...entry,stats:{...stats(),items:[{...number(),value:101}]}});
   await assert.rejects(f.share.exportPayload(),/範囲/);
 });
@@ -171,8 +234,9 @@ function editorDOM() {
     querySelector(selector) {
       const match=/data-cs-row="(\d+)"/.exec(selector);if(match)return rows[Number(match[1])]?.querySelector(selector);
       if(selector==='[data-cs-error]')return this.error;if(selector==='[data-cs-status]')return this.status;
+      if(selector==='[data-cs-preview]')return this.preview;
       const key=/\[data-cs-(field|setting|add-name|candidate)(?:="([^"]*)")?\]/.exec(selector);return fields[key?.[1]+(key?.[2]?'='+key[2]:'')];
-    },error:{textContent:''},status:{textContent:''},
+    },error:{textContent:''},status:{textContent:''},preview:{innerHTML:''},
     set innerHTML(html) {
       markup=html;renders++;rows=[];
       for(const m of html.matchAll(/<fieldset[^>]*data-cs-row="(\d+)"[^>]*>([\s\S]*?)<\/fieldset>/g)) {
@@ -202,6 +266,19 @@ test('編集DOM模擬: inputで再描画せず未保存入力、追加名、候�
   const saved=mounted.getDraft();mounted.destroy();assert.equal(dom.listeners.size,0);
   const remounted=Stats.mountEditor(dom.root,undefined,{draft:saved});assert.equal(remounted.getDraft().items[1].numberValue,'-');remounted.destroy();
 });
+test('編集DOM模擬: 入力中に見本を更新し、不正な入力では案内に変える',()=>{
+  const dom=editorDOM();
+  const mounted=Stats.mountEditor(dom.root,stats(),{});
+  assert.match(dom.root.preview.innerHTML,/data-cs-preview-for="card"/);
+  assert.match(dom.root.preview.innerHTML,/data-cs-preview-for="detail"/);
+  assert.match(dom.root.preview.innerHTML,/気力|体力/, '項目名が見本に出る');
+  assert.match(dom.root.preview.innerHTML,/カード表示の見本（[^）]+）/, '見本にグラフの種類を添える');
+  const value=dom.rows[0].fields['field=numberValue'];value.value='abc';dom.fire('input',value);
+  assert.match(dom.root.preview.innerHTML,/入力を直すと/,'不正な値では見本を出さない');
+  value.value='50';dom.fire('input',value);
+  assert.match(dom.root.preview.innerHTML,/data-cs-preview-for="card"/,'直すと見本が戻る');
+  mounted.destroy();
+});
 test('編集DOM模擬: 読取エラーを可視表示し、削除は確認してから実行',()=>{
   const dom=editorDOM();let approved=false;
   const mounted=Stats.mountEditor(dom.root,stats(),{confirmRemove:()=>approved});
@@ -211,3 +288,9 @@ test('編集DOM模擬: 読取エラーを可視表示し、削除は確認して
   assert.equal(mounted.read().items[0].mode,'rough');mounted.destroy();
 });
 
+
+test('段階数ボタン: 段階名の欄を改行で区切ったn行にそろえる', () => {
+  assert.equal(Stats.resizeLevels('低\n中\n高', 2), '低\n中');
+  assert.equal(Stats.resizeLevels('低\r\n高', 4), '低\n高\n\n');
+  assert.ok(!Stats.resizeLevels('a\nb', 3).includes(String.fromCharCode(92)), '文字のバックスラッシュを入れない');
+});

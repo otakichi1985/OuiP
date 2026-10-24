@@ -1,8 +1,11 @@
 /* 墨紺/青磁とシステム書体を継承。操作列だけ追加し、入力欄の幅を奪わない。 */
 #ef .editor-order-tools{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-bottom:4px}
 #ef .editor-order-tools .b{font-family:var(--body);min-height:34px;padding:2px 9px;font-size:12px;white-space:nowrap}
-#ef [data-editor-order="handle"]{cursor:grab;color:var(--accent);border-style:dashed}
+#ef [data-editor-order="up"],#ef [data-editor-order="down"]{font-size:15px;line-height:1;min-width:34px;padding:2px 6px}
+#ef [data-editor-order="handle"]{cursor:grab;color:var(--accent);border-style:dashed;min-width:34px;padding:2px 8px}
 #ef [data-editor-order="handle"]:active{cursor:grabbing}
+/* つまみは6つの点。持ち手だと分かる形にし、行ごとの「移動」の文字をなくす。 */
+#ef .editor-order-grip{display:block;width:10px;height:17px;margin:auto;background-image:radial-gradient(circle,currentColor 1.3px,transparent 1.6px);background-size:5px 6px;background-position:0 1px}
 #ef .editor-order-tools .b:disabled{opacity:.35;cursor:default}
 #ef [data-frow]>.editor-order-tools{grid-column:1/-1;margin:0}
 #ef [data-section]>summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}

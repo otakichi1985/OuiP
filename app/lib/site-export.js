@@ -4,14 +4,19 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const Stats = require('../renderer/character-stats');
+const ImageSet = require('../renderer/image-set');
+const StatusModel = require('../renderer/status-model');
 const Units = require('../renderer/character-units');
 const Timeline = require('../renderer/timeline-model');
 const FreeGraph = require('../renderer/free-graph');
 const GraphLayout = require('../renderer/graph-layout');
 const {normalizeOrganizations} = require('./organizations');
-const {renderSite} = require('./site-view');
-const {freeDiagram,legacyDiagram,mapDiagram} = require('./site-diagrams');
-const LIMITS = Object.freeze({items:500, diagrams:30, images:40*1024*1024, html:64*1024*1024});
+const {renderSite,TEMPLATES} = require('./site-view');
+const {freeDiagram,canvasDiagram,legacyDiagram,mapDiagram} = require('./site-diagrams');
+const DiagramModel = require('../renderer/diagram-model');
+const ExportImage = require('./export-image');
+// 40MB/64MBの固定上限は撤廃し、書き出し前の警告と、事故防止のための高い安全上限だけ残す。
+const LIMITS = Object.freeze({items:500, diagrams:30, images:512*1024*1024, html:512*1024*1024, warn:100*1024*1024});
 const fail = message => {throw Error('閲覧用ファイル: '+message);};
 const own = (value,key) => Object.prototype.hasOwnProperty.call(value,key);
 function object(value) {if(!value || typeof value !== 'object' || Array.isArray(value)) fail('入力の形式が不正です');return value;}
@@ -39,29 +44,54 @@ function entry(input,entryIds,organizationIds) {
     out.organizationIds=(e.organizationIds||[]).filter(key=>organizationIds.has(key));
     out.tagUnits=Units.normalize(out.tags,e.tagUnits);
     out.tagPositions=Object.fromEntries(Object.keys(out.tags).map(key=>[key,['above','below','bottom','hidden'].includes(e.tagPositions?.[key])?e.tagPositions[key]:'below']));
-    if(e.stats) out.stats=Stats.validate(e.stats);
+    if(e.stats&&Stats.blockList(e.stats).length) out.stats=Stats.validateBlocks(e.stats);
   }
   if(e.kind==='出来事') {
     const n=Timeline.yearNumber(e);out.year={n,label:text(e.year?.label||'',1000)};
     out.refs=(e.refs||[]).filter(key=>entryIds.has(key));
   }
   for(const key of ['image','icon']) if(e[key]) out[key]=text(e[key],200);
+  if(e.kind==='人物') {
+    const images=ImageSet.list(e).map(item=>({image:text(item.image,200),...(item.caption?{caption:text(item.caption,1000)}:{})}));
+    if(images.length) out.images=images;
+  }
+  // カードのサムネの切り取り（枠いっぱいに切る）も、アプリと同じ見え方で書き出す。
+  if(out.image && e.imageCrop && e.imageCrop.fit === 'cover') {
+    const at = n => ([0,50,100].includes(Number(n)) ? Number(n) : 50);
+    out.imageCrop = { fit: 'cover', x: at(e.imageCrop.x), y: at(e.imageCrop.y) };
+  }
   return out;
 }
 function project(state,selection) {
   object(selection);
-  if(Object.keys(selection).some(key=>!['title','includeIntro','entryIds','organizationIds','graphIds','mapIds'].includes(key)))fail('未対応の共有条件です');
+  if(Object.keys(selection).some(key=>!['title','includeIntro','template','entryIds','organizationIds','graphIds','mapIds'].includes(key)))fail('未対応の共有条件です');
   if(typeof selection.includeIntro!=='boolean')fail('概要の掲載条件が不正です');
+  const template=selection.template===undefined?'standard':selection.template;
+  if(!TEMPLATES.includes(template))fail('テンプレートが不正です');
   const entryIds=ids(selection.entryIds),organizationIds=ids(selection.organizationIds),graphIds=ids(selection.graphIds,LIMITS.diagrams),mapIds=ids(selection.mapIds,LIMITS.diagrams);
   if(entryIds.size+organizationIds.size>LIMITS.items||graphIds.size+mapIds.size>LIMITS.diagrams)fail('項目は合計500件、図は合計30件以下にしてください');
   if(!entryIds.size&&!organizationIds.size&&!graphIds.size&&!mapIds.size&&!selection.includeIntro)fail('掲載する内容を選んでください');
   const world=state.world;
-  const entries=selected(state.entries,entryIds).map(e=>entry(e,entryIds,organizationIds));
+  const entries=selected(state.entries,entryIds).map(e=>{
+    const out=entry(e.kind==='人物'?{...e,stats:StatusModel.resolve(e,state.world)}:e,entryIds,organizationIds);
+    if(e.kind==='人物'){
+      // カードの右側には「ステータスの中」の項目だけを出す（名前の上・下などへ出した項目を二重に出さない）。
+      const card=StatusModel.resolve(e,state.world,{surface:'card'});
+      if(Stats.blockList(card).length) out.cardStats=Stats.validateBlocks(card);
+    }
+    return out;
+  });
   const organizations=normalizeOrganizations(selected(world.organizations||[],organizationIds).map(o=>({id:o.id,name:text(o.name,1000),desc:text(o.desc??''),parentId:organizationIds.has(o.parentId)?o.parentId:null})));
   const people=new Set(entries.filter(e=>e.kind==='人物').map(e=>e.id)),places=new Set(entries.filter(e=>e.kind==='場所').map(e=>e.id));
   const graphs=selected(world.graphs||[],graphIds).map(g=>{
     const base={id:id(g.id),name:text(g.name,1000)};
     if(g.format==='free')return {...base,...FreeGraph.normalize(g)};
+    if(g.format==='canvas') {
+      // 名前と種類は書き出す時点のもの。選んでいない項目は名前だけ（顔・本文へのリンクは出さない）。
+      const kindLabel={人物:'キャラ',用語:'用語',場所:'場所',出来事:'出来事'}, all=new Map([...state.entries.map(e=>[e.id,{name:e.name,kind:kindLabel[e.kind]||e.kind,selected:entryIds.has(e.id)}]),...(world.organizations||[]).map(o=>[o.id,{name:o.name,kind:'組織',selected:organizationIds.has(o.id)}])]);
+      const refs=Object.fromEntries(DiagramModel.normalize(g).items.filter(it=>it.kind==='entry').map(it=>[it.ref,all.get(it.ref)||null]));
+      return {...base,...DiagramModel.normalize(g),refs};
+    }
     const members=(g.members||[]).filter(key=>people.has(key)),orgs=(g.organizationIds||[]).filter(key=>organizationIds.has(key)),allowed=new Set([...members,...orgs]);
     // 未配置の既存ノードも元図での算出座標を使う。除外で残る人を並べ直さない。
     const original=GraphLayout.positions(g.members||[],g.positions,state.entries);
@@ -70,7 +100,7 @@ function project(state,selection) {
   });
   const maps=selected(world.maps||[],mapIds).map(m=>({id:id(m.id),name:text(m.name,1000),image:m.image?text(m.image,200):null,positions:positions(m.positions,places)}));
   // 作者名は、概要の「共有の画像やサイトに載せる名前」として入れたもの。
-  const model={title:text(selection.title,1000).trim(),author:text(world.author||'',200).trim(),entries,organizations,graphs,maps};
+  const model={title:text(selection.title,1000).trim(),author:text(world.author||'',200).trim(),template,entries,organizations,graphs,maps};
   if(!model.title)fail('閲覧用ファイルの名前を入れてください');
   if(selection.includeIntro) {model.note=text(world.note||'');if(world.image)model.image=text(world.image,200);}
   if(entries.some(e=>e.kind==='出来事')) {
@@ -84,8 +114,10 @@ function project(state,selection) {
   return model;
 }
 class SiteExport {
-  constructor({store,dir=store.dir}) {this.store=store;this.dir=path.resolve(dir);if(this.dir!==path.resolve(store.dir))fail('保存先が不正です');}
-  async image(rel) {
+  // nativeImage（Electronの画像部品）を渡すと、書き出す画像を小さくする。Nodeの試験では渡さず、保存したままの形で入れる。
+  constructor({store,dir=store.dir,nativeImage=null}) {this.store=store;this.dir=path.resolve(dir);this.nativeImage=nativeImage;if(this.dir!==path.resolve(store.dir))fail('保存先が不正です');}
+  // 保存している画像を読んで確かめる。書き換えない。
+  async read(rel) {
     if(!/^assets\/(?:(?:image|character)-[a-f0-9]{64}|map)\.(png|jpg|jpeg|webp)$/.test(rel))fail('画像の場所が不正です');
     const assets=path.join(this.dir,'assets'),file=path.join(this.dir,rel);
     if(path.resolve(await fs.realpath(assets))!==assets||path.resolve(await fs.realpath(file))!==file)fail('画像のリンクは共有できません');
@@ -94,17 +126,57 @@ class SiteExport {
     const ext=path.extname(rel).slice(1), valid=ext==='png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):ext==='webp'?bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP':bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
     if(!valid)fail('画像の形式が不正です');
     const hash=/-(\w{64})\./.exec(rel);if(hash&&crypto.createHash('sha256').update(bytes).digest('hex')!==hash[1])fail('画像の内容とハッシュが一致しません');
-    return {uri:`data:image/${ext==='jpg'?'jpeg':ext};base64,${bytes.toString('base64')}`,size:bytes.length};
+    return {bytes,type:ext==='jpg'?'jpeg':ext};
   }
-  build(selection) {return this.store.serial(async()=>{
-    const model=project(await this.store.load(),selection),images=new Map();let total=0;
+  // 変換に失敗したら、どの項目の画像かを添えて止める（原寸のまま黙って入れない）。WebPは読めないので元のまま入れ、kept で知らせる。
+  async convert(rel,label,encode,type) {
+    const {bytes,type:original}=await this.read(rel);
+    if(this.nativeImage&&ExportImage.isWebP(bytes)) return {uri:`data:image/webp;base64,${bytes.toString('base64')}`,size:bytes.length,kept:true};
+    if(!this.nativeImage) return {uri:`data:image/${original};base64,${bytes.toString('base64')}`,size:bytes.length};
+    // 変換は本体の処理を止める（3000×3000で約0.1秒、2026-10-22測定）。1枚ごとに画面の描き直しを挟む。
+    await new Promise(resolve=>setImmediate(resolve));
+    let out;try{out=encode(this.nativeImage,bytes);}catch(e){fail(`「${label||'名称未定'}」の画像を変換できませんでした（${e.message}）`);}
+    return {uri:`data:image/${type};base64,${out.toString('base64')}`,size:out.length};
+  }
+  // 閲覧用HTML・共有ボード: 長辺1600px以内のJPEG（透過は白）。
+  image(rel,label) {return this.convert(rel,label,ExportImage.toShareJPEG,'jpeg');}
+  // 設定シート: 撮影するので透過を残したまま縮める。
+  sheetImage(rel,label) {return this.convert(rel,label,ExportImage.toSheetPNG,'png');}
+  // info.kept: 変換できず元のまま入れた画像（WebP）の枚数。
+  build(selection,info={},onProgress=()=>{}) {return this.store.serial(async()=>{
+    // 同じ画像は1回だけ埋め込み、カード・名前の横・図では番号（ouip-img:N）で指す。開いたときにsite.jsが配る。
+    const model=project(await this.store.load(),selection),images=new Map(),table={};let total=0;
     const holders=[model,...model.entries,...model.maps];
-    for(const holder of holders)for(const key of ['image','icon'])if(holder[key]) {
-      const rel=holder[key];if(!images.has(rel)) {const image=await this.image(rel);total+=image.size;if(total>LIMITS.images)fail('画像の合計は40MB以下にしてください');images.set(rel,image.uri);}holder[key]=images.get(rel);
+    const allImages=new Set();
+    for(const holder of holders) {
+      for(const key of ['image','icon']) if(holder[key]) allImages.add(holder[key]);
+      for(const item of holder.images||[]) if(item.image) allImages.add(item.image);
     }
-    model.graphs=model.graphs.map(g=>({id:g.id,name:g.name,svg:g.format==='free'?freeDiagram(g):legacyDiagram(g,model.entries,model.organizations)}));
+    let done=0;
+    const take=async(rel,label)=>{
+      if(!images.has(rel)) {
+        const image=await this.image(rel,label);total+=image.size;
+        if(image.kept)info.kept=(info.kept||0)+1;
+        const n=images.size;table[n]=image.uri;images.set(rel,`ouip-img:${n}`);
+        done++;
+        onProgress({phase:"images",done,total:allImages.size});
+      }
+      return images.get(rel);
+    };
+    for(const holder of holders) {
+      for(const key of ['image','icon']) if(holder[key]) holder[key]=await take(holder[key],holder.name||model.title);
+      for(const item of holder.images||[]) if(item.image) item.image=await take(item.image,holder.name||model.title);
+    }
+    model.images=table;
+    const templates=DiagramModel.normalizeTemplates((await this.store.load()).world.linkTemplates);
+    const canvasRefs=g=>Object.fromEntries(Object.entries(g.refs||{}).map(([id,r])=>{ if(!r) return [id,null]; const e=r.selected?model.entries.find(x=>x.id===id):null; return [id,{name:r.name,kind:r.kind,image:e?(e.icon||e.image||null):null}]; }));
+    model.graphs=model.graphs.map(g=>({id:g.id,name:g.name,svg:g.format==='free'?freeDiagram(g):g.format==='canvas'?canvasDiagram(g,canvasRefs(g),templates):legacyDiagram(g,model.entries,model.organizations)}));
     model.maps=model.maps.map(m=>({id:m.id,name:m.name,svg:mapDiagram(m,model.entries)}));
-    const html=renderSite(model);if(Buffer.byteLength(html)>LIMITS.html)fail('HTMLは64MB以下にしてください。画像や掲載件数を減らしてください');
+    onProgress({phase:"html",done:0,total:1});
+    const html=renderSite(model),bytes=Buffer.byteLength(html);
+    info.imageBytes=total;info.bytes=bytes;info.warn=bytes>LIMITS.warn;
+    if(bytes>LIMITS.html)fail('HTMLが512MBを超えました。画像や掲載件数を減らしてください');
+    onProgress({phase:"html",done:1,total:1});
     return html;
   });}
   async write(file,html) {

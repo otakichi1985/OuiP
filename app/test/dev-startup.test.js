@@ -259,3 +259,42 @@ test('実mainの開発データ選択: 隔離起動・IPC・再起動・非破�
   });
   t.diagnostic('5 real Electron startups; owned PIDs: ' + ctx.children.map(child => child.pid).join(', '));
 });
+
+test('実mainの移行の試し用データ: 選択→起動で旧形式を作り、作り直しは印のあるフォルダーだけ', { skip: process.platform !== 'win32', timeout: 40000 }, async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ouip-dev-sample-'));
+  const ctx = {
+    root, children: [], deadline: Date.now() + 30000,
+    paths: { documents: path.join(root, 'Documents'), appData: path.join(root, 'appData'), userData: path.join(root, 'profile') },
+    localAppData: path.join(root, 'localAppData'), home: path.join(root, 'home'), temp: path.join(root, 'temp'),
+  };
+  t.after(() => cleanup(ctx));
+  for (const dir of [...Object.values(ctx.paths), ctx.localAppData, ctx.home, ctx.temp, path.join(root, 'logs')]) await fs.mkdir(dir, { recursive: true });
+  const sample = path.join(ctx.paths.documents, 'OuiP-開発-移行の試し');
+  await t.test('移行の試しを次回の起動に選ぶ', { timeout: 10000 }, async () => {
+    const result = await launch(ctx, ['--dev'], `outcome.selected = await window.ouip.devDataSelection('migration');`);
+    assert.equal(result.outcome.selected, 'migration');
+  });
+  await t.test('起動すると旧形式の試し用データを開き、作り直すと最初の状態に戻る', { timeout: 10000 }, async () => {
+    const result = await launch(ctx, ['--dev'], `
+      await window.ouip.updateWorld({ title: '試しに変えた' });
+      outcome.changed = (await window.ouip.load()).world.title;
+      outcome.reset = await window.ouip.devResetSample();
+      outcome.log = (await window.ouip.log()).map(c => c.message || c.commit?.message);`);
+    assert.equal(result.before.info.current, 'migration');
+    assert.equal(result.before.data.world.title, 'ステータス移行の試し');
+    assert.ok(result.before.data.entries.filter(e => e.stats).every(e => Array.isArray(e.stats.items) && !e.stats.blocks), 'v0.2.2の保存形');
+    assert.ok(result.before.data.entries.every(e => !e.statusSets));
+    assert.equal(result.outcome.changed, '試しに変えた');
+    assert.equal(result.outcome.reset, true);
+    assert.equal(result.after.data.world.title, 'ステータス移行の試し', '作り直すと最初に戻る');
+    assert.equal(result.outcome.log.length, 1, '履歴も作り直す');
+  });
+  await t.test('印のないフォルダーは作り直さない', { timeout: 10000 }, async () => {
+    await fs.rm(path.join(sample, '.migration-sample'));
+    const result = await launch(ctx, ['--dev'], `
+      await window.ouip.updateWorld({ title: '印なし' });
+      try { await window.ouip.devResetSample(); outcome.reset = 'accepted'; } catch (e) { outcome.reset = e.message; }`);
+    assert.match(result.outcome.reset, /印がない/);
+    assert.equal(result.after.data.world.title, '印なし');
+  });
+});

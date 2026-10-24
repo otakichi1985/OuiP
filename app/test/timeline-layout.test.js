@@ -257,10 +257,12 @@ test('昇降順は数値で比較し未定を末尾、手動順は年順切替�
   const html=c.timeline([entries[0],entries[3]]);
   assert.ok(html.indexOf('data-entry="10"') < html.indexOf('data-entry="-12"'));
   assert.match(html,/role="img" aria-label="上から下へ、新しい年から古い年/);
+  assert.match(html,/<path d="M10 20V3M3 13L10 3L17 13"\/>/, '降順は矢印を上向きにする');
   assert.match(html,/data-timeline-sort/);
-  assert.match(html,/aria-label="10年を上へ移動"[^>]*>△/);
-  assert.match(html,/aria-label="-12年を下へ移動"[^>]*>▽/);
-  assert.match(html,/暦名・時代区分の設定/);
+  assert.match(html,/aria-label="10年を上へ移動"[^>]*>↑/);
+  assert.match(html,/aria-label="-12年を下へ移動"[^>]*>↓/);
+  assert.match(html,/年号は変えません/);
+  assert.match(html,/年の呼び名と時代区分（年表の目盛り）/);
   assert.match(html,/年号の改元・年数のリセットは行いません/);
 });
 test('降順からの移動は全出来事の表示順を手動順へ保存', async () => {

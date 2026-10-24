@@ -5,6 +5,11 @@
 .free-node text{fill:var(--node-color)}
 .free-edge text{fill:var(--edge-color)}
 .free-node:focus-visible rect,.free-edge:focus-visible .free-edge-label{stroke:var(--fg);stroke-width:3}
+/* つなぐ操作: 接続元は太枠、選べる相手は破線で見分ける。全体は十字カーソル。 */
+.free-node.is-connect-source rect,.free-node.is-connect-target rect{cursor:crosshair}
+.free-node.is-connect-source rect{stroke-width:5;filter:drop-shadow(0 0 5px var(--node-color))}
+.free-node.is-connect-target rect{stroke-dasharray:7 4}
+.free-connect-line{fill:none;stroke:var(--fg);stroke-width:2;stroke-dasharray:7 5;pointer-events:none}
 .free-edge-label{fill:var(--bg);stroke:var(--edge-color);stroke-width:1}
 .free-edge-hit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke}
 .free-edge-line{fill:none;stroke:var(--edge-color);stroke-width:2;pointer-events:none}
@@ -17,6 +22,9 @@
 .free-object-body{overflow:auto;min-height:0;display:grid;gap:8px}
 .free-object-body>label{display:grid;gap:4px}
 .free-object-body textarea,.free-object-body select,.free-object-body input[type=text]{width:100%}
+.free-advanced{margin-top:2px}
+.free-advanced>summary{cursor:pointer;min-height:32px;display:flex;align-items:center;font-size:13px;color:var(--muted)}
+.free-advanced[open]>summary{margin-bottom:6px}
 .free-coordinates{display:flex;gap:12px;flex-wrap:wrap}
 .free-coordinates label{display:grid;gap:4px;flex:1;min-width:100px}
 .free-coordinates input{width:100%}

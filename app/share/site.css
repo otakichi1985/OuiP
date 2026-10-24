@@ -109,7 +109,7 @@ summary::marker{color:var(--accent)}
 .zoom-tools output{min-width:4em;text-align:center;font-variant-numeric:tabular-nums}
 .diagram-hint{font-size:12px;margin-block:8px}
 .diagram-viewport{width:100%;max-height:70vh;overflow:auto;background:var(--bg);border:1px solid var(--line);overscroll-behavior:contain}
-.diagram-canvas{width:100%;min-width:0}
+.diagram-canvas{width:100%;min-width:0;margin-inline:auto}
 .diagram-canvas>svg{display:block;width:100%;height:auto;max-width:none;user-select:text}
 .diagram-canvas text{user-select:text;cursor:text}
 footer{border-top:1px solid var(--line);padding-block:20px 28px;color:var(--muted);font-size:12px}
@@ -117,33 +117,76 @@ footer{border-top:1px solid var(--line);padding-block:20px 28px;color:var(--mute
 :root{--card-min:170px;--desc-lines:0;--placeholder-size:40px}
 :root[data-card-size="medium"]{--card-min:240px;--desc-lines:3;--placeholder-size:56px}
 :root[data-card-size="small"]{--card-min:170px;--desc-lines:0;--placeholder-size:40px}
-:root[data-card-size="large"]{--card-min:360px;--desc-lines:6;--placeholder-size:84px}
+:root[data-card-size="large"]{--card-min:600px;--desc-lines:3;--placeholder-size:56px}
 .entry-grid.card-grid{grid-template-columns:repeat(auto-fill,minmax(min(var(--card-min),100%),1fr));align-items:stretch}
 .card-grid .entry-card{display:flex;flex-direction:column}
-.card-grid .entry-image{height:auto;aspect-ratio:1/1}
+/* 正方形の枠に画像を置く。縦長の画像は枠からはみ出した上下を切り、横長は上下に余白を残す（アプリのカードと同じ）。 */
+.card-grid .picture-link{display:grid;place-items:center;aspect-ratio:1/1;overflow:hidden;background:var(--bg);border-radius:6px;padding:0;text-decoration:none}
+.card-grid .entry-image{width:100%;height:auto;min-height:100%;object-fit:contain;border-radius:0;background:var(--surface)}
+.card-grid .picture-link>.entry-placeholder{width:100%;height:100%}
 .entry-placeholder{display:grid;place-items:center;color:var(--bg);background:var(--accent);font:600 var(--placeholder-size)/1 var(--display)}
 .entry-placeholder.person{background:hsl(var(--hue,170) 45% 62%)}
 .entry-placeholder .placeholder-icon{width:62%;height:62%;object-fit:contain}
 .card-grid .card-head{flex:1;display:flex;flex-direction:column}
 .card-grid .card-head h3{min-width:0;min-height:36px}
-.card-grid .picture-link{text-decoration:none}
 .card-grid .card-head h3 a{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-grid .reading{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:1.75em}
 .card-grid .description{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--desc-lines);overflow:hidden;white-space:normal;line-height:1.75;height:calc(var(--desc-lines) * 1.75em)}
 :root:not([data-card-size="medium"]):not([data-card-size="large"]) .card-grid .description{display:none}
 .card-grid .unset-slot{min-height:1.6em;margin:6px 0 0}
 .card-grid .unset-slot .unset{margin-top:0}
+/* 小は絵と名前だけ。読みは中・大で出す。 */
+:root:not([data-card-size="medium"]):not([data-card-size="large"]) .card-grid .reading{display:none}
+/* 大は横長: 左に1:√2の縦の絵、中に名前・読み・説明、右にステータスを1行ずつ。入らない分は詳細で見る。 */
+:root[data-card-size="large"] .entry-grid.card-grid{grid-template-columns:minmax(0,1fr)}
+:root[data-card-size="large"] .card-grid .entry-card{display:grid;grid-template-columns:150px minmax(0,1fr);grid-template-areas:"picture head" "detail detail";gap:0 14px;align-items:start}
+:root[data-card-size="large"] .card-grid .entry-card:has(> .card-stats){grid-template-columns:150px minmax(0,1fr) 240px;grid-template-areas:"picture head stats" "detail detail detail"}
+:root[data-card-size="large"] .card-grid .picture-link{grid-area:picture;width:150px;aspect-ratio:1/1.4142}
+:root[data-card-size="large"] .card-grid .card-head{grid-area:head}
+:root[data-card-size="large"] .card-grid .card-stats{grid-area:stats;display:block;padding:12px 12px 12px 0;cursor:default;min-width:0}
+:root[data-card-size="large"] .card-grid .card-head .unset-slot{margin-top:auto}
+:root[data-card-size="large"] .card-grid .entry-detail{grid-area:detail}
+/* 大も画像の幅を枠に合わせ、縦は自然の高さにする。1:√2より縦長の画像は、アプリと同じく枠からはみ出した上下を切る。 */
+:root[data-card-size="large"] .card-grid .entry-image{width:100%;height:auto;aspect-ratio:auto;object-fit:contain}
+/* ステータスは「名前 値」を1行ずつ。値は右へ寄せ、長い名前は…で切る。 */
+.card-stats .cs-lines{list-style:none;margin:0;padding:0;font-size:13px}
+.card-stats .cs-lines li{display:grid;grid-template-columns:fit-content(62%) minmax(0,1fr);column-gap:8px;align-items:baseline;line-height:1.7;border-bottom:1px solid var(--line)}
+.card-stats .cs-line-name{min-width:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-stats .cs-line-value{min-width:0;text-align:right;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-stats .cs-lines .cs-lines-more{display:block;border-bottom:0;color:var(--muted);font-size:12px}
+.card-stats{display:none}
+/* 表示（カードの大きさ）は、アプリと同じく並びの形を描いたアイコンで選ぶ。 */
 .card-size{display:inline-flex;align-items:center;gap:6px;margin-left:auto;color:var(--muted);font-size:13px}
-.card-size button{min-height:32px;padding:2px 10px}
+.card-size-label{padding:0 4px 0 6px;font-size:12px}
+.card-size button{display:inline-flex;align-items:center;justify-content:center;min-height:32px;min-width:38px;padding:2px 8px}
+.card-size button .icon{width:18px;height:18px}
 .card-size button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 /* 詳細はカードの中で開かず、ダイアログで全文を出す（スクリプトのない閲覧ではカードの中で開く）。 */
 .entry-dialog{width:min(760px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);overflow:auto}
 .entry-dialog::backdrop{background:rgba(5,7,12,.75)}
 .entry-dialog-bar{position:sticky;top:0;z-index:1;display:flex;justify-content:flex-end;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--line)}
 .entry-dialog-image{display:block;max-width:calc(100% - 32px);max-height:60vh;margin:16px auto 0;object-fit:contain;border-radius:6px}
+.entry-dialog-image-caption{text-align:center;color:var(--muted);font-size:13px;margin:6px 16px 0}
 .entry-dialog .card-head{padding:16px 16px 8px}
 .entry-dialog .entry-body{padding:0 16px 16px}
-/* 上の固定のナビ（世界の名前・分類のタブ・検索・カードの大きさ）。分類は1つずつ見せ、スクリプトのない閲覧と印刷では全部を並べる。 */
+/* 複数画像: スクリプトなしでは格子、スクリプトありでは詳細ダイアログでページめくり。 */
+.entry-gallery-block{margin:12px 0 16px}
+.entry-gallery-block h4{font-size:13px;color:var(--muted);margin:0 0 8px;font-weight:600}
+.entry-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(140px,100%),1fr));gap:8px}
+.entry-gallery figure{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px}
+.gallery-image{display:block;width:100%;height:auto;max-height:220px;object-fit:contain;border-radius:4px}
+.entry-gallery figcaption{font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.entry-gallery-viewer{margin:12px 0 16px}
+.entry-gallery-stage{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;align-items:center}
+.entry-gallery-stage .arrow{border:1px solid var(--control-line);border-radius:999px;min-height:44px;background:var(--raise);color:var(--fg);font-size:20px;cursor:pointer}
+.entry-gallery-frame{display:grid;place-items:center;min-height:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.entry-gallery-image{display:block;width:100%;max-height:58vh;object-fit:contain}
+.entry-gallery-caption{text-align:center;color:var(--muted);font-size:13px;margin:6px 0 0;overflow-wrap:anywhere}
+.entry-gallery-counter{text-align:center;color:var(--muted);font-size:12px;margin-top:2px}
+.entry-gallery-toolbar{display:flex;justify-content:center;gap:8px;margin-top:8px}
+.entry-gallery-toolbar button{min-height:32px;padding:2px 12px}
+.entry-gallery[hidden]{display:none}
+/* 上の固定のナビ（世界の名前・分類のタブ・検索・表示）。分類は1つずつ見せ、スクリプトのない閲覧と印刷では全部を並べる。 */
 .site-nav{position:sticky;top:0;z-index:5;background:var(--bg);align-items:center}
 .nav-title{font-family:var(--display);font-weight:600;margin-right:8px;max-width:22em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nav-author{color:var(--muted);font-family:var(--body);font-weight:400;font-size:13px}
@@ -152,7 +195,7 @@ footer{border-top:1px solid var(--line);padding-block:20px 28px;color:var(--mute
 .nav-search{display:flex;align-items:center;gap:6px;margin-left:auto;color:var(--muted);font-size:12px}
 .nav-search input{width:220px;min-height:36px;padding-block:4px}
 .site-nav .card-size{margin-left:8px}
-/* ナビは1行に収める: 幅を広く取り、名前は省略で縮め、タブ・検索・大きさを詰める。概要タブでは大きさの切替を出さない。 */
+/* ナビは1行に収める: 幅を広く取り、名前は省略で縮め、タブ・検索・表示を詰める。概要タブでは表示の切替を出さない。 */
 .site-nav{width:min(1440px,100% - 48px);flex-wrap:nowrap;gap:0 4px}
 .site-nav a{padding-inline:10px;white-space:nowrap;flex-shrink:0}
 .nav-title{flex:0 1 auto;min-width:4em}
@@ -180,9 +223,9 @@ footer{border-top:1px solid var(--line);padding-block:20px 28px;color:var(--mute
 .range-inputs input{width:5.5em;min-height:36px;padding:4px 8px;color:var(--fg);background:var(--bg);border:1px solid var(--control-line);border-radius:6px}
 @media(max-width:999px){.site-nav{flex-wrap:wrap}.world-header,.catalog-body{grid-template-columns:minmax(0,1fr)}.catalog-body>.filter-tools{position:static;max-height:none}.nav-search{margin-left:0;flex-basis:100%}.nav-search input{flex:1;width:auto}}
 @media print{.tabbed [data-panel][hidden]{display:block!important}.catalog-body{display:block}}
-@media(max-width:1000px){.entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.timeline .entry-grid{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:600px){.world-header,main,.site-nav,footer{width:calc(100% - 24px)}.world-header{flex-direction:column;align-items:stretch;gap:20px;padding-block:24px 20px}.world-heading{padding-left:16px}.world-image{width:100%;max-height:280px}.site-nav{gap:0}.site-nav a{padding-inline:10px}.world-index{gap:4px 16px}.entry-grid,.organization-list{grid-template-columns:minmax(0,1fr)}.catalog-section{padding-block:20px}.search-row{flex-wrap:wrap}.search-row label{flex-basis:100%;max-width:none}.year-group{grid-template-columns:minmax(0,1fr);gap:8px}.section-heading{gap:12px}.section-heading h2{font-size:23px}.diagram{padding:12px}.entry-image{height:240px}}
-@media print{[data-tools],.site-nav,.world-index,.back-link,.skip-link{display:none!important}.entry-grid,.organization-list,.year-group{display:block}.entry-card,.organization-card,.diagram{break-inside:avoid;margin-bottom:16px}.diagram-viewport{max-height:none;overflow:visible}details::details-content{content-visibility:visible}.entry-card[hidden],.year-group[hidden],.era-chunk[hidden]{display:block!important}}
+@media(max-width:1000px){.entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.timeline .entry-grid{grid-template-columns:minmax(0,1fr)}:root[data-card-size="large"] .card-grid .entry-card,:root[data-card-size="large"] .card-grid .entry-card:has(> .card-stats){grid-template-columns:150px minmax(0,1fr);grid-template-areas:"picture head" "picture stats" "detail detail"}}
+@media(max-width:600px){.world-header,main,.site-nav,footer{width:calc(100% - 24px)}.world-header{flex-direction:column;align-items:stretch;gap:20px;padding-block:24px 20px}.world-heading{padding-left:16px}.world-image{width:100%;max-height:280px}.site-nav{gap:0}.site-nav a{padding-inline:10px}.world-index{gap:4px 16px}.entry-grid,.organization-list{grid-template-columns:minmax(0,1fr)}.catalog-section{padding-block:20px}.search-row{flex-wrap:wrap}.search-row label{flex-basis:100%;max-width:none}.year-group{grid-template-columns:minmax(0,1fr);gap:8px}.section-heading{gap:12px}.section-heading h2{font-size:23px}.diagram{padding:12px}.entry-image{height:240px}:root[data-card-size="large"] .card-grid .picture-link{width:150px;max-width:none;aspect-ratio:1/1.4142;margin-inline:0}}
+@media print{[data-tools],.site-nav,.world-index,.back-link,.skip-link{display:none!important}.entry-grid,.organization-list,.year-group{display:block}.entry-card,.organization-card,.diagram{break-inside:avoid;margin-bottom:16px}.diagram-viewport{max-height:none;overflow:visible}.diagram-canvas{width:100%!important}details::details-content{content-visibility:visible}.entry-card[hidden],.year-group[hidden],.era-chunk[hidden]{display:block!important}}
 
 
 /* 目印のアイコン（Lucide）。分類名の前に添える。 */

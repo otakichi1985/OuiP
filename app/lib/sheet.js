@@ -4,6 +4,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const CharacterStats = require('../renderer/character-stats');
+const ImageSet = require('../renderer/image-set');
+const StatusModel = require('../renderer/status-model');
 const CharacterUnits = require('../renderer/character-units');
 
 const SIZES = Object.freeze({
@@ -21,12 +23,13 @@ const styles = fs.readFileSync(path.join(__dirname, 'sheet.css'), 'utf8') + '\n'
 
 function defaultOptions(entry, world = {}) {
   return {
-    size: 'portrait',
+    size: 'square',
     image: !!entry.image,
+    imagePath: entry.image || '',
     desc: nonblank(entry.desc),
     // カードで非表示にしているタグは、既定では載せない。
     tags: Object.keys(entry.tags || {}).filter(key => (entry.tagPositions?.[key] ?? 'below') !== 'hidden'),
-    stats: list(entry.stats?.items).length > 0,
+    stats: CharacterStats.itemsOf(StatusModel.resolve(entry, world)).length > 0,
     sections: list(entry.sections).map((section, index) => index).filter(index => nonblank(entry.sections[index].title) || nonblank(entry.sections[index].text)),
     fields: list(entry.fields).length > 0,
     author: String(world.author || ''),
@@ -35,7 +38,7 @@ function defaultOptions(entry, world = {}) {
 }
 function normalizeOptions(entry, input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('選んだ内容が不正です');
-  const size = input.size ?? 'portrait';
+  const size = input.size ?? 'square';
   if (!Object.hasOwn(SIZES, size)) fail('大きさが不正です');
   const tagKeys = new Set(Object.keys(entry.tags || {}));
   const tags = list(input.tags).map(String);
@@ -44,7 +47,9 @@ function normalizeOptions(entry, input = {}) {
   if (sections.some(index => !Number.isInteger(index) || index < 0 || index >= list(entry.sections).length)) fail('文章の指定が不正です');
   const author = String(input.author ?? '').trim();
   if (author.length > 200) fail('作者名は200文字以内にしてください');
-  return { size, image: !!input.image && !!entry.image, desc: !!input.desc, tags: [...new Set(tags)], stats: !!input.stats, sections: [...new Set(sections)].sort((a, b) => a - b), fields: !!input.fields, author, credit: input.credit !== false };
+  const paths = ImageSet.paths(entry);
+  const imagePath = paths.includes(input.imagePath) ? input.imagePath : (entry.image || '');
+  return { size, image: !!input.image && !!imagePath, imagePath, desc: !!input.desc, tags: [...new Set(tags)], stats: !!input.stats, sections: [...new Set(sections)].sort((a, b) => a - b), fields: !!input.fields, author, credit: input.credit !== false };
 }
 // 保存データから、シートに載せる値だけを取り出す。
 function sheetModel(state, entryId, input) {
@@ -56,10 +61,10 @@ function sheetModel(state, entryId, input) {
     size: o.size, ...SIZES[o.size],
     name: String(entry.name || '名称未定'), reading: String(entry.reading || ''),
     desc: o.desc ? String(entry.desc || '') : '',
-    image: o.image ? entry.image : null, icon: entry.icon || null,
+    image: o.image ? o.imagePath : null, icon: (entry.icon || entry.image) || null,
     hue: Number.isFinite(entry.hue) ? entry.hue : null,
     tags: o.tags.map(key => [key, list(entry.tags[key]).map(value => CharacterUnits.format(value, key, entry.tagUnits?.[key]))]),
-    stats: o.stats ? entry.stats : null,
+    stats: o.stats ? StatusModel.resolve(entry, state.world) : null,
     sections: o.sections.map(index => entry.sections[index]).filter(s => nonblank(s.title) || nonblank(s.text)).map(s => ({ title: String(s.title || ''), text: String(s.text || '') })),
     fields,
     world: String(state.world?.title || ''),
@@ -97,7 +102,7 @@ function renderSheetHTML(model) {
   const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${styles}</style></head>
 <body class="size-${model.size}" style="--w:${model.width}px;--h:${model.height}px">
-<template id="hero"><div class="hero">${picture}<div class="hero-text">${model.icon && model.image ? `<img class="hero-icon" src="${esc(model.icon)}" alt="">` : ''}<h1>${esc(model.name)}</h1>${model.reading ? `<p class="reading">${esc(model.reading)}</p>` : ''}</div></div></template>
+<template id="hero"><div class="hero">${picture}<div class="hero-text"><h1>${esc(model.name)}</h1>${model.reading ? `<p class="reading">${esc(model.reading)}</p>` : ''}</div></div></template>
 <template id="name"><div class="name-strip"><h1>${esc(model.name)}</h1></div></template>
 <template id="foot"><footer class="foot"><span class="sign">${sign}</span>${model.hasNumbers ? `<span class="hint">空欄の番号（${esc(model.fields.find(f => f.number).number)}など）で案を送ってください</span>` : ''}<span class="meta">${model.credit ? '<span>OuiPで作成</span>' : ''}<span class="pageno"></span></span></footer></template>
 <div id="flow">${blocks(model)}</div><div id="pages"></div></body></html>`;
@@ -131,6 +136,9 @@ const PAGINATE = `(() => {
       continue;
     }
     block.remove();
+    // 段落・項目・改行の単位で区切る。収まらないときは、まず塊ごと次のページへ送る（文字の途中で切らない）。
+    if (body.children.length) { body = newPage(); i--; continue; }
+    // 1つの塊だけでページに入りきらないときだけ、文字の途中で分ける（長い段落の最終手段）。
     if (block.hasAttribute('data-split')) {
       const full = block.textContent; let lo = 0, hi = full.length;
       body.append(block);
@@ -142,9 +150,29 @@ const PAGINATE = `(() => {
       }
       block.remove(); block.textContent = full;
     }
+    // 見出しの直後に収まらない塊が来たとき、見出しだけを前のページに残さない。
+    if (body.children.length === 1 && body.firstElementChild?.hasAttribute('data-keep')) {
+      body.append(block); block.dataset.overflow = '';
+      if (i + 1 < items.length) body = newPage();
+      continue;
+    }
     if (body.children.length) { body = newPage(); i--; continue; }
     // 段落でない1つの塊（ステータスなど）がページより大きいときは、そのまま置いて知らせる。
     body.append(block); block.dataset.overflow = '';
+  }
+  // 見出しだけがページに残った場合は、次のページの先頭へ移して空白ページを作らない。
+  for (let i = 0; i < made.length; i++) {
+    const body = made[i].querySelector('.page-body');
+    if (body.children.length === 1 && body.firstElementChild?.hasAttribute('data-keep') && i + 1 < made.length) {
+      const heading = body.firstElementChild;
+      heading.remove();
+      made[i + 1].querySelector('.page-body').prepend(heading);
+    }
+  }
+  // 中身のないページ（名前帯と脚注だけ）は取り除く。
+  for (let i = made.length - 1; i >= 0; i--) {
+    const body = made[i].querySelector('.page-body');
+    if (!body.children.length) { made[i].remove(); made.splice(i, 1); }
   }
   made.forEach((page, index) => { page.querySelector('.pageno').textContent = made.length > 1 ? (index + 1) + '/' + made.length : ''; });
   flow.remove();

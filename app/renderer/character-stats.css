@@ -10,10 +10,18 @@
 .cs-readout{text-align:right;min-height:1.6em;font-variant-numeric:tabular-nums}
 .cs-unset{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .cs-range{grid-column:1/-1;font-size:11px;color:var(--muted,#a0a7b6)}
-.cs-track,.cs-dots{grid-column:1/-1;display:flex;align-items:center;min-height:10px}
-.cs-track{background:var(--raise,#222733);height:7px;border-radius:2px;overflow:hidden}
+.cs-track,.cs-dots{grid-column:1/-1;display:flex;align-items:center;min-height:10px;max-width:440px;margin-inline:auto}
+.cs-track{position:relative;display:block;height:12px;border-radius:6px;background:var(--raise,#222733);overflow:hidden}
 .cs-track i{display:block;height:100%;background:var(--accent,#6cc4b4)}
-.cs-empty{background:none;border:1px dashed var(--line,#2e3441)}
+/* 案A: 名前―棒―値の1行。大まかは選んだ段階まで塗った区切り棒、未設定は空の棒。 */
+.cs-value.cs-gauge{grid-template-columns:minmax(4em,7em) minmax(0,1fr) auto;gap:4px 10px;align-items:center}
+.cs-gauge .cs-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-gauge .cs-readout{text-align:right}
+.cs-gauge .cs-track{grid-column:2;margin-inline:0;max-width:none}
+.cs-gauge .cs-seg i{border-radius:0}
+.cs-gauge .cs-seg b{position:absolute;top:0;bottom:0;width:1px;background:var(--surface,#1a1e27)}
+.cs-unset-val{color:var(--muted,#a0a7b6);font-size:12px}
+.cs-empty{background:var(--surface,#1a1e27);box-shadow:inset 0 0 0 1px var(--line,#2e3441)}
 .cs-dots{gap:7px}
 .cs-dots i{display:block;width:8px;height:8px;border:1px solid var(--muted,#a0a7b6);border-radius:50%}
 .cs-rough .cs-dots i{border-radius:0}
@@ -24,26 +32,44 @@
 .cs-radar-point{fill:var(--accent,#6cc4b4)}
 .cs-rough-point{fill:var(--surface,#1a1e27);stroke:var(--accent,#6cc4b4);stroke-width:2}
 .cs-radar text{fill:var(--fg,#e4e6ec);font-size:10px}
-.cs-editor{padding-block:12px}
+/* 編集の並びは画面幅ではなく、置かれた作業領域の幅で変える。 */
+.cs-editor{padding-block:12px;container-type:inline-size}
 .cs-editor label{display:flex;flex-direction:column;gap:3px;min-width:0}
 .cs-editor input,.cs-editor select,.cs-editor textarea{width:100%;min-width:0;max-width:100%;font:inherit;color:var(--fg,#e4e6ec);background:var(--raise,#222733);border:1px solid var(--control-line,#707c90);border-radius:6px;padding:5px 8px;min-height:40px}
 .cs-editor textarea{resize:vertical}
-.cs-editor button{min-height:44px;border:1px solid var(--control-line,#707c90);background:var(--raise,#222733);color:var(--fg,#e4e6ec);border-radius:6px;padding:4px 10px;font:inherit;white-space:nowrap;cursor:pointer}
-.cs-editor button:disabled{opacity:.45;cursor:default}
+/* ボタンの既定は詳細度を上げない（:where）。つまみ・段階ボタンなど部品側の指定が後から勝つ。 */
+.cs-editor :where(button){min-height:44px;border:1px solid var(--control-line,#707c90);background:var(--raise,#222733);color:var(--fg,#e4e6ec);border-radius:6px;padding:4px 10px;font:inherit;white-space:nowrap;cursor:pointer}
+.cs-editor :where(button:disabled){opacity:.45;cursor:default}
 .cs-editor :focus-visible{outline:2px solid var(--accent,#6cc4b4);outline-offset:2px}
 .cs-display-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.cs-editor-row{border:1px solid var(--line,#2e3441);border-radius:6px;padding:8px;margin:10px 0;min-width:0}
+.cs-editor-row{border:1px solid var(--line,#2e3441);border-radius:6px;padding:6px 8px;margin:6px 0;min-width:0}
 .cs-editor-row legend{padding:0 5px;color:var(--muted,#a0a7b6);font-size:12px}
-.cs-edit-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.5fr) auto;gap:8px;align-items:end}
+.cs-edit-head{display:grid;grid-template-columns:minmax(8em,1fr) minmax(90px,.4fr) minmax(90px,.4fr) auto;gap:8px;align-items:end}
+.cs-more{margin-top:4px}
+.cs-more>summary{display:flex;align-items:center;min-height:24px;color:var(--muted,#a0a7b6);font-size:12px;cursor:pointer}
+.cs-more[open]>summary{margin-bottom:4px}
+.cs-preview-more{margin-top:10px}
+.cs-preview-more>summary{display:flex;align-items:center;min-height:28px;color:var(--muted,#a0a7b6);font-size:12px;cursor:pointer}
 .cs-row-actions{display:flex;gap:4px;flex-wrap:wrap}
+.cs-row-actions [data-cs-action="up"],.cs-row-actions [data-cs-action="down"]{min-width:44px;padding:4px 6px;font-size:15px;line-height:1}
 .cs-number-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
 .cs-number-fields .cs-note{grid-column:1/-1}
-.cs-rough-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}
+.cs-rough-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:8px}
 .cs-rough-fields .cs-note{grid-column:1/-1}
+.cs-step-count{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0}
+.cs-step-btn{min-height:30px;padding:2px 8px;font-size:12px;border:1px solid var(--control-line,#707c90);background:var(--raise,#222733);color:var(--muted,#a0a7b6);border-radius:5px;cursor:pointer}
+.cs-step-btn[aria-pressed="true"]{background:var(--accent-soft,#12332d);color:var(--accent,#6cc4b4);border-color:var(--accent,#6cc4b4)}
+.cs-level-inputs{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0}
+.cs-level-input{flex:1 1 90px;min-width:80px}
+.cs-preview{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:12px;margin:10px 0;padding:10px 12px;border:1px solid var(--line,#2e3441);border-radius:6px;background:var(--surface,#1a1e27)}
+.cs-preview-item{min-width:0}
+.cs-preview-label{color:var(--muted,#a0a7b6);font-size:12px;font-weight:700;margin:0 0 6px}
+.cs-preview .character-stats{margin:0}
+.cs-preview .cs-card{border-top:0;padding-top:0;margin-top:0}
 .cs-add{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
 .cs-add label{flex:1 1 160px}
 .cs-add [data-cs-action="add"]{border-color:var(--accent,#6cc4b4);color:var(--accent,#6cc4b4)}
 .cs-error{color:var(--ng,#f08a80);overflow-wrap:anywhere;margin:6px 0}
 .character-stats [hidden]{display:none!important}
-@media(max-width:800px){.cs-edit-head{grid-template-columns:minmax(0,1fr) minmax(100px,.6fr)}.cs-row-actions{grid-column:1/-1}.cs-number-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:420px){.cs-rough-fields,.cs-edit-head,.cs-display-options{grid-template-columns:minmax(0,1fr)}}
+@container(max-width:640px){.cs-edit-head{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.cs-edit-head>label:first-child,.cs-row-actions{grid-column:1/-1}.cs-number-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(max-width:300px){.cs-rough-fields,.cs-edit-head,.cs-display-options,.cs-number-fields{grid-template-columns:minmax(0,1fr)}}

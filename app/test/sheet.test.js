@@ -45,6 +45,15 @@ test('選んだものだけを載せ、世界の他の情報や選ばなかっ�
   assert.match(html, /default-src 'none'; img-src data:/, '外の読み込みを許さない');
 });
 
+test('設定シートに使う絵を複数画像から選べる', () => {
+  const multi = { ...entry, image: 'assets/a.png', images: [{ image: 'assets/a.png', caption: 'A' }, { image: 'assets/b.png', caption: 'B' }] };
+  const local = { ...state, entries: [multi] };
+  const m = Sheet.sheetModel(local, 'c-aa', { ...Sheet.defaultOptions(multi, state.world), image: true, imagePath: 'assets/b.png' });
+  assert.equal(m.image, 'assets/b.png');
+  const fallback = Sheet.sheetModel(local, 'c-aa', { ...Sheet.defaultOptions(multi, state.world), image: true, imagePath: 'assets/none.png' });
+  assert.equal(fallback.image, 'assets/a.png', '知らない画像はサムネイルへ戻す');
+});
+
 test('不正な指定は拒否し、キャラ以外は書き出さない', () => {
   assert.throws(() => Sheet.sheetModel(state, 'c-aa', { size: 'poster' }), /大きさ/);
   assert.throws(() => Sheet.sheetModel(state, 'c-aa', { tags: ['無い'] }), /タグ/);

@@ -41,7 +41,7 @@ async function screenshotView(action, name) {
   if (action === 'save') {
     assert(!window.__ouipCaptureSession, 'capture already active');
     window.__ouipCaptureSession = {
-      page, bookTab, kind, q, cur, statsEditor, penMode, imageEdit, imageDrag, freeGraphConnect,
+      page, bookTab, kind, q, cur, statsEditors, penMode, imageEdit, imageDrag, freeGraphConnect,
       diagrams: {...selectedDiagram},
       queries: structuredClone(tabQueries), filters: structuredClone(sel),
       facetStates: new Map(viewState.opens),
@@ -56,7 +56,7 @@ async function screenshotView(action, name) {
     if (!saved) return;
     $('veil').hidden = true; imageEdit = null; imageDrag = null;
     // Restore original DOM nodes, retaining draft values/listeners and the final editor shot.
-    ({ page, bookTab, kind, q, cur, statsEditor, penMode, bsel, linking, lsel } = saved);
+    ({ page, bookTab, kind, q, cur, statsEditors, penMode, bsel, linking, lsel } = saved);
     for (const [target, source] of [[tabQueries, saved.queries], [sel, saved.filters]]) {
       for (const key of Object.keys(target)) delete target[key];
       Object.assign(target, source);
@@ -84,7 +84,7 @@ async function screenshotView(action, name) {
     // Clear test-owned transient UI, never stored entries/graphs/board data.
     $('veil').hidden = true; $('viewer').replaceChildren();
     $('viewer').classList.remove('image-editor'); $('viewer').scrollTop = 0;
-    imageEdit = null; imageDrag = null; statsEditor = null; cur = null;
+    imageEdit = null; imageDrag = null; statsEditors = null; cur = null;
     $('drawer').hidden = true; $('drawer').replaceChildren();
     $('drawer').classList.remove('editor-expanded'); $('drawer').scrollTop = 0;
     BoardShareUI.close(); toggleBoard(false);
@@ -135,7 +135,7 @@ async function screenshotView(action, name) {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await new Promise(resolve => setTimeout(resolve, 220)); // existing 180ms entrance animation
   }
-  assert($('drawer').hidden && cur === null && statsEditor === null, 'drawer/editor remains open');
+  assert($('drawer').hidden && cur === null && statsEditors === null, 'drawer/editor remains open');
   assert($('wspanel').hidden && !BoardShareUI.state.readOnly && !BoardShareUI.state.busy && !bsel && !linking && !lsel, 'board state remains active');
   assert(!document.querySelector('#viewer #graph-arrange-form'), 'stale alignment modal');
   const image = name === 'image', modal = image || name === 'graph-node';
@@ -387,7 +387,8 @@ async function freeGraphScenario() {
   }
   check(JSON.stringify(await graph(legacy.id)) === original, 'editing clone does not mutate legacy source');
   const cloneSnapshot=JSON.stringify(await graph(cloneId));
-  click('[data-new-diagram="graphs"]'); $('free-diagram-name').value = '自由ノード試験図'; await submit('free-diagram-form');
+  // 新しく作る図は自由配置の形式になったので、今までの「ノードで作る図」は保存の窓口から作って開く。
+  { const created = await ouip.saveDiagram('graphs', { name: '自由ノード試験図', format: 'free', nodes: [], edges: [] }); await refresh(); const sel = $('diagram-select'); sel.value = created.id; sel.dispatchEvent(new Event('change', { bubbles: true })); }
   const id = $('diagram-select').value;
   check((await graph(id)).format === 'free' && !(await graph(id)).nodes.length, 'new diagram starts empty, not from characters');
   check((await graph(id)).grid.visible && (await graph(id)).grid.snap && (await graph(id)).grid.size === 30, 'grid defaults visible/snap/30');
@@ -440,7 +441,10 @@ async function freeGraphScenario() {
     await refresh(); document.querySelector('.canvas-view details.menu').open = false;
   }
   for (const [text,color,writing,x,y] of [['独立ノード甲','#c48060','horizontal',180,180],['独立ノード乙','#6080c4','vertical',660,300]]) {
-    click('[data-free-add-node]'); appearance(text,color,writing); $('free-x').value=x; $('free-y').value=y; await submit('free-node-form');
+    click('[data-free-add-node]');
+    const advanced=$('free-x').closest('details.free-advanced');
+    check(advanced && !advanced.open, 'node position inputs are tucked into a closed advanced section');
+    appearance(text,color,writing); $('free-x').value=x; $('free-y').value=y; await submit('free-node-form');
   }
   let saved = await graph(id); const [a,b] = saved.nodes.map(n => n.id);
   check(saved.nodes.length === 2 && saved.nodes.every(n => !S.entries.some(e => e.id === n.id)), 'two manually added nodes independent of character IDs');
@@ -488,8 +492,36 @@ async function freeGraphScenario() {
   const retryEdge=(await graph(id)).edges.find(e=>e.text==='失敗後も残る入力');
   check(retryEdge&&(await graph(id)).edges.length===2,'retry saves exactly one edge after double submit');
   click(`[data-free-edit-edge="${retryEdge.id}"]`);click('[data-free-delete-edge]');click('[data-free-delete-edge]');await until(()=>$('veil').hidden,'delete retry edge');
-  click('[data-free-connect]');activate(a);activate(b);
+  // つなぐ操作: 接続元と選べる相手を見分けられ、接続元を選び直すと取消になる。
+  click('[data-free-connect]');activate(a);
+  check(document.querySelector(nodeSelector(a)).classList.contains('is-connect-source') && document.querySelector(nodeSelector(b)).classList.contains('is-connect-target') && document.querySelector(nodeSelector(a)).getAttribute('aria-pressed')==='true','connect mode marks the source node and candidate targets');
+  activate(a);
+  check(freeGraphConnect && !freeGraphConnect.from && !document.querySelector('.is-connect-source'),'selecting the source again clears the source while staying in connect mode');
+  activate(a);activate(b);
   check($('free-edge-form')&&$('free-a').value===a&&$('free-b').value===b,'two selected nodes prefill directed edge endpoints');click('#free-edge-form [data-vclose]');
+  // ノードから相手へドラッグしても接続できる。合成pointerにOSポインタが無いのでcaptureだけ模擬する。
+  {
+    click('[data-free-connect]');
+    const svg=document.querySelector('svg.free-graph'); svg.scrollIntoView({block:'center'});
+    const capture=svg.setPointerCapture; svg.setPointerCapture=()=>{};
+    try {
+      const start=document.querySelector(nodeSelector(a)+' rect').getBoundingClientRect();
+      const p={clientX:start.left+start.width/2,clientY:start.top+start.height/2,pointerId:78,bubbles:true,button:0};
+      document.querySelector(nodeSelector(a)+' rect').dispatchEvent(new PointerEvent('pointerdown',p));
+      const end=document.querySelector(nodeSelector(b)+' rect').getBoundingClientRect();
+      const q={...p,clientX:end.left+end.width/2,clientY:end.top+end.height/2};
+      svg.dispatchEvent(new PointerEvent('pointermove',q));
+      check(document.querySelector('.free-connect-line'),'dragging in connect mode draws a preview line');
+      svg.dispatchEvent(new PointerEvent('pointerup',q));
+      check(!document.querySelector('.free-connect-line'),'releasing the connect drag clears the preview line');
+      check($('free-edge-form')&&$('free-a').value===a&&$('free-b').value===b,'dragging node to node prefills the edge');
+      click('#free-edge-form [data-vclose]');
+    } finally {
+      if(freeGraphDrag?.pointer===78) svg.dispatchEvent(new PointerEvent('pointercancel',{pointerId:78,bubbles:true}));
+      svg.setPointerCapture=capture;
+    }
+  }
+  check(!freeGraphConnect,'closing the prefilled edge form leaves connect mode');
   for (const [selector,value] of [['[data-graph-grid-size]','50'],['[data-graph-grid]',false],['[data-graph-snap]',false]]) {
     const control = document.querySelector(selector); check(control, selector);
     if (typeof value === 'boolean') control.checked=value; else control.value=value;
@@ -615,12 +647,12 @@ async function scenario() {
   const pickedWorld=(await ouip.load()).world.image;
   check(pickedWorld && pickedWorld!==state.world.image,'overview picker applies adjusted image');
   click('[data-adjust-world]'); await wait();
-  check($('image-ratio').value==='original' && Math.abs($('image-canvas').width/$('image-canvas').height-.75)<.01,'overview reopens chosen ratio instead of header default');
+  check($('image-ratio').value==='0.75' && imageEdit.source && imageEdit.source!==pickedWorld && Math.abs($('image-canvas').width/$('image-canvas').height-.75)<.01,'overview reopens chosen ratio from the original instead of header default');
   click('[data-vclose]'); await wait();
   {
     // 概要: 件数と未定を1画面目に出す。広い画面は右の列に固定し未定は列の中でスクロール、狭い画面は最初の5件と「すべて表示」。
     const realEntries = S.entries;
-    S.entries = [...realEntries, ...Array.from({length: 14}, (_, i) => ({id:'c-open'+i, kind:'人物', name:'未定確認'+i, fields:[{key:'本名', open:true, no:900+i}]}))];
+    S.entries = [...realEntries, ...Array.from({length: 24}, (_, i) => ({id:'c-open'+i, kind:'人物', name:'未定確認'+i, fields:[{key:'本名', open:true, no:900+i}]}))];
     renderWorld(); window.scrollTo(0, 0);
     const counts = $('counts').getBoundingClientRect(), opens = $('opens').getBoundingClientRect(), firstOpen = $('opens').querySelector('li').getBoundingClientRect();
     check(counts.top >= 0 && counts.bottom <= innerHeight && firstOpen.bottom <= innerHeight, 'overview shows counts and open items on the first screen');
@@ -670,7 +702,27 @@ async function scenario() {
     const realEntries = S.entries; S.entries = [...realEntries, ...filler]; renderBook();
     const heights = size => { click(`[data-card-size="${size}"]`); return [...new Set([...document.querySelectorAll('#bookbody .en')].map(el => Math.round(el.getBoundingClientRect().height)))]; };
     for (const size of ['small', 'large', 'medium']) { const h = heights(size); check(h.length === 1, `cards share one height (${size}): ${h}`); }
+    // 大は横長: 絵（1:√2の縦）が左、名前が右。1枚が画面の半分より低い。ステータスは1行ずつ。
+    { click('[data-card-size="large"]'); const card = [...document.querySelectorAll('#bookbody .en')].find(el => el.querySelector('.cs-lines')) || document.querySelector('#bookbody .en');
+      const face = card.querySelector('.face').getBoundingClientRect(), name = card.querySelector('.character-name').getBoundingClientRect(), box = card.getBoundingClientRect();
+      check(face.right <= name.left + 1 && Math.abs(face.height / face.width - Math.SQRT2) < .02 && box.height < innerHeight / 2, `large card is horizontal: face ${Math.round(face.width)}x${Math.round(face.height)}, card ${Math.round(box.width)}x${Math.round(box.height)}`);
+      const lines = card.querySelector('.cs-lines');
+      check(!lines || lines.getBoundingClientRect().bottom <= box.bottom + 1, 'status lines stay inside the large card');
+      click('[data-card-size="medium"]'); }
     check(document.querySelector('[data-card-size="medium"]').getAttribute('aria-pressed') === 'true' && document.querySelector('#bookbody .entries').dataset.cardSize === 'medium', 'card size choice shown');
+    // 表示（カードの大きさ）は種類のタブごとに覚え、カードのないタブでは出さない。
+    click('[data-kind="用語"]');
+    check(!$('card-size').hidden && document.querySelector('[data-card-size="medium"]'), 'term tab shows display options');
+    click('[data-card-size="large"]');
+    check(localStorage.getItem('ouip.cardSize.用語') === 'large' && document.querySelector('#bookbody .entries').dataset.cardSize === 'large', 'term tab remembers its own card size');
+    click('[data-kind="人物"]');
+    check(document.querySelector('#bookbody .entries').dataset.cardSize === 'medium', 'character tab keeps its own card size');
+    click('[data-book-tab="organizations"]');
+    check($('card-size').hidden, 'organization tab hides display options');
+    click('[data-book-tab="statuses"]');
+    check($('card-size').hidden, 'status tab hides display options');
+    click('[data-kind="人物"]');
+    check(!$('card-size').hidden && document.querySelector('#bookbody .entries').dataset.cardSize === 'medium', 'character tab shows display options again');
     window.scrollTo(0, 900); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     const topBottom = document.querySelector('.top').getBoundingClientRect().bottom, tabs = $('booktabs').getBoundingClientRect(), search = $('q').getBoundingClientRect(), add = $('addentry').getBoundingClientRect();
     check(scrollY > 300 && tabs.top >= topBottom - 1 && tabs.bottom < innerHeight && search.top > 0 && search.bottom < innerHeight && add.top > 0, 'toolbar stays visible while the list scrolls');
@@ -680,7 +732,7 @@ async function scenario() {
   click('#addentry');
   check([...document.querySelectorAll('#booktabs [role="tab"]')].slice(0,3).map(b => b.textContent.replace(/\d/g,'')).join('/') === 'キャラ/組織/関係図', 'character/organization/graph navigation grouped');
   check(document.querySelector('[data-addtag]').textContent.includes('タグ追加'), 'tag action label');
-  check([...document.querySelectorAll("[data-tk]")].map((i) => i.value).join("/") === "年齢/身長/性別/所属/身分", "default tags");
+  check([...document.querySelectorAll("[data-tk]")].map((i) => i.value).join("/") === "年齢/身長/性別/所属/身分/誕生日", "default tags");
   click('[data-tagpreset="体重"]');
   check(document.querySelector('[data-tagpreset="体重"]').disabled, "preset disabled");
   const gender = [...document.querySelectorAll("[data-trow]")].find((r) => r.querySelector("[data-tk]").value === "性別");
@@ -693,16 +745,16 @@ async function scenario() {
   document.querySelector('[data-section-text]').value = "一行目\n二行目";
   $('f-name').value = "新しい人物";
   $('f-reading').value = 'あたらしいじんぶつ';
-  click('[data-image-control="image"] [data-pick-character="image"]'); await wait();
-  const originalCharacterImage = $('f-image').value;
-  click('[data-image-control="image"] [data-adjust-image]'); await wait();
+  click('[data-image-add]'); await wait();
+  const originalCharacterImage = JSON.parse($('f-images').value)[0].image;
+  click('[data-image-adjust]'); await wait();
   check(!$('image-apply').disabled, 'image adjustment applies without crop mode');
   click('[data-image-zoom="in"]');
   const applyRect = $('image-apply').getBoundingClientRect();
   check(applyRect.width > 0 && applyRect.top >= 0 && applyRect.bottom <= innerHeight, 'image apply reachable at current viewport');
   $('image-editor-form').requestSubmit();
   for (let i=0;i<20 && !$('veil').hidden;i++) await wait();
-  check($('veil').hidden && $('f-image').value !== originalCharacterImage && $('f-name').value === '新しい人物' && $('f-reading').value === 'あたらしいじんぶつ', 'character adjusted image changes draft only and preserves input');
+  check($('veil').hidden && JSON.parse($('f-images').value)[0].image !== originalCharacterImage && $('f-name').value === '新しい人物' && $('f-reading').value === 'あたらしいじんぶつ', 'character adjusted image changes draft only and preserves input');
   const tagGroup = $('f-tags').closest('details'), draftTag = gender.querySelector('[data-tv]');
   tagGroup.querySelector('summary').click();
   check(!tagGroup.open && gender.querySelector('[data-tv]') === draftTag && draftTag.value === '女性' && $('f-name').value === '新しい人物', 'folding preserves exact unsaved tag DOM and input');
@@ -937,13 +989,26 @@ async function scenario() {
   click('#site-export-btn');
   check($('site-export-form') && !$('veil').hidden,'site export opens');
   check($('site-selection-count').textContent === '選択 0件' && $('site-export-form').querySelector('[type="submit"]').disabled,'site export starts empty');
+  check(['standard','light','paper'].every(value=>$('site-template').querySelector(`option[value="${value}"]`)) && $('site-template').value==='standard','site export offers appearance templates');
+  {
+    const selectAll=$('site-select-all'), itemInputs=()=>[...$('site-export-form').querySelectorAll('[data-site-item]')];
+    check(selectAll && !selectAll.disabled && itemInputs().length>0,'select-all is available');
+    selectAll.checked=true; selectAll.dispatchEvent(new Event('change',{bubbles:true}));
+    check(itemInputs().every(input=>input.checked) && $('site-selection-count').textContent === `選択 ${itemInputs().length}件`,'select-all checks every item');
+    check(!$('site-export-form').querySelector('[type="submit"]').disabled,'select-all enables the export');
+    selectAll.checked=false; selectAll.dispatchEvent(new Event('change',{bubbles:true}));
+    check(itemInputs().every(input=>!input.checked) && $('site-export-form').querySelector('[type="submit"]').disabled,'select-all clears every item');
+  }
   click('#site-export-form [data-vclose]');
   check($('veil').hidden,'site export closes');
   // 設定シート: 載せるものを選び、仕上がりを見てから画像で書き出す。保存データは変えない。
   click('[data-kind="人物"]'); openEntry(person.id); click('[data-sheet-export]');
   const sheetImage=()=>$('sheet-pages')?.querySelector('img');
   for (let i=0;i<80 && !sheetImage()?.naturalWidth;i++) await wait();
-  check(!$('veil').hidden && sheetImage()?.naturalWidth===1080 && sheetImage().naturalHeight===1350,'sheet preview is exact portrait size');
+  check(!$('veil').hidden && sheetImage()?.naturalWidth===1080 && sheetImage().naturalHeight===1080,'sheet preview is exact default square size');
+  const portraitSize=document.querySelector('[name="sheet-size"][value="portrait"]'); portraitSize.checked=true; portraitSize.dispatchEvent(new Event('change',{bubbles:true}));
+  for (let i=0;i<80 && sheetImage()?.naturalHeight!==1350;i++) await wait();
+  check(sheetImage()?.naturalWidth===1080 && sheetImage().naturalHeight===1350,'sheet preview follows chosen portrait size');
   const squareSize=document.querySelector('[name="sheet-size"][value="square"]'); squareSize.checked=true; squareSize.dispatchEvent(new Event('change',{bubbles:true}));
   for (let i=0;i<80 && sheetImage()?.naturalHeight!==1080;i++) await wait();
   check(sheetImage()?.naturalWidth===1080 && sheetImage().naturalHeight===1080,'sheet preview follows chosen size');
@@ -958,7 +1023,7 @@ async function scenario() {
   const editBody = $('drawer').querySelector('.drawer-body'); editBody.scrollTop = editBody.scrollHeight;
   check(visible(document.querySelector('[data-editor-expand]')) && visible($('ef').querySelector('[type="submit"]')), 'editor actions visible at configured window size');
   check($('drawer').scrollWidth <= $('drawer').clientWidth + 1, 'expanded editor no horizontal overflow');
-  click('#drawer .editor-toolbar [data-entry]'); click('[data-close]');
+  click('#drawer .editor-actions [data-entry]'); click('[data-close]');
   click('[data-book-tab="graphs"]'); click('[data-edit-diagram="graphs"]');
   const graphForm = $('free-diagram-form'), graphBody = graphForm.querySelector('.free-object-body');
   const spacing = document.createElement('div'); spacing.style.height = '1200px'; graphBody.append(spacing);
@@ -975,6 +1040,8 @@ async function scenario() {
 
 // 新機能は独立した段階で失敗を収集し、失敗時もactual mainの撮影/終了経路を通す。
 async function featureScenario(personId) {
+  window.addEventListener('error', ev => console.error('APP ERR: ' + ((ev.error && ev.error.stack) || ev.message || '')));
+  window.addEventListener('unhandledrejection', ev => console.error('APP REJ: ' + (ev.reason && (ev.reason.stack || ev.reason.message) || String(ev.reason))));
   const $ = id => document.getElementById(id);
   const click = q => { const el = document.querySelector(q); if (!el) throw Error('missing: ' + q); el.click(); };
   const wait = () => new Promise(r => setTimeout(r, 350));
@@ -1027,7 +1094,7 @@ async function featureScenario(personId) {
     // Character edits stay in the form draft until its own decision.
     page='book'; selectBookTab('人物'); render(); openEntry(personId); click('[data-edit]');
     $('f-name').value='新しい人物'; $('f-desc').value='画像調整中の入力';
-    await editImage(source,async image => { const control=document.querySelector('[data-image-control="image"]'); control.outerHTML=imageControl('image',image); });
+    click('[data-image-adjust]'); await wait();
     set('#image-ratio','0.75'); click('[data-image-fill]');
     $('image-editor-form').requestSubmit(); for(let i=0;i<20 && !$('veil').hidden;i++) await wait();
     check($('f-desc').value==='画像調整中の入力','image apply preserves adjacent form input');
@@ -1096,45 +1163,373 @@ async function featureScenario(personId) {
     check(!(await ouip.load()).world.graphs.some(g=>g.id===disposable) && await freeGraphs()===before,'diagram deleted without changing other diagrams');
     $('diagram-select').value=graphId; $('diagram-select').dispatchEvent(new Event('change',{bubbles:true}));
   });
-  await stage('retired relation UI absent / refresh preserves drafts / stats save', async () => {
+  await stage('retired relation UI absent / refresh preserves drafts / status assign save', async () => {
     openEntry(personId); click('[data-edit]');
+    check($('f-status-assign') && $('f-status-assign').textContent.includes('ステータスタブで作る'), 'without definitions the status page points to the statuses tab');
+    $('drawer').hidden = true; cur = null;
+    // 世界観の定義（数値・文字の段階・自由な文字）を作ってから、キャラに割り当てる。
+    await ouip.updateWorld({ statusConcept: { name: '試験RPG', card: 'radar', detail: 'bars', items: [{ name: '体力', mode: 'number', min: -10, max: 90, unit: '点' }, { name: '評価', mode: 'rough', levels: ['C', 'B', 'A'] }, { name: '固有スキル', mode: 'text' }] } });
+    await refresh();
+    const def = S.world.statusConcepts.find(c => c.name === '試験RPG'), [hp, grade, skill] = def.items;
+    const item = id => `#f-status-assign [data-sa-item="${id}"]`;
+    openEntry(personId); click('[data-edit]');
+    click('#f-status-assign [data-sa-action="add"]');
+    check(document.querySelector('#f-status-assign [data-sa-set="0"]'), 'assigning a definition adds its items');
+    {
+      const moves = [...document.querySelectorAll('#f-status-assign [data-sa-move]')];
+      check(moves.length >= 2 && moves.every((b) => /^[↑↓]$/.test(b.textContent.trim()) && (b.getAttribute('aria-label') || '').includes('を') && b.title), 'status set reorder uses labeled arrow buttons like other lists');
+    }
+    check(!document.querySelector('#drawer .cs-graph, #drawer [data-cs-graph]'), 'values are not set by stepless dragging');
     set('#f-name', '人物未確定名'); set('#f-desc', '説明未確定文');
-    set('[data-cs-add-name]', '体力'); click('[data-cs-action="add"]');
-    set('[data-cs-row="0"] [data-cs-field="mode"]', 'number');
-    set('[data-cs-row="0"] [data-cs-field="min"]', '-10'); set('[data-cs-row="0"] [data-cs-field="max"]', '90'); set('[data-cs-row="0"] [data-cs-field="unit"]', '点');
-    set('[data-cs-row="0"] [data-cs-field="numberValue"]', '37');
-    const draft = JSON.stringify(statsEditor.getDraft());
-    const graphsBefore=JSON.stringify((await ouip.load()).world.graphs.filter(g=>g.format==='free'));
+    set(item(hp.id) + ' [data-sa-value]', '37');
+    click(item(hp.id) + ' [data-sa-step="1"]');
+    check(document.querySelector(item(hp.id) + ' [data-sa-value]').value === '38', 'plus button steps the number by one');
+    {
+      const preview = document.querySelector('#f-status-assign [data-sa-preview]');
+      check(preview && preview.textContent.includes('38'), 'assign preview shows the typed value without extra actions');
+      check(!preview.querySelector('button'), 'assign preview is read-only');
+    }
+    click(item(grade.id) + ' [data-sa-level="2"]');
+    set(item(skill.id) + ' [data-sa-value]', '霧読み');
+    const draft = JSON.stringify(statusAssign.getDraft());
+    const graphsBefore = JSON.stringify((await ouip.load()).world.graphs.filter(g => g.format === 'free'));
     check(!$('relf') && !$('editing-relations') && !document.querySelector('[data-editing-add-relation]'), 'character edit has no retired relation form');
     await refresh();
-    check($('f-name').value === '人物未確定名' && $('f-desc').value === '説明未確定文' && JSON.stringify(statsEditor.getDraft()) === draft, 'background refresh preserves name/description/status draft');
-    check((await ouip.load()).entries.find(e=>e.id===personId).name !== '人物未確定名', 'background refresh does not save character draft');
-    const peer=S.entries.find(e=>e.kind==='人物' && e.id!==personId);
-    if(!peer) throw Error('missing peer for background rename');
-    await ouip.saveEntry({id:peer.id,kind:'人物',name:'候補改名人物'});
-    await ouip.updateWorld({organization:{id:orgs[0].id,name:'候補改名組織'}}); await refresh();
+    check($('f-name').value === '人物未確定名' && $('f-desc').value === '説明未確定文' && JSON.stringify(statusAssign.getDraft()) === draft, 'background refresh preserves name/description/status draft');
+    check((await ouip.load()).entries.find(e => e.id === personId).name !== '人物未確定名', 'background refresh does not save character draft');
+    const peer = S.entries.find(e => e.kind === '人物' && e.id !== personId);
+    if (!peer) throw Error('missing peer for background rename');
+    await ouip.saveEntry({ id: peer.id, kind: '人物', name: '候補改名人物' });
+    await ouip.updateWorld({ organization: { id: orgs[0].id, name: '候補改名組織' } }); await refresh();
     check(!$('relf') && !$('editing-relations'), 'refresh does not resurrect retired relation UI');
-    check($('f-name').value === '人物未確定名' && $('f-desc').value === '説明未確定文' && JSON.stringify(statsEditor.getDraft()) === draft, 'background rename preserves edit drafts');
-    check(JSON.stringify((await ouip.load()).world.graphs.filter(g=>g.format==='free'))===graphsBefore,'character/organization rename does not rewrite free diagrams');
-    // 同じフォームを保存して、数値とroughの正本・グラフ再表示まで確認。
-    for (const name of ['気質','知力']) { set('[data-cs-add-name]', name); click('[data-cs-action="add"]'); }
-    set('[data-cs-row="1"] [data-cs-field="mode"]', 'rough');
-    set('[data-cs-row="1"] [data-cs-field="levels"]', '低\n中\n高');
-    set('[data-cs-row="1"] [data-cs-field="roughValue"]', '2');
-    set('[data-cs-row="2"] [data-cs-field="mode"]', 'number');
-    set('[data-cs-row="2"] [data-cs-field="numberValue"]', '62');
-    set('[data-cs-setting="card"]', 'radar'); set('[data-cs-setting="detail"]', 'bars');
+    check($('f-name').value === '人物未確定名' && JSON.stringify(statusAssign.getDraft()) === draft, 'background rename preserves edit drafts');
+    check(JSON.stringify((await ouip.load()).world.graphs.filter(g => g.format === 'free')) === graphsBefore, 'character/organization rename does not rewrite free diagrams');
     $('ef').requestSubmit(); await wait();
-    const saved = (await ouip.load()).entries.find(e => e.id === personId);
-    check(saved.stats.items[0].mode === 'number' && saved.stats.items[0].value === 37 && saved.stats.items[0].min === -10 && saved.stats.items[0].max === 90 && saved.stats.items[0].unit === '点' && saved.stats.items[2].value === 62 && saved.stats.items[1].mode === 'rough' && saved.stats.items[1].value === 2 && saved.stats.items[1].levels.join('/') === '低/中/高', 'number and rough status values saved');
-    check(saved.stats.card === 'radar' && saved.stats.detail === 'bars', 'card/detail graph settings saved');
+    let saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(JSON.stringify(saved.statusSets) === JSON.stringify([{ set: def.id, values: { [hp.id]: 38, [grade.id]: 2, [skill.id]: '霧読み' }, hidden: [] }]) && !('stats' in saved), 'number, letter grade and text values saved as an assignment');
     click('[data-kind="人物"]'); openEntry(personId);
-    check(document.querySelector(`[data-drag="${personId}"] .cs-card .cs-radar`) && $('drawer').querySelector('.cs-detail .cs-track') && $('drawer').querySelector('.cs-detail').textContent.includes('高'), 'radar card and bars detail redisplayed');
+    const radar = document.querySelector(`[data-drag="${personId}"] .cs-card .cs-radar`);
+    check(!radar || radar.textContent.includes('A'), 'radar labels show the letter grade when drawn');
+    check($('drawer').querySelector('.cs-detail').textContent.includes('霧読み') && $('drawer').querySelector('.cs-detail').textContent.includes('38点'), 'detail shows the number and the text item');
     click('[data-edit]');
-    check(document.querySelector('[data-cs-row="0"] [data-cs-field="numberValue"]').value === '37' && document.querySelector('[data-cs-row="1"] [data-cs-field="roughValue"]').value === '2' && document.querySelector('[data-cs-setting="card"]').value === 'radar', 'status values/graph controls reopen');
+    check(document.querySelector(item(hp.id) + ' [data-sa-value]').value === '38' && document.querySelector(item(grade.id) + ' [data-sa-level="2"]').getAttribute('aria-pressed') === 'true', 'values reopen in the editor');
+    // 範囲外は保存しない（入力は残してその場で知らせる）
+    set(item(hp.id) + ' [data-sa-value]', '200');
+    $('ef').requestSubmit(); await wait();
+    check(document.querySelector('#f-status-assign [data-sa-error]').textContent.includes('-10〜90') && (await ouip.load()).entries.find(e => e.id === personId).statusSets[0].values[hp.id] === 38, 'out-of-range value is rejected next to the field and not saved');
+    set(item(hp.id) + ' [data-sa-value]', '38');
+    document.querySelector(item(skill.id) + ' [data-sa-hide-item]').checked = true;
+    $('ef').requestSubmit(); await wait();
+    openEntry(personId);
+    check(!$('drawer').querySelector('.cs-detail').textContent.includes('霧読み'), 'hidden item is not shown');
+    click('[data-edit]');
+    document.querySelector('[data-sa-hide-all]').checked = true;
+    $('ef').requestSubmit(); await wait();
+    saved = (await ouip.load()).entries.find(e => e.id === personId);
+    click('[data-kind="人物"]');
+    check(saved.statusHidden === true && !document.querySelector(`[data-drag="${personId}"] .cs-card`) && saved.statusSets[0].values[skill.id] === '霧読み', 'character can hide its status without losing values');
+    openEntry(personId); click('[data-edit]');
+    document.querySelector('[data-sa-hide-all]').checked = false;
+    $('ef').requestSubmit(); await wait();
+    // 大カードのステータスは、キャラごとに文字一覧とグラフを選べる。
+    openEntry(personId); click('[data-edit]');
+    document.querySelector('[data-sa-card-view]').value = 'graph';
+    document.querySelector('[data-sa-card-view]').dispatchEvent(new Event('change', { bubbles: true }));
+    $('ef').requestSubmit(); await wait();
+    saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(saved.statusCardView === 'graph', 'per-character card view saves graph');
+    click('[data-kind="人物"]');
+    check(document.querySelector(`[data-drag="${personId}"] .cs-card-graph`), 'large card column shows the graph for that character');
+    {
+      const col = document.querySelector(`[data-drag="${personId}"] .cs-card-graph`);
+      check(col && col.querySelector('.cs-track, .cs-dots, .cs-radar') && !col.querySelector('.cs-readout, .cs-range') && !/〜/.test(col.textContent), 'graph column leaves out the text value rows');
+    }
+    // ステータスタブから全員へ一括で揃えられる。
+    selectBookTab('statuses'); render();
+    document.querySelector('[data-ss-card-view]').value = 'lines';
+    click('[data-ss-card-view-apply]');
+    check(document.querySelector('[data-ss-card-view-apply]').hasAttribute('data-armed'), 'bulk card view asks for confirmation');
+    click('[data-ss-card-view-apply]'); await wait();
+    const everyone = (await ouip.load()).entries.filter(e => e.kind === '人物');
+    check(everyone.length > 1 && everyone.every(e => e.statusCardView !== 'graph'), 'bulk card view applies lines to everyone');
+  });
+  await stage('legacy status migration notice / preview / apply', async () => {
+    $('drawer').hidden = true; cur = null;
+    const legacy = await ouip.saveEntry({ kind: '人物', name: '旧形式の人', stats: { version: 1, card: 'bars', detail: 'bars', items: [{ name: '気配', mode: 'rough', levels: ['低', '高'], value: 1 }, { name: 'ＭＰ', mode: 'number', min: 0, max: 10, unit: '', value: 4 }] } });
+    await ouip.saveEntry({ kind: '人物', name: '旧形式の人2', stats: { version: 1, card: 'bars', detail: 'bars', items: [{ name: 'MP', mode: 'number', min: 0, max: 10, unit: '', value: 7 }] } });
+    await refresh(); page = 'book'; selectBookTab('人物'); render();
+    check(document.querySelector('.status-migrate-banner') && document.querySelector('.status-migrate-banner').textContent.includes('2人'), 'legacy statuses show the migration notice');
+    openEntry(legacy.id); click('[data-edit]');
+    check(document.querySelector('.legacy-stats [data-stat-editor="0"]'), 'legacy statuses stay editable before migration');
+    $('drawer').hidden = true; cur = null;
+    const before = await ouip.changes();
+    click('.status-migrate-banner [data-mg-open]');
+    const rows = [...document.querySelectorAll('#status-migrate [data-mg-item]')];
+    check(rows.length === 2 && rows.some(r => r.querySelector('[data-mg-name]').value === 'ＭＰ'), 'full-width and half-width names are merged in the preview');
+    $('status-migrate').requestSubmit(); for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait();
+    const after = await ouip.load();
+    const moved = after.entries.filter(e => e.name.startsWith('旧形式の人'));
+    const set = after.world.statusConcepts.find(c => c.name === '移行したステータス');
+    check(set && moved.every(e => !('stats' in e) && e.statusSets?.[0]?.set === set.id), 'migration writes assignments and removes the legacy form');
+    const mp = set.items.find(it => it.name === 'ＭＰ');
+    check(moved.find(e => e.name === '旧形式の人2').statusSets[0].values[mp.id] === 7 && moved.find(e => e.name === '旧形式の人2').statusSets[0].hidden.length === 1, 'values move as they were and missing items are hidden');
+    const log = await ouip.log();
+    check(!before.length || JSON.stringify(log).includes('ステータス移行の前'), 'unsaved state is saved to history before migrating');
+    render();
+    check(!document.querySelector('.status-migrate-banner'), 'notice disappears after migration');
+  });
+  await stage('status item card position (definition default and per character) / sort by status', async () => {
+    $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('人物'); render();
+    const def = S.world.statusConcepts.find(c => c.name === '試験RPG'), [hp, , skill] = def.items;
+    const item = id => `#f-status-assign [data-sa-item="${id}"]`;
+    // 隠していた固有スキルを戻し、定義の既定を「名前の下」にする
+    openEntry(personId); click('[data-edit]');
+    document.querySelector(item(skill.id) + ' [data-sa-hide-item]').checked = false;
+    $('ef').requestSubmit(); await wait();
+    await ouip.updateWorld({ statusConcept: { ...def, items: def.items.map(it => it.id === skill.id ? { ...it, place: 'below' } : it) } });
+    await refresh(); click('[data-kind="人物"]');
+    const cardOf = () => document.querySelector(`[data-drag="${personId}"]`);
+    check(cardOf().querySelector('.card-status-below') && cardOf().querySelector('.card-status-below').textContent.includes('霧読み') && !cardOf().querySelector('.cs-card')?.textContent.includes('霧読み'), 'definition default places the text item under the name, not in the status block');
+    openEntry(personId); click('[data-edit]');
+    set(item(skill.id) + ' [data-sa-place]', 'above');
+    $('ef').requestSubmit(); await wait();
+    click('[data-kind="人物"]');
+    check(cardOf().querySelector('.card-status-above .card-status-epithet')?.textContent === '霧読み' && !cardOf().querySelector('.card-status-below'), 'character can override the card position');
+    openEntry(personId);
+    check($('drawer').querySelector('.cs-detail').textContent.includes('霧読み'), 'detail still lists the item');
+    $('drawer').hidden = true; cur = null;
+    // ステータスで並べる: 値のあるキャラが先、手動の並び替えは止める
+    const other = S.entries.find(e => e.kind === '人物' && e.id !== personId && !(e.statusSets || []).length);
+    if (other) { await ouip.saveEntry({ id: other.id, kind: '人物', name: other.name, statusSets: [{ set: def.id, values: { [hp.id]: 80 }, hidden: [] }] }); await refresh(); }
+    click('[data-kind="人物"]');
+    check(!$('sort-by').hidden && $('sort-by').querySelector(`option[value="${def.id}:${hp.id}:desc"]`), 'sort options list number and grade items');
+    set('#sort-by', `${def.id}:${hp.id}:desc`);
+    const order = [...document.querySelectorAll('#bookbody [data-drag]')].map(el => el.dataset.drag);
+    check((!other || order[0] === other.id) && order.indexOf(personId) === (other ? 1 : 0) && $('reorder-btn').disabled, 'sorting puts higher values first and pauses manual reordering');
+    set('#sort-by', '');
+    check(!$('reorder-btn').disabled, 'manual order returns');
+  });
+  await stage('statuses tab shows a foldable graph preview per definition', async () => {
+    $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('statuses'); render();
+    const d = document.querySelector('[data-ss-preview-of]');
+    check(d && d.open && d.querySelector('.ss-preview-card') && $('sort-by').hidden, 'definition rows show an open preview and no character sort control');
+    d.open = false; d.dispatchEvent(new Event('toggle')); render();
+    check(document.querySelector(`[data-ss-preview-of="${d.dataset.ssPreviewOf}"]`).open === false, 'closed preview stays closed after redraw');
+    const again = document.querySelector(`[data-ss-preview-of="${d.dataset.ssPreviewOf}"]`); again.open = true; again.dispatchEvent(new Event('toggle'));
+  });
+  await stage('free-placement diagram: place / balloon resize and tail / connect / template / undo-redo / copy-paste / delete', async () => {
+    let thrown = 0; const count = () => { thrown++; };
+    window.addEventListener('error', count); window.addEventListener('unhandledrejection', count);
+    try {
+      $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('graphs'); render();
+      click('[data-new-diagram="graphs"]'); $('free-diagram-name').value = '想いの図'; $('free-diagram-form').requestSubmit(); for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait();
+      const gid = $('diagram-select').value, saved = async () => (await ouip.load()).world.graphs.find(g => g.id === gid);
+      check((await saved()).format === 'canvas' && document.querySelector('svg[data-dg-canvas]'), 'new diagram uses the free-placement editor');
+      const people = S.entries.filter(e => e.kind === '人物');
+      click(`[data-dg-add-ref="${people[0].id}"]`); await wait();
+      click(`[data-dg-add-ref="${people[1].id}"]`); await wait();
+      click('[data-dg-add-shape="balloon"]'); await wait();
+      let g = await saved();
+      check(g.items.length === 3 && g.items.filter(it => it.kind === 'entry').every(it => people.some(p => p.id === it.ref)), 'palette places items from the setting materials and a balloon');
+      check(document.querySelector('svg[data-dg-canvas]').textContent.includes(people[0].name), 'entry nodes show the linked name');
+      const [a, b, balloon] = g.items, svg = () => document.querySelector('svg[data-dg-canvas]');
+      // 置いた直後は重なっているので、2人目を右へ動かしてからつなぐ
+      diagramEditor.select([b.id]); await wait();
+      const center = el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+      const dragEl = async (el, dx, dy, target) => {
+        const [x, y] = center(el), opt = (cx, cy) => ({ bubbles: true, cancelable: true, composed: true, pointerId: 7, button: 0, buttons: 1, clientX: cx, clientY: cy, isPrimary: true });
+        el.dispatchEvent(new PointerEvent('pointerdown', opt(x, y)));
+        const [tx, ty] = target ? center(target()) : [x + dx, y + dy];
+        document.dispatchEvent(new PointerEvent('pointermove', opt((x + tx) / 2, (y + ty) / 2)));
+        document.dispatchEvent(new PointerEvent('pointermove', opt(tx, ty)));
+        document.dispatchEvent(new PointerEvent('pointerup', { ...opt(tx, ty), buttons: 0 }));
+        await wait();
+      };
+      await dragEl(svg().querySelector(`[data-dg-item="${b.id}"] rect`), 260, 0);
+      g = await saved();
+      check(g.items.find(it => it.id === b.id).x > b.x + 50, 'dragging an item moves it');
+      diagramEditor.select([balloon.id]); await wait();
+      await dragEl(svg().querySelector(`[data-dg-resize="${balloon.id}"]`), 60, 30);
+      g = await saved(); const b2 = g.items.find(it => it.id === balloon.id);
+      check(b2.w > balloon.w && b2.h > balloon.h, 'resize handle changes the balloon size');
+      diagramEditor.select([balloon.id]); await wait();
+      await dragEl(svg().querySelector(`[data-dg-tail="${balloon.id}"]`), -50, 40);
+      g = await saved();
+      check(JSON.stringify(g.items.find(it => it.id === balloon.id).tail) !== JSON.stringify(b2.tail), 'tail handle moves the balloon tail');
+      diagramEditor.select([a.id]); await wait();
+      await dragEl(svg().querySelector(`[data-dg-connect="${a.id}"]`), 0, 0, () => svg().querySelector(`[data-dg-item="${b.id}"] rect`));
+      g = await saved();
+      check(g.links.length === 1 && g.links[0].a === a.id && g.links[0].b === b.id && g.links[0].template, 'dragging from the connect handle draws an arrow with a template');
+      const link = g.links[0];
+      diagramEditor.select([link.id]); await wait();
+      set('[data-dg-inspector] [data-dg-field="template"]', 'lt-love'); await wait();
+      set('[data-dg-inspector] [data-dg-field="text"]', '気になる'); await wait();
+      g = await saved();
+      check(g.links[0].template === 'lt-love' && g.links[0].text === '気になる', 'inspector sets the template and the label');
+      click('[data-dg-undo]'); await wait();
+      check((await saved()).links[0].text === '好意・片思い', 'undo reverts the last change (back to the template text)');
+      click('[data-dg-redo]'); await wait();
+      check((await saved()).links[0].text === '気になる', 'redo applies it again');
+      diagramEditor.select([a.id, b.id]); svg().focus();
+      const key = (k, extra = {}) => svg().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
+      key('c', { ctrlKey: true }); key('v', { ctrlKey: true }); await wait();
+      g = await saved();
+      check(g.items.length === 5 && g.links.length === 2, 'copy and paste duplicate the selected items with their arrow');
+      key('Delete'); await wait();
+      g = await saved();
+      check(g.items.length === 3 && g.links.length === 1, 'delete removes the selection and its arrows');
+      key('z', { ctrlKey: true }); await wait();
+      check((await saved()).items.length === 5, 'keyboard undo restores deleted items');
+      diagramEditor.select([a.id]); await wait();
+      const field = document.querySelector('[data-dg-inspector] [data-dg-field="text"]');
+      field.focus(); field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })); await wait();
+      check((await saved()).items.length === 5, 'keys typed in the side panel do not delete diagram items');
+      check(thrown === 0, 'no uncaught errors in the diagram editor');
+    } finally { window.removeEventListener('error', count); window.removeEventListener('unhandledrejection', count); }
+  });
+  await stage('free-placement diagram survives a background refresh mid-drag and mid-typing', async () => {
+    let thrown = 0; const count = () => { thrown++; };
+    window.addEventListener('error', count); window.addEventListener('unhandledrejection', count);
+    try {
+      $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('graphs'); render();
+      const g0 = S.world.graphs.find(g => g.name === '想いの図'); if (!g0) throw Error('missing diagram');
+      const sel = $('diagram-select'); sel.value = g0.id; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const saved = async () => (await ouip.load()).world.graphs.find(g => g.id === g0.id);
+      const svg = () => document.querySelector('svg[data-dg-canvas]');
+      const item = g0.items.find(it => it.kind === 'entry');
+      diagramEditor.select([item.id]);
+      const el = svg().querySelector(`[data-dg-item="${item.id}"] rect`), r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const opt = (cx, cy) => ({ bubbles: true, cancelable: true, composed: true, pointerId: 9, button: 0, buttons: 1, clientX: cx, clientY: cy, isPrimary: true });
+      const before = diagramEditor.state().can;
+      el.dispatchEvent(new PointerEvent('pointerdown', opt(x, y)));
+      document.dispatchEvent(new PointerEvent('pointermove', opt(x + 20, y)));
+      await refresh(); // 他の操作で画面全体が描き直されても
+      document.dispatchEvent(new PointerEvent('pointermove', opt(x + 60, y + 10)));
+      document.dispatchEvent(new PointerEvent('pointerup', { ...opt(x + 60, y + 10), buttons: 0 }));
+      await wait();
+      const moved = (await saved()).items.find(it => it.id === item.id);
+      check(moved.x > item.x + 20, 'drag keeps following after a background refresh');
+      check(diagramEditor.state().can.undo && thrown === 0, 'one undo step recorded and no uncaught errors mid-drag');
+      // 入力中に保存と描き直しが起きても、打った文字を失わない
+      diagramEditor.select([item.id]); await wait();
+      const field = () => document.querySelector('[data-dg-inspector] [data-dg-field="text"]');
+      field().focus(); field().value = '図での'; field().dispatchEvent(new Event('input', { bubbles: true }));
+      await refresh();
+      const f2 = field(); f2.value = (f2.value || '') + '呼び名'; f2.dispatchEvent(new Event('input', { bubbles: true })); f2.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait();
+      check((await saved()).items.find(it => it.id === item.id).text.endsWith('呼び名') && thrown === 0, 'typing in the side panel survives a refresh and is saved');
+    } finally { window.removeEventListener('error', count); window.removeEventListener('unhandledrejection', count); }
+  });
+  await stage('diagram palette filters / template label and drop / display style / organization frame / map range select', async () => {
+    let thrown = 0; const count = () => { thrown++; };
+    window.addEventListener('error', count); window.addEventListener('unhandledrejection', count);
+    try {
+      $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('graphs'); render();
+      const g0 = S.world.graphs.find(g => g.name === '想いの図'); if (!g0) throw Error('missing diagram');
+      const sel = $('diagram-select'); sel.value = g0.id; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const saved = async () => (await ouip.load()).world.graphs.find(g => g.id === g0.id);
+      const svg = () => document.querySelector('svg[data-dg-canvas]');
+      // 左は設定資料だけ。種類で絞り込み、図にないものだけ
+      check(!document.querySelector('[data-dg-palette] [data-dg-add-shape]') && document.querySelector('[data-dg-inspector] [data-dg-add-shape]'), 'shapes are added from the right panel');
+      { const shapes = [...document.querySelectorAll('[data-dg-inspector] [data-dg-add-shape]')]; check(shapes.length === 4 && shapes.every(b => b.querySelector('svg') && b.querySelector('.sr')), 'shapes are shown by their forms, not text labels'); }
+      click('[data-dg-palette] [data-dg-kind="組織"]');
+      check([...document.querySelectorAll('[data-dg-palette] [data-dg-add-ref]')].every(b => b.dataset.dgAddRef.startsWith('org-')), 'kind filter narrows the palette');
+      const missing = document.querySelector('[data-dg-missing]'); missing.checked = true; missing.dispatchEvent(new Event('change', { bubbles: true }));
+      click('[data-dg-palette] [data-dg-kind=""]');
+      const placedRefs = new Set((await saved()).items.filter(it => it.kind === 'entry').map(it => it.ref));
+      check([...document.querySelectorAll('[data-dg-palette] [data-dg-add-ref]')].every(b => !placedRefs.has(b.dataset.dgAddRef)), '"only not in the diagram" hides placed items');
+      const m2 = document.querySelector('[data-dg-missing]'); m2.checked = false; m2.dispatchEvent(new Event('change', { bubbles: true }));
+      // テンプレートの文字: 当てると入る。ドラッグで矢印へ当てる
+      let g = await saved(); const link = g.links[0];
+      diagramEditor.select([link.id]); await wait();
+      set('[data-dg-inspector] [data-dg-field="text"]', ''); await wait();
+      set('[data-dg-inspector] [data-dg-field="template"]', 'lt-hostile'); await wait();
+      check((await saved()).links.find(l => l.id === link.id).text === '敵対', 'choosing a template fills the label with the template text');
+      diagramEditor.select([]); await wait();
+      { const chips = [...document.querySelectorAll('.dg-tpl-chip')]; check(chips.length >= 5 && chips.every(c => c.querySelector('svg') && c.hasAttribute('draggable')), 'templates are shown as draggable arrow samples'); }
+      const activeBefore = document.querySelector('.dg-tpl-chip.is-active')?.dataset.dgTplSelect;
+      click('[data-dg-tpl-next]'); await wait();
+      check(document.querySelector('.dg-tpl-chip.is-active')?.dataset.dgTplSelect !== activeBefore && /\d+ \/ \d+/.test(document.querySelector('.dg-tpl-count')?.textContent || ''), 'template arrows can be navigated');
+      const grip = document.querySelector('[data-dg-tpl-drag="lt-trust"]'), target = svg().querySelector(`[data-dg-link="${link.id}"] .dg-hit`);
+      const dt = new DataTransfer();
+      grip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); await wait();
+      const dropped = (await saved()).links.find(l => l.id === link.id);
+      check(dropped.template === 'lt-trust' && dropped.text === '信頼', 'dropping a template on an arrow applies it and its label');
+      // 見せ方と組織の枠
+      const person = g.items.find(it => it.kind === 'entry' && !it.ref.startsWith('org-'));
+      diagramEditor.select([person.id]); await wait();
+      set('[data-dg-inspector] [data-dg-look]', 'icon'); await wait();
+      check((await saved()).items.find(it => it.id === person.id).look === 'icon', 'display style switches to icon and name');
+      const org = S.world.organizations[0];
+      if (org) {
+        click(`[data-dg-add-ref="${org.id}"]`); await wait();
+        const frame = (await saved()).items.find(it => it.ref === org.id);
+        diagramEditor.select([frame.id]); await wait();
+        set('[data-dg-inspector] [data-dg-look]', 'frame'); await wait();
+        click('[data-dg-arrange]'); await wait();
+        g = await saved();
+        const f = g.items.find(it => it.id === frame.id), members = S.entries.filter(e => e.kind === '人物' && (e.organizationIds || []).includes(org.id));
+        const inside = g.items.filter(it => it.kind === 'entry' && it.id !== f.id && it.x >= f.x && it.y >= f.y && it.x + it.w <= f.x + f.w && it.y + it.h <= f.y + f.h);
+        check(f.look === 'frame' && members.length > 0 && members.every(m => inside.some(it => it.ref === m.id)), 'organization frame arranges its members inside');
+      }
+      check(thrown === 0, 'no uncaught errors in diagram options');
+      // 地図: 範囲選択でまとめて動かす（図を動かすのは中ボタンかSpace）
+      selectBookTab('maps'); render();
+      const map = activeDiagram('maps'), msvg = document.querySelector('.vis svg[data-camera^="maps:"]');
+      const pins = [...msvg.querySelectorAll('[data-node][data-which="geo"]')];
+      if (pins.length >= 2 && msvg) {
+        const box = msvg.getBoundingClientRect(), opt = (x, y, b = 1) => ({ bubbles: true, cancelable: true, pointerId: 11, button: 0, buttons: b, clientX: x, clientY: y, isPrimary: true });
+        const bg = msvg.querySelector('rect');
+        bg.dispatchEvent(new PointerEvent('pointerdown', opt(box.left + 2, box.top + 2)));
+        document.dispatchEvent(new PointerEvent('pointermove', opt(box.right - 2, box.bottom - 2)));
+        document.dispatchEvent(new PointerEvent('pointerup', opt(box.right - 2, box.bottom - 2, 0)));
+        check(mapSelection.size === pins.length && pins.every(p => p.classList.contains('is-selected')), 'map: dragging on empty space selects pins in the range');
+        const before = JSON.stringify(map.positions), first = pins[0], r = first.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+        first.dispatchEvent(new PointerEvent('pointerdown', opt(x, y)));
+        document.dispatchEvent(new PointerEvent('pointermove', opt(x + 30, y + 20)));
+        document.dispatchEvent(new PointerEvent('pointerup', opt(x + 30, y + 20, 0))); await wait(); await writes.idle();
+        const after = (await ouip.load()).world.maps.find(m => m.id === map.id).positions, prev = JSON.parse(before);
+        const movedAll = Object.keys(prev).filter(id => !pinLocked(map, 'geo', id)).every(id => after[id][0] !== prev[id][0] || after[id][1] !== prev[id][1]);
+        check(movedAll, 'map: dragging a selected pin moves all selected pins');
+        check(document.querySelector('.canvas-guide') && document.querySelector('.canvas-guide').textContent.includes('範囲で選ぶ'), 'map shows the shared operation guide');
+      }
+      check(thrown === 0, 'no uncaught errors on the map');
+    } finally { window.removeEventListener('error', count); window.removeEventListener('unhandledrejection', count); mapSelection.clear(); }
+  });
+  await stage('edit basic puts images right after the name', async () => {
+    openEntry(personId); click('[data-edit]');
+    {
+      const basic = document.querySelector('[data-edit-page="basic"]');
+      const imgH = [...basic.querySelectorAll('h4.form-heading')].find(h => h.textContent === '画像');
+      const reading = basic.querySelector('#f-reading');
+      check(imgH && reading && (imgH.compareDocumentPosition(reading) & Node.DOCUMENT_POSITION_FOLLOWING), 'character images come right after the name in basic edit');
+    }
+    $('drawer').hidden = true; cur = null;
+    const word = S.entries.find(e => e.kind === '用語');
+    if (!word) throw Error('missing 用語 entry for image order check');
+    openEntry(word.id); click('[data-edit]');
+    {
+      const basic = document.querySelector('[data-edit-page="basic"]');
+      const imgH = [...basic.querySelectorAll('h4.form-heading')].find(h => h.textContent === '画像');
+      const desc = basic.querySelector('#f-desc');
+      check(imgH && desc && (imgH.compareDocumentPosition(desc) & Node.DOCUMENT_POSITION_FOLLOWING), 'term image comes right after the name in basic edit');
+    }
+    $('drawer').hidden = true; cur = null;
   });
   await stage('tag / prose / field up-down order persists', async () => {
-    openEntry(personId); click('[data-edit]');
+    openEntry(personId);
+    check([...document.querySelectorAll('[data-entry-page-tab]')].every(t => !t.draggable), 'viewer page tabs are switches, not drag handles');
+    click('[data-edit]');
+    {
+      const tabs = [...document.querySelectorAll('[data-edit-page-tab]')];
+      if (tabs.length && tabs[0].getClientRects().length) {
+        const hint = document.querySelector('.edit-pages-hint');
+        check(tabs.every(t => t.draggable), 'edit page tabs can be drag-reordered');
+        check(hint && hint.getClientRects().length && /ドラッグ/.test(hint.textContent), 'edit page tabs explain drag reordering');
+      }
+    }
     // 上下両方向を通し、元とは異なる最終順を保存。
     for (const [container, row, field] of [['#f-tags','[data-trow]','[data-tk]'],['#f-sections','[data-section]','[data-section-title]'],['#f-fields','[data-frow]','[data-fk]']]) {
       const add = container === '#f-tags' ? '[data-addtag]' : container === '#f-sections' ? '[data-addsection]' : '[data-addfield]';
@@ -1179,7 +1574,7 @@ async function featureScenario(personId) {
     set('[data-timeline-position]', 'top'); await timelineController.waitForSave();
     const order = () => [...document.querySelectorAll('.tl [data-timeline-year]')].map(e => e.dataset.timelineYear);
     const initial = order(); const first = document.querySelector('[data-timeline-down]'); first.click(); await timelineController.waitForSave();
-    check(document.querySelector('[data-timeline-down]').textContent === '▽' && document.querySelector('.timeline-flow') && document.querySelector('[data-timeline-year]').draggable && !document.querySelector('[data-timeline-handle]'), 'timeline direct drag/quiet arrows/flow');
+    check(document.querySelector('[data-timeline-down]').textContent === '↓' && document.querySelector('.timeline-flow') && document.querySelector('[data-timeline-year]').draggable && !document.querySelector('[data-timeline-handle]'), 'timeline direct drag/quiet arrows/flow');
     const expected = order(); check(expected[0] === initial[1] && expected[1] === initial[0], 'whole year down action');
     const up = [...document.querySelectorAll('[data-timeline-up]')].find(b => b.dataset.timelineUp === initial[0]); up.click(); await timelineController.waitForSave();
     check(JSON.stringify(order()) === JSON.stringify(initial), 'whole year up action');
@@ -1198,6 +1593,214 @@ async function featureScenario(personId) {
     check(JSON.stringify((await ouip.load()).world.timeline.order) === JSON.stringify(expected), 'year order saved including immediate history save');
     click('[data-kind="人物"]'); click('[data-kind="出来事"]'); await refresh();
     check(JSON.stringify(order()) === JSON.stringify(expected) && document.querySelector('[data-timeline-position]').value === 'top', 'year layout/order reopens');
+  });
+  await stage('card reorder (drag) persists in the kind order', async () => {
+    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
+    const made = [];
+    for (const name of ['並替一', '並替二', '並替三']) made.push((await ouip.saveEntry({ kind: '人物', name })).id);
+    await refresh();
+    const cards = () => [...document.querySelectorAll('#bookbody .entries .en')];
+    const order = () => cards().map(el => el.dataset.drag);
+    const mine = list => list.filter(id => made.includes(id));
+    check($('reorder-btn').hidden === false, 'reorder button shows on a plain kind list');
+    click('#reorder-btn');
+    check($('reorder-btn').getAttribute('aria-pressed') === 'true' && document.querySelector('#bookbody .entries.reordering'), 'reorder mode enters');
+    {
+      const grid = document.querySelector('#bookbody .entries.reordering'), card = grid.querySelector('.en');
+      check(getComputedStyle(grid).outlineStyle === 'dashed' && getComputedStyle(card).borderStyle === 'dashed' && getComputedStyle($('reorder-btn')).backgroundColor !== 'rgba(0, 0, 0, 0)', 'reorder mode is visible on the list, cards and button');
+    }
+    check(cards().every(el => el.querySelectorAll('button').length === 1), 'cards carry no extra per-card controls; drag is the only reorder');
+    check(/ドラッグ/.test(document.querySelector('#bookbody .reorder-note')?.textContent || ''), 'reorder mode explains dragging on the list');
+    {
+      const note = document.querySelector('#bookbody .reorder-note'), grid = document.querySelector('#bookbody .entries');
+      check(note && grid && note.getBoundingClientRect().bottom <= grid.getBoundingClientRect().top - 10, 'reorder note stays clear of the list frame');
+    }
+    cards().at(-1).querySelector('.open-btn').click(); await wait();
+    check($('drawer').hidden, 'opening a card is suppressed while reordering');
+    // ドラッグで先頭カードを3枚目の後ろへ運ぶ。
+    const list = cards(), transfer = new DataTransfer(), moving = list[0], target = list[2];
+    const rect = target.getBoundingClientRect(), cx = rect.right - 2, cy = rect.top + rect.height / 2;
+    moving.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: cx, clientY: cy }));
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: cx, clientY: cy }));
+    await wait();
+    check(transfer.getData('text/x-ouip-reorder') === moving.dataset.drag, 'reorder drag carries its own payload');
+    check(order().indexOf(moving.dataset.drag) === order().indexOf(target.dataset.drag) + 1, 'drop places the card after the target');
+    check(JSON.stringify(mine((await ouip.load()).world.order)) === JSON.stringify(mine(order())), 'kind order is saved to the world order');
+    // モードを終えると操作が戻り、タブを往復しても並びは残る。
+    const settled = order();
+    click('#reorder-btn');
+    check($('reorder-btn').getAttribute('aria-pressed') === 'false' && !document.querySelector('.entries.reordering') && !document.querySelector('.reorder-note'), 'reorder mode ends');
+    click('[data-kind="用語"]'); click('[data-kind="人物"]');
+    check(JSON.stringify(mine(order())) === JSON.stringify(mine(settled)), 'order survives tab switch');
+    // 検索中は並び替えを止める（順の意味がぶれないように）。
+    set('#q', '並替'); check($('reorder-btn').disabled, 'reorder is disabled while a search narrows the list');
+    set('#q', '');
+  });
+  await stage('card thumbnail crop fit/position saves and reopens', async () => {
+    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
+    openEntry(personId); click('[data-edit]');
+    const box = () => $('drawer').querySelector('[data-image-crop]');
+    const thumb = () => document.querySelector(`[data-entry="${personId}"] .face img`);
+    check(box() && box().querySelector('.crop-preview img'), 'crop control shows for a card with an image');
+    check(!box().classList.contains('is-cover'), 'thumbnail crop defaults to fitting the whole image');
+    check(thumb() && !thumb().getAttribute('style'), 'card thumbnail is uncropped by default');
+    click('[data-crop-fit-choice="cover"]');
+    check(box().dataset.cropFit === 'cover' && box().classList.contains('is-cover') && box().querySelector('.crop-grid button'), 'choosing cover reveals the position grid');
+    $('drawer').querySelector('[data-crop-pos="0,0"]').click();
+    check(box().dataset.cropX === '0' && box().dataset.cropY === '0', 'chosen position is kept in the control');
+    $('ef').requestSubmit(); await wait();
+    check(JSON.stringify((await ouip.load()).entries.find(e => e.id === personId).imageCrop) === JSON.stringify({ fit: 'cover', x: 0, y: 0 }), 'crop is saved to the entry');
+    check(/object-fit:\s*cover/.test(thumb().getAttribute('style') || '') && /object-position:\s*0% 0%/.test(thumb().getAttribute('style') || ''), 'card thumbnail uses the saved crop');
+    click('[data-edit]');
+    check(box().dataset.cropFit === 'cover' && box().dataset.cropX === '0' && box().dataset.cropY === '0' && box().querySelector('[data-crop-pos="0,0"]').getAttribute('aria-pressed') === 'true', 'crop control reopens with the saved crop');
+    click('[data-crop-fit-choice="contain"]');
+    $('ef').requestSubmit(); await wait();
+    check(!('imageCrop' in (await ouip.load()).entries.find(e => e.id === personId)), 'switching back to fit removes the crop from the entry');
+    click('[data-kind="人物"]'); openEntry(personId);
+    check(!thumb().getAttribute('style'), 'card thumbnail returns to uncropped');
+  });
+  await stage('image adjustment keeps the original and reopens from it', async () => {
+    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
+    openEntry(personId); click('[data-edit]');
+    const natural = async rel => { const im = new Image(); im.src = await ouip.readImage(rel); await im.decode(); return [im.naturalWidth, im.naturalHeight]; };
+    const openEditor = async () => { imageEdit = null; $('drawer').querySelector('[data-image-adjust]').click(); for (let i = 0; i < 40 && !(imageEdit && imageEdit.source); i++) await wait(); };
+    const currentEntry = (await ouip.load()).entries.find(e => e.id === personId);
+    const before = currentEntry.imageAdjust?.source || currentEntry.image;
+    const [bw, bh] = await natural(before);
+    await openEditor();
+    check(imageEdit.source === before, 'first adjustment starts from the picked image');
+    set('#image-ratio', '1'); click('[data-image-fill]');
+    $('image-editor-form').requestSubmit(); for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait();
+    $('ef').requestSubmit(); await wait();
+    let saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(saved.image !== before && saved.imageAdjust && saved.imageAdjust.source === before, 'keeps the original as the re-adjust source');
+    check(Math.abs(saved.imageAdjust.w / saved.imageAdjust.h - 1) < .01, 'records the applied frame');
+    const [ow, oh] = await natural(before);
+    check(ow === bw && oh === bh, 'the original file is still there to rebuild from');
+    click('[data-edit]');
+    await openEditor();
+    check(imageEdit.source === before && imageEdit.image.naturalWidth === bw && imageEdit.image.naturalHeight === bh, 'reopening loads the original image, not the crop');
+    check(Math.abs($('image-canvas').width / $('image-canvas').height - 1) < .01, 'restores the saved frame when reopening');
+    click('[data-image-zoom="in"]');
+    $('image-editor-form').requestSubmit(); for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait();
+    $('ef').requestSubmit(); await wait();
+    saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(saved.imageAdjust.source === before && imageEdit === null, 'the original stays the source after re-applying');
+    openEntry(personId);
+  });
+  await stage('複数画像・キャプション・サムネイル・詳細パネルとギャラリー', async () => {
+    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
+    openEntry(personId); click('[data-edit]');
+    check(!!document.querySelector('[data-image-set]'), 'person image editor shows the image set');
+    const before = JSON.parse($('f-images').value).length;
+    click('[data-image-add]'); await wait();
+    const rows = [...document.querySelectorAll('[data-image-item]')];
+    if (rows.length < before + 1) throw Error('added image not visible');
+    const second = rows[before].querySelector('[data-image-thumb]');
+    const secondImage = second.value;
+    const caption = rows[before].querySelector('[data-image-caption]');
+    caption.value = '2枚目'; caption.dispatchEvent(new Event('input', { bubbles: true }));
+    check(rows.every(el => !el.querySelector('[data-image-up],[data-image-down]')), 'image order has no per-image arrows');
+    const hint = document.querySelector('.image-set-hint');
+    check(hint && !hint.hidden && /ドラッグ/.test(hint.textContent), 'image set explains that dragging changes the order');
+    check(hint.getBoundingClientRect().bottom <= document.querySelector('.image-set-grid').getBoundingClientRect().top + 1, 'image drag hint sits above the grid without overlapping');
+    // 折り返す格子なので、画像そのものをドラッグして順を変える。
+    const beforeOrder = JSON.parse($('f-images').value).map(i => i.image);
+    const imgItems = [...document.querySelectorAll('[data-image-item]')];
+    const transfer = new DataTransfer(), dragged = imgItems.at(-1).querySelector('[data-image-drag]'), firstItem = imgItems[0];
+    const dropRect = firstItem.getBoundingClientRect(), dropX = dropRect.left + 2, dropY = dropRect.top + dropRect.height / 2;
+    dragged.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    firstItem.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: dropX, clientY: dropY }));
+    firstItem.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: dropX, clientY: dropY }));
+    await wait();
+    const draggedImage = beforeOrder.at(-1), afterOrder = JSON.parse($('f-images').value).map(i => i.image);
+    check(transfer.getData('text/x-ouip-image') === draggedImage, 'image drag carries the image path');
+    check(afterOrder[0] === draggedImage && afterOrder.length === beforeOrder.length, 'dropping on the left half moves the image to the front');
+    const secondAfter = [...document.querySelectorAll('[data-image-thumb]')].find(el => el.value === secondImage);
+    secondAfter.click(); await wait();
+    $('ef').requestSubmit(); await wait();
+    const saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(saved.images.length === before + 1 && saved.image === secondImage, 'thumbnail selection is saved');
+    check(saved.images.find(i => i.image === secondImage)?.caption === '2枚目', 'caption is saved');
+    check(JSON.stringify(saved.images.map(i => i.image)) === JSON.stringify(afterOrder), 'dragged image order is saved');
+    openEntry(personId);
+    check(document.querySelectorAll('[data-image-panel] [data-entry-image]').length === saved.images.length, 'detail panel shows all images');
+    click('[data-entry-gallery]');
+    check($('viewer').classList.contains('art-gallery-viewer') && $('viewer').querySelector('[data-gallery-nav="1"]'), 'gallery page opens');
+    const beforeCaption = $('viewer').querySelector('.art-gallery-stage figcaption')?.textContent;
+    $('viewer').querySelector('[data-gallery-nav="1"]').click(); await wait();
+    check($('viewer').querySelector('.art-gallery-stage figcaption')?.textContent !== beforeCaption, 'gallery page flips');
+    click('[data-vclose]'); $('drawer').hidden = true; cur = null;
+  });
+  // 画面を開く操作を一通り押し、例外が出ないことを見る（押されない画面の不具合を見逃さないため）。
+  await stage('status definitions / organization dialogs open, round-trip and close without errors', async () => {
+    let thrown = 0; const count = () => { thrown++; };
+    window.addEventListener('error', count); window.addEventListener('unhandledrejection', count);
+    const closed = async () => { for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait(); };
+    try {
+      $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('statuses'); render();
+      click('[data-ss-new]');
+      check(!$('veil').hidden && $('status-set-form'), 'new status definition dialog opens');
+      set('#ss-name', '試験の定義');
+      click('[data-ss-add="rough"]');
+      set('[data-ss-item="0"] [data-ss="name"]', '評価');
+      set('[data-ss-item="0"] [data-ss="count"]', '12');
+      check(document.querySelectorAll('[data-ss-item="0"] [data-ss-level]').length === 12, 'level count resizes the level name fields (over 9)');
+      document.querySelectorAll('[data-ss-item="0"] [data-ss-level]').forEach((el, i) => { el.value = 'L' + i; });
+      click('[data-ss-add="text"]');
+      set('[data-ss-item="1"] [data-ss="name"]', '二つ名');
+      {
+        const moves = [...document.querySelectorAll('[data-ss-move]')];
+        check(moves.length >= 2 && moves.every((b) => /^[↑↓]$/.test(b.textContent.trim()) && (b.getAttribute('aria-label') || '').includes('を') && b.title), 'definition item reorder uses labeled arrow buttons like other lists');
+      }
+      {
+        const form = () => document.querySelector('#status-set-form');
+        const tabs = [...form().querySelectorAll('[data-ss-preview-tab]')];
+        check(tabs.length === 2 && tabs[0].getAttribute('aria-selected') === 'true', 'definition preview opens on the card tab');
+        {
+          const previewBox = tabs[0].closest('.ss-preview'), fieldsBox = form().querySelector('.ss-form-body');
+          const pr = previewBox.getBoundingClientRect(), fr = fieldsBox.getBoundingClientRect();
+          check(pr.left < fr.left && Math.abs(pr.top - fr.top) < 40, 'definition preview sits on the left of the fields');
+          const cs = getComputedStyle;
+          check(cs(previewBox).overflowY === 'auto' && cs(fieldsBox).overflowY === 'auto' && cs(form()).overflowY === 'hidden', 'preview and fields scroll separately');
+        }
+        click('#status-set-form [data-ss-preview-tab="detail"]'); await wait();
+        check(form().querySelector('[data-ss-preview] .ss-preview-detail') && form().querySelector('[data-ss-preview-tab="detail"]').getAttribute('aria-selected') === 'true', 'definition preview switches to the detail tab');
+        click('#status-set-form [data-ss-preview-tab="card"]'); await wait();
+        check(form().querySelector('[data-ss-preview] .ss-preview-card') && !form().querySelector('[data-ss-preview] .cs-radar'), 'definition preview switches back to the card tab');
+        click('#status-set-form [data-ss-preview-view="graph"]'); await wait();
+        check(form().querySelector('[data-ss-preview] .ss-preview-graph') && form().querySelector('[data-ss-preview-view="graph"]').getAttribute('aria-pressed') === 'true', 'card preview switches between lines and graph');
+        form().querySelector('[data-ss-preview] [data-ss-focus="1"]').click(); await wait();
+        const target = document.querySelector('[data-ss-item="1"] [data-ss="name"]');
+        check(document.activeElement === target, 'preview item jumps to its editor field');
+      }
+      $('status-set-form').requestSubmit(); await closed();
+      let def = (await ouip.load()).world.statusConcepts.find(c => c.name === '試験の定義');
+      check(def && def.items.length === 2 && def.items[0].levels.length === 12 && def.items[1].mode === 'text', 'definition saves 12 levels and a text item');
+      click(`[data-ss-edit="${def.id}"]`);
+      set('#ss-name', '試験の定義2');
+      $('status-set-form').requestSubmit(); await closed();
+      const edited = (await ouip.load()).world.statusConcepts.find(c => c.id === def.id);
+      check(edited.name === '試験の定義2' && edited.items[0].id === def.items[0].id, 'editing keeps item ids');
+      click(`[data-ss-copy="${def.id}"]`);
+      $('status-set-form').requestSubmit(); await closed();
+      const copy = (await ouip.load()).world.statusConcepts.find(c => c.name === '試験の定義2のコピー');
+      check(copy && copy.id !== def.id && copy.items[0].id !== def.items[0].id, 'copy makes a new definition with new item ids');
+      document.querySelector('[data-ss-preset]').value = 'profile'; click('[data-ss-from-preset]');
+      $('status-set-form').requestSubmit(); await closed();
+      check((await ouip.load()).world.statusConcepts.some(c => c.name === '二つ名・固有スキル'), 'preset can be saved as a definition');
+      for (const target of [def, copy]) {
+        click(`[data-ss-delete="${target.id}"]`);
+        $('status-set-delete').requestSubmit(); await closed();
+      }
+      check(!(await ouip.load()).world.statusConcepts.some(c => c.id === def.id || c.id === copy.id), 'definitions deleted after confirmation');
+      selectBookTab('organizations'); render();
+      for (const q of ['[data-new-organization]', '[data-edit-organization]']) {
+        click(q); check(!$('veil').hidden, q + ' opens a dialog'); $('veil').hidden = true;
+      }
+      check(thrown === 0, 'no uncaught errors while opening dialogs');
+    } finally { window.removeEventListener('error', count); window.removeEventListener('unhandledrejection', count); }
   });
   window.__ouipFeatureFailures = failures;
   console.log('FEATURE SUMMARY: failures=' + failures);

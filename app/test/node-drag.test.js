@@ -7,9 +7,9 @@ const GraphLayout = require('../renderer/graph-layout');
 const app = fs.readFileSync(path.join(__dirname, '../renderer/app.js'), 'utf8');
 const source = app.slice(app.indexOf('// ---- 図のドラッグ ----'), app.indexOf('// ---- 引き出し: 見る ----'));
 const plain = value => JSON.parse(JSON.stringify(value));
-function harness({ zoom = 1, grid = {snap:false}, which = 'rel', id = 'a', legacyReadonly = false } = {}) {
+function harness({ zoom = 1, grid = {snap:false}, gridSize, lockedPins, which = 'rel', id = 'a', legacyReadonly = false } = {}) {
   const listeners = {}, saves = [], opened = [], frames = [], mutations = [];
-  const graph = {id:'graph-a', positions:{[id]:[123.25,150.75]}, grid};
+  const graph = {id:'graph-a', positions:{[id]:[123.25,150.75]}, grid, ...(gridSize === undefined ? {} : {gridSize}), ...(lockedPins === undefined ? {} : {lockedPins})};
   let transform = 'translate(123.25,150.75)', capture;
   const line = {attrs:{x1:'123.25',y1:'150.75',x2:'300',y2:'200'},setAttribute(k,v){this.attrs[k]=String(v);},getAttribute(k){return this.attrs[k];}};
   const label = {dataset:{ea:id,eb:'b'},attrs:{},setAttribute(k,v){this.attrs[k]=v;}};
@@ -26,6 +26,7 @@ function harness({ zoom = 1, grid = {snap:false}, which = 'rel', id = 'a', legac
   const ctx = vm.createContext({document:{addEventListener:(k,fn)=>(listeners[k]||=[]).push(fn)},GraphLayout,
     penMode:false,MW:1000,MH:650,RW:960,RH:560,activeDiagram:()=>graph,
     $:()=>({disabled:true}),openEntry:id=>opened.push(id),
+    pinLocked:(diagram,which,id)=>which==='geo'&&Array.isArray(diagram?.lockedPins)&&diagram.lockedPins.includes(id),
     updateOrganizationFrames:(s,d,id,p)=>frames.push(plain(p)),
     saveNodePosition:async (id,which,p,d)=>{saves.push({id,which,p:plain(p),graph:d.id});await new Promise(r=>{finish=r;});},
   });
@@ -76,6 +77,16 @@ test('地図も同じthreshold/pointercancelで元へ戻し、移動保存は最
   const h=harness({which:'geo'}); await h.emit('pointerdown'); await h.emit('pointermove',104); await h.emit('pointercancel');
   assert.equal(h.transform(),'translate(123.25,150.75)'); assert.equal(h.saves.length,0);
   await h.emit('pointerdown'); const done=h.emit('pointerup',108,106); assert.deepEqual(h.saves[0].p,[131,157]); h.finish(); await done;
+});
+test('地図でグリッドを重ねているときは、選んだ間隔の格子にピンを合わせる', async () => {
+  const h=harness({which:'geo',grid:true}); await h.emit('pointerdown'); const done=h.emit('pointerup',108,106);
+  assert.deepEqual(h.saves[0].p,[150,150]); h.finish(); await done;
+  const h2=harness({which:'geo',grid:true,gridSize:25}); await h2.emit('pointerdown'); const done2=h2.emit('pointerup',108,106);
+  assert.deepEqual(h2.saves[0].p,[125,150]); h2.finish(); await done2;
+});
+test('固定したピンはドラッグで動かず、押すと詳細が開く', async () => {
+  const h=harness({which:'geo',lockedPins:['a']}); await h.emit('pointerdown'); await h.emit('pointermove',150,150); await h.emit('pointerup',150,150);
+  assert.equal(h.mutations.length,0); assert.deepEqual(h.saves,[]); assert.deepEqual(h.opened,['a']);
 });
 test('旧図の人物・組織も位置を移動保存でき、以前の閲覧専用マーカーで阻止しない', async () => {
   for (const id of ['person-a','org-a']) {

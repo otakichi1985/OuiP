@@ -24,11 +24,12 @@ async function capture({ BrowserWindow, nativeImage, screen }, html, { width: W,
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     await win.loadFile(file);
     win.webContents.setZoomFactor(1 / scale);
-    await win.webContents.executeJavaScript('document.fonts.ready.then(() => Promise.all([...document.images].map(image => image.decode().catch(() => {}))))');
+    await win.webContents.executeJavaScript('document.fonts.ready.then(() => Promise.all([...document.querySelectorAll("template")].flatMap(t => [...t.content.querySelectorAll("img")]).map(img => img.decode().catch(() => {}))))');
     // 表示の幅が指定の画素数と合わなければ、右端が切れた画像になるので撮らない。
     const layoutWidth = await win.webContents.executeJavaScript('document.documentElement.clientWidth');
     if (Math.abs(layoutWidth - W) > 1) fail(`表示の幅が合いません（${layoutWidth}px）。画面の拡大率を変えた直後なら、もう一度お試しください`);
     const info = await win.webContents.executeJavaScript(Sheet.PAGINATE);
+    await win.webContents.executeJavaScript('Promise.all([...document.images].map(img => img.complete && img.naturalWidth ? Promise.resolve() : img.decode().catch(() => {})))');
     const total = info.pages * H, rows = [];
     for (let y = 0; y < total; y += strip) {
       const actual = await win.webContents.executeJavaScript(`window.scrollTo(0, ${y}); new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(scrollY))))`);
@@ -53,7 +54,7 @@ async function capture({ BrowserWindow, nativeImage, screen }, html, { width: W,
 class SheetExport {
   constructor({ store, dir = store?.dir, electron }) {
     if (!store || !dir || path.resolve(dir) !== path.resolve(store.dir)) throw new Error('Storeの保存先が必要です');
-    this.store = store; this.dir = path.resolve(dir); this.electron = electron; this.images = new SiteExport({ store, dir }); this.busy = false;
+    this.store = store; this.dir = path.resolve(dir); this.electron = electron; this.images = new SiteExport({ store, dir, nativeImage: electron?.nativeImage }); this.busy = false;
   }
   defaults(entryId) {
     return this.store.serial(async () => {
@@ -65,7 +66,7 @@ class SheetExport {
   model(entryId, options) {
     return this.store.serial(async () => {
       const model = Sheet.sheetModel(await this.store.load(), entryId, options);
-      for (const key of ['image', 'icon']) if (model[key]) model[key] = (await this.images.image(model[key])).uri;
+      for (const key of ['image', 'icon']) if (model[key]) model[key] = (await this.images.sheetImage(model[key], model.name)).uri;
       return model;
     });
   }
@@ -85,7 +86,9 @@ class SheetExport {
     const parent = await fs.realpath(path.dirname(path.resolve(file))), dest = path.join(parent, path.basename(file)), root = await fs.realpath(this.dir);
     const inside = p => { const rel = path.relative(root, p); return !rel || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel)); };
     if (inside(dest)) fail('創作データのフォルダー外へ書き出してください');
-    const targets = pngs.length === 1 ? [dest] : pngs.map((_, i) => dest.replace(/\.png$/i, `-${i + 1}.png`));
+    // 複数ページは「名前-日付-ページ数」にする（同じ日に作り直しても衝突しにくい）。
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const targets = pngs.length === 1 ? [dest] : pngs.map((_, i) => dest.replace(/\.png$/i, `-${stamp}-${i + 1}.png`));
     for (const target of targets) {
       try {
         const stat = await fs.lstat(target);

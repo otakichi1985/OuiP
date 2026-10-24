@@ -9,14 +9,28 @@ const CharacterStats = require('../renderer/character-stats');
 const CharacterUnits = require('../renderer/character-units');
 const TimelineModel = require('../renderer/timeline-model');
 const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
-// 閲覧用スクリプトは、数値の範囲で絞る部品（アプリと同じ）と、固定の閲覧コードをつないだもの。
-const script = (read('../renderer/facet-range.js') + '\n' + read('../share/site.js')).replace(/\r\n?/g, '\n');
+// 閲覧用スクリプトは、数値の範囲で絞る部品（アプリと同じ）と、図の収め方、固定の閲覧コードをつないだもの。
+const script = (read('../renderer/facet-range.js') + '\n' + read('../renderer/diagram-fit.js') + '\n' + read('../share/site.js')).replace(/\r\n?/g, '\n');
 const FacetRange = require('../renderer/facet-range');
 const Icons = require('../renderer/icons');
 // アイコンを入れた書き出しにはLucideのライセンス全文を添える（ISCとMITの表示義務）。
 const iconLicense = fs.readFileSync(path.join(__dirname, '../renderer/icons-LICENSE.txt'), 'utf8').replace(/--/g, '- -');
 const TAB_ICONS = {overview: 'home', characters: 'character', organizations: 'organization', graphs: 'graph', terms: 'term', places: 'place', timeline: 'timeline'};
+// 一覧の「表示」（カードの大きさ）。アプリと同じく、文字ではなく並びの形のアイコンで選ぶ。閲覧用では保存しない。
+const CARD_SIZE_OPTIONS = [
+  ['small', '小', 'cardSmall', '絵と名前'],
+  ['medium', '中', 'cardMedium', 'タグと説明まで'],
+  ['large', '大', 'cardLarge', '横長でステータスまで'],
+];
+const cardSizeControl = () => `<span class="card-size" role="group" aria-label="表示" data-tools hidden><span class="card-size-label">表示</span>${CARD_SIZE_OPTIONS.map(([key, label, icon, hint], index) => `<button type="button" data-card-size="${key}" aria-pressed="${index === 0}" aria-label="表示：${label}（${hint}）" title="表示：${label}（${hint}）">${Icons.icon(icon)}</button>`).join('')}</span>`;
 const styles = read('../share/site.css') + '\n' + read('../renderer/character-stats.css');
+// 書き出しの見た目。基本は暗い配色のままで、明るいテンプレートは色と書体の変数だけを差し替える。
+// 図（関係図・地図）は作品の一部として暗い配色のまま置く。
+const TEMPLATES = ['standard', 'light', 'paper'];
+const TEMPLATE_CSS = {
+  light: ':root[data-template="light"]{color-scheme:light;--bg:#f6f7f9;--surface:#ffffff;--raise:#eef1f5;--fg:#1b1f26;--muted:#565e6c;--accent:#0b7666;--line:#dfe3e9;--control-line:#8a93a3}',
+  paper: ':root[data-template="paper"]{color-scheme:light;--bg:#f6f2e8;--surface:#fffdf7;--raise:#efe9dc;--fg:#2a2620;--muted:#6a6256;--accent:#8a5a2b;--line:#e0d8c6;--control-line:#9a8f7b;--body:"Yu Mincho","Hiragino Mincho ProN","MS PMincho",serif}'
+};
 const scriptHash = crypto.createHash('sha256').update(script, 'utf8').digest('base64');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -26,10 +40,11 @@ const text = value => String(value ?? '');
 const nonblank = value => text(value).trim() !== '';
 const id = (type, value) => `${type}-${text(value)}`;
 const anchor = (type, item) => `<a href="#${esc(id(type, item.id))}">${esc(item.name || '名称未定')}</a>`;
-// Only image data URIs are accepted, even if a caller accidentally passes a path/URL.
-function image(uri, alt, className) {
-  if (typeof uri !== 'string' || !/^data:image\/[a-z0-9.+-]+(?:;[^,\s]*)?,/i.test(uri)) return '';
-  return `<img class="${className}" src="${esc(uri)}" alt="${esc(alt)}" loading="lazy" decoding="async">`;
+// Only image data URIs, or numbers of images embedded once (ouip-img:N), are accepted, even if a caller accidentally passes a path/URL.
+const IMAGE_REF = /^ouip-img:\d+$/;
+function image(uri, alt, className, style = '') {
+  if (typeof uri !== 'string' || !(IMAGE_REF.test(uri) || /^data:image\/[a-z0-9.+-]+(?:;[^,\s]*)?,/i.test(uri))) return '';
+  return `<img class="${className}" src="${esc(uri)}" alt="${esc(alt)}" loading="lazy" decoding="async"${style}>`;
 }
 function tagEntries(entry) {
   return Object.entries(entry.tags || {}).map(([key, values]) => [key, list(values)]);
@@ -37,7 +52,7 @@ function tagEntries(entry) {
 function unset(entry) {
   return list(entry.fields).some(field => field.open) ||
     tagEntries(entry).some(([, values]) => !values.length || values.some(v => !nonblank(v))) ||
-    list(entry.stats?.items).some(item => item.value == null) ||
+    list(CharacterStats.itemsOf(entry.stats)).some(item => item.value == null) ||
     (entry.kind === '出来事' && TimelineModel.yearNumber(entry) == null);
 }
 function disclosure(title, content, open = false) {
@@ -52,10 +67,21 @@ function renderTags(entry) {
 function renderFields(entry) {
   return disclosure('設定項目', list(entry.fields).map(field => `<div class="setting-field"><h4>${field.no != null ? `<span class="field-number">${esc(field.no)}</span> ` : ''}${esc(field.key)}${field.open ? ' <span class="unset">未定</span>' : ''}</h4>${nonblank(field.value) ? `<p class="prose">${esc(field.value)}</p>` : '<p class="muted">未定</p>'}</div>`).join(''), true);
 }
+// 複数画像は、詳細の中でページめくりにする（スクリプトのない閲覧では格子で全部見せる）。
+function renderGallery(entry) {
+  if (entry.kind !== '人物') return '';
+  const images = (Array.isArray(entry.images) && entry.images.length ? entry.images : entry.image ? [{ image: entry.image }] : []).filter(item => item && item.image);
+  if (images.length < 2) return '';
+  return `<section class="entry-gallery-block"><h4>絵のバリエーション</h4><div class="entry-gallery" data-entry-gallery>${images.map((item, index) => `<figure data-gallery-item data-caption="${esc(item.caption || '')}">${image(item.image, `${entry.name || '名称未定'}の絵${index + 1}`, 'gallery-image')}${item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : ''}</figure>`).join('')}</div></section>`;
+}
 function renderEntry(entry, context) {
   const organizations = list(entry.organizationIds).map(key => context.orgs.get(key)).filter(Boolean);
   const refs = list(entry.refs).map(key => context.entries.get(key)).filter(Boolean);
-  const picture = image(entry.image, `${entry.name || '名称未定'}の画像`, 'entry-image');
+  // アプリの「カードのサムネ: 枠いっぱいに切る」を、書き出しのカードにも同じ位置で反映する。
+  const crop = entry.imageCrop && entry.imageCrop.fit === 'cover'
+    ? ` style="object-fit:cover;object-position:${[0, 50, 100].includes(Number(entry.imageCrop.x)) ? Number(entry.imageCrop.x) : 50}% ${[0, 50, 100].includes(Number(entry.imageCrop.y)) ? Number(entry.imageCrop.y) : 50}%;height:100%"`
+    : '';
+  const picture = image(entry.image, `${entry.name || '名称未定'}の画像`, 'entry-image', crop);
   const stats = CharacterStats.renderDetail(entry.stats);
   const sections = list(entry.sections).map(section => disclosure(section.title || '文章', `<p class="prose">${esc(section.text)}</p>`, true)).join('');
   const year = entry.kind === '出来事' ? `<p class="entry-year">${esc(TimelineModel.yearText(entry, context.calendar))}</p>` : '';
@@ -64,11 +90,14 @@ function renderEntry(entry, context) {
   const hue = entry.kind === '人物' && Number.isFinite(entry.hue) ? ` style="--hue:${Number(entry.hue)}"` : '';
   const placeholder = uniform && !picture ? `<span class="entry-image entry-placeholder${entry.kind === '人物' ? ' person' : ''}"${hue} aria-hidden="true">${image(entry.icon, '', 'placeholder-icon') || esc([...text(entry.name)][0] || '？')}</span>` : '';
   const isUnset = unset(entry);
-  return `<article class="entry-card" id="${esc(id('entry', entry.id))}" data-record data-unset="${isUnset}">
+  const cardStats = uniform && entry.kind === '人物' ? CharacterStats.renderLines(entry.cardStats) : '';
+  const thumbCaption = entry.kind === '人物' ? (Array.isArray(entry.images) ? entry.images.find(item => item.image === entry.image)?.caption : '') || '' : '';
+  return `<article class="entry-card" id="${esc(id('entry', entry.id))}" data-record data-unset="${isUnset}"${thumbCaption ? ` data-image-caption="${esc(thumbCaption)}"` : ''}>
     ${picture || placeholder ? `<a class="picture-link" href="#${esc(id('entry', entry.id))}" aria-label="${esc(entry.name)}の詳細">${picture || placeholder}</a>` : ''}
-    <div class="card-head"><h3>${image(entry.icon, '', 'entry-icon')}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
+    <div class="card-head"><h3>${image(entry.image || entry.icon, '', 'entry-icon')}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
+    ${cardStats ? `<div class="card-stats">${cardStats}</div>` : ''}
     <details class="entry-detail" data-entry-detail><summary>詳細を読む</summary><div class="entry-body">
-      ${renderTags(entry)}${sections}${renderFields(entry)}${stats ? `<div class="stats-wrap">${stats}</div>` : ''}
+      ${renderGallery(entry)}${renderTags(entry)}${sections}${renderFields(entry)}${stats ? `<div class="stats-wrap">${stats}</div>` : ''}
       ${organizations.length ? disclosure('所属組織', `<ul class="link-list">${organizations.map(org => `<li>${anchor('org', org)}</li>`).join('')}</ul>`, true) : ''}
       ${refs.length ? disclosure('関連する項目', `<ul class="link-list">${refs.map(ref => `<li>${anchor('entry', ref)}</li>`).join('')}</ul>`, true) : ''}
       <a class="back-link" href="#${esc(context.section)}">${esc(context.label)}一覧へ</a>
@@ -154,6 +183,8 @@ function renderSite(model = {}) {
   ].map(category => ({...category, items: category.items || entries.filter(entry => entry.kind === category.kind)}))
     .filter(category => category.items.length || (category.id === 'places' && maps.length));
   const title = model.title || '無題の世界';
+  const template = TEMPLATES.includes(model.template) ? model.template : 'standard';
+  const templateStyles = TEMPLATE_CSS[template] || '';
   const sectionHTML = categories.map(category => {
     const local = {...context, section: category.id, label: category.label};
     let content = '';
@@ -168,17 +199,26 @@ function renderSite(model = {}) {
     return `<section class="catalog-section" id="${category.id}" data-panel aria-labelledby="${category.id}-heading"${category.kind && category.items.length ? ' data-catalog' : ''}><div class="section-heading"><h2 id="${category.id}-heading">${category.label}</h2><span>${count}</span><a href="#overview">概要へ</a></div>${content}</section>`;
   }).join('');
   const csp = `default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'sha256-${scriptHash}'; base-uri 'none'; form-action 'none'`;
-  return `<!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${styles}</style></head>
+  // 同じ画像は1回だけ埋め込む。各画像の最初の1か所に本物を入れ（スクリプトなしでも見える）、2か所目からは data-ouip-src/href で番号を指し、site.js がそこから写す。
+  const imageTable = Object.fromEntries(Object.entries(model.images || {}).filter(([key, uri]) => /^\d+$/.test(key) && typeof uri === 'string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]*$/.test(uri)));
+  const placed = new Set();
+  const placeImage = (match, attr, n) => {
+    if (!imageTable[n]) return '';
+    if (placed.has(n)) return ` data-ouip-${attr}="${n}"`;
+    placed.add(n); return ` ${attr}="${imageTable[n]}" data-ouip-id="${n}"`;
+  };
+  return (`<!doctype html>
+<html lang="ja" data-template="${esc(template)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${styles}${templateStyles}</style></head>
 <body><a class="skip-link" href="#content">資料本文へ</a>
-<nav class="site-nav" aria-label="資料の分類"><span class="nav-title">${esc(title)}${model.author ? `<span class="nav-author"> ・ ${esc(model.author)}</span>` : ''}</span><a href="#overview" data-tab-link>${Icons.icon(TAB_ICONS.overview)}概要</a>${categories.map(category => `<a href="#${category.id}" data-tab-link>${Icons.icon(TAB_ICONS[category.id])}${category.label}<span class="count">${category.items.length || maps.length}</span></a>`).join('')}<label class="nav-search" data-tools hidden>検索<input type="search" data-nav-search placeholder="名前・読み・本文" autocomplete="off"></label><span class="card-size" role="group" aria-label="カードの大きさ" data-tools hidden>大きさ<button type="button" data-card-size="small" aria-pressed="true">小</button><button type="button" data-card-size="medium" aria-pressed="false">中</button><button type="button" data-card-size="large" aria-pressed="false">大</button></span></nav>
+<nav class="site-nav" aria-label="資料の分類"><span class="nav-title">${esc(title)}${model.author ? `<span class="nav-author"> ・ ${esc(model.author)}</span>` : ''}</span><a href="#overview" data-tab-link>${Icons.icon(TAB_ICONS.overview)}概要</a>${categories.map(category => `<a href="#${category.id}" data-tab-link>${Icons.icon(TAB_ICONS[category.id])}${category.label}<span class="count">${category.items.length || maps.length}</span></a>`).join('')}<label class="nav-search" data-tools hidden>検索<input type="search" data-nav-search placeholder="名前・読み・本文" autocomplete="off"></label>${cardSizeControl()}</nav>
 <main id="content"><header class="world-header" id="overview" data-panel><div class="world-heading"><p class="document-label">世界設定資料</p><h1>${esc(title)}</h1>${model.author ? `<p class="world-author">作者 ${esc(model.author)}</p>` : ''}${model.note ? `<p class="world-note prose">${esc(model.note)}</p>` : ''}</div><div class="world-aside">${image(model.image, `${title}の画像`, 'world-image')}${categories.length ? `<nav class="world-index" aria-label="資料の索引">${categories.map(category => `<a href="#${category.id}"><span>${category.label}</span><span>${category.items.length || maps.length}</span></a>`).join('')}</nav>` : ''}</div></header>${sectionHTML}</main>
 <footer>OuiPで作成した共有資料 / 閲覧専用</footer><script>${script}</script>
 <!--
 Third-party notice: icons from Lucide
+カードの表示アイコン（cardSmall/cardMedium/cardLarge）はOuiP用に描いた図形で、Lucideではない。
 ${iconLicense}-->
-</body></html>`;
+</body></html>`).replace(/ (src|href)="ouip-img:(\d+)"/g, placeImage);
 }
 
-module.exports = {renderSite};
+module.exports = {renderSite, TEMPLATES};
 

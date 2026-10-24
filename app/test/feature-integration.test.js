@@ -15,22 +15,25 @@ async function fixture(t) {
 }
 test('統合: ステータスの部分更新・拒否・解除・履歴・共有', async t => {
   const {dir,store,history} = await fixture(t);
-  const e = await store.saveEntry({kind:'人物',name:'灯',stats:{card:'radar',detail:'dots',items:[
+  // 複数「ブロック」（レーダー1個＋棒グラフ1個など）を保存する。旧単体の入力も1ブロックへ化けて保存する。
+  const block = {version:1,card:'radar',detail:'dots',items:[
     {name:'体力',mode:'number',min:0,max:100,unit:'pt',value:70},
     {name:'集中',mode:'rough',levels:['低','中','高'],value:2}
-  ]}});
+  ]};
+  const stats = {version:1, blocks:[block, {version:1,card:'bars',detail:'bars',items:[{name:'好感度',mode:'number',min:0,max:100,unit:'%',value:20}]}]};
+  const e = await store.saveEntry({kind:'人物',name:'灯',stats});
   const oid = await history.save('ステータス');
-  assert.deepEqual((await store.saveEntry({id:e.id,name:e.name,kind:e.kind,desc:'編集'})).stats,e.stats);
+  assert.deepEqual((await store.saveEntry({id:e.id,name:e.name,kind:e.kind,desc:'編集'})).stats,stats);
   const before = await fs.readFile(store.p('entries',e.id+'.json'));
-  await assert.rejects(store.saveEntry({...e,stats:{items:[{...e.stats.items[0],value:101}]}}),/ステータス/);
+  await assert.rejects(store.saveEntry({...e,stats:{version:1,blocks:[{...block,items:[{...block.items[0],value:101}]}]}}),/ステータス/);
   assert.deepEqual(await fs.readFile(store.p('entries',e.id+'.json')),before);
-  await store.saveEntry({...e,stats:null}); assert.equal((await store.load()).entries[0].stats.items.length,0);
+  await store.saveEntry({...e,stats:null}); assert.ok(!('stats' in (await store.load()).entries[0]), '空のステータス枠は残さない');
   await history.save('解除'); await history.restore(oid);
-  assert.deepEqual((await store.load()).entries[0].stats,e.stats);
+  assert.deepEqual((await store.load()).entries[0].stats,stats);
   await store.saveBoard({items:[{type:'entry',ref:e.id,x:0,y:0}],links:[]});
   const receiver = new Store(path.join(dir,'receiver')); await receiver.init();
   await new BoardShare({store:receiver,dir:receiver.dir}).importPayload(await new BoardShare({store,dir:store.dir}).exportPayload());
-  assert.deepEqual((await receiver.load()).entries[0].stats,e.stats);
+  assert.deepEqual((await receiver.load()).entries[0].stats,stats);
 });
 test('統合: 年表示位置・年順の部分更新・不正拒否・履歴', async t => {
   const {store,history} = await fixture(t);

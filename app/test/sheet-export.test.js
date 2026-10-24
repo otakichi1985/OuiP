@@ -14,6 +14,7 @@ async function fixture(t) {
   return { store, data, out, sheet: new SheetExport({ store, dir: data, electron: {} }) };
 }
 const png = n => Buffer.alloc(n, 1);
+const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
 test('1枚はダイアログで選んだ名前、複数枚は番号つきで保存し、Xの5MBを超えた枚数を返す', async t => {
   const f = await fixture(t);
@@ -22,16 +23,16 @@ test('1枚はダイアログで選んだ名前、複数枚は番号つきで保�
   const again = await f.sheet.save(path.join(f.out, '灯.png'), [png(12)]);
   assert.deepEqual(again.files, ['灯.png'], 'ダイアログが確かめた1枚の上書きはする');
   const many = await f.sheet.save(path.join(f.out, '灯.png'), [png(3), png(X_LIMIT + 1)]);
-  assert.deepEqual(many.files, ['灯-1.png', '灯-2.png']); assert.equal(many.overX, 1);
-  assert.equal((await fs.readFile(path.join(f.out, '灯-2.png'))).length, X_LIMIT + 1);
+  assert.deepEqual(many.files, [`灯-${stamp}-1.png`, `灯-${stamp}-2.png`]); assert.equal(many.overX, 1);
+  assert.equal((await fs.readFile(path.join(f.out, `灯-${stamp}-2.png`))).length, X_LIMIT + 1);
 });
 
 test('複数枚で同じ名前が既にあれば、どれも書かずに止める', async t => {
   const f = await fixture(t);
-  await fs.writeFile(path.join(f.out, '霧-2.png'), 'old');
-  await assert.rejects(f.sheet.save(path.join(f.out, '霧.png'), [png(1), png(2)]), /同じ名前のファイルがあります（霧-2\.png）/);
-  await assert.rejects(fs.stat(path.join(f.out, '霧-1.png')), /ENOENT/);
-  assert.equal(await fs.readFile(path.join(f.out, '霧-2.png'), 'utf8'), 'old');
+  await fs.writeFile(path.join(f.out, `霧-${stamp}-2.png`), 'old');
+  await assert.rejects(f.sheet.save(path.join(f.out, '霧.png'), [png(1), png(2)]), new RegExp(`同じ名前のファイルがあります（霧-${stamp}-2\\.png）`));
+  await assert.rejects(fs.stat(path.join(f.out, `霧-${stamp}-1.png`)), /ENOENT/);
+  assert.equal(await fs.readFile(path.join(f.out, `霧-${stamp}-2.png`), 'utf8'), 'old');
 });
 
 test('創作データのフォルダー内と、png以外の名前には保存しない', async t => {

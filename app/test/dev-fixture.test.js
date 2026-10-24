@@ -11,6 +11,7 @@ const { ensureFixture, devDirectory } = require('../lib/dev-fixture');
 const { Store, openItems } = require('../lib/store');
 const { History } = require('../lib/history');
 const Stats = require('../renderer/character-stats');
+const StatusModel = require('../renderer/status-model');
 
 async function temporary(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ouip-dev-fixture-'));
@@ -96,14 +97,21 @@ test('新規fixtureは8人物/2用語/2場所/6出来事と画像・組織・図
   for (const e of of('人物')) {
     for (const id of e.organizationIds) assert.ok(orgs.has(id));
     assert.deepEqual(e.tagUnits,{年齢:'歳',身長:'cm',体重:'kg'});
-    assert.deepEqual(Stats.validate(e.stats),e.stats);
-    assert.ok(e.stats.items.some(s=>s.mode==='number'));
-    assert.ok(e.stats.items.some(s=>s.mode==='rough'));
-    assert.doesNotMatch(Stats.renderCard(e.stats)+Stats.renderDetail(e.stats),/NaN|Infinity|undefined/);
+    // 0〜5は世界観の定義への割り当て、6・7は旧形式。どちらも表示用の形に解決できる。
+    const stats=StatusModel.resolve(e,world);
+    assert.deepEqual(Stats.validateBlocks(stats),stats);
+    assert.ok(stats.blocks.length>=1);
+    assert.ok(stats.blocks[0].items.some(s=>s.mode==='number'));
+    assert.ok(stats.blocks[0].items.some(s=>s.mode==='rough'));
+    assert.doesNotMatch(Stats.renderCard(stats)+Stats.renderDetail(stats),/NaN|Infinity|undefined/);
   }
   assert.equal(of('人物').filter(e=>e.organizationIds.length).length,4);
-  assert.ok(of('人物').some(e=>e.stats.items.some(s=>s.value===null)));
-  assert.ok(of('人物').some(e=>e.stats.items.some(s=>s.mode==='number'&&s.value===0)));
+  const resolved=of('人物').map(e=>StatusModel.resolve(e,world).blocks[0]);
+  assert.ok(resolved.some(b=>b.items.some(s=>s.value===null)));
+  assert.ok(resolved.some(b=>b.items.some(s=>s.mode==='number'&&s.value===0)));
+  assert.ok(resolved.some(b=>b.items.some(s=>s.mode==='text'&&s.value)));
+  assert.equal(of('人物').filter(e=>e.statusSets).length,6);
+  assert.equal(of('人物').filter(e=>StatusModel.hasLegacy(e)).length,2);
   assert.equal(world.maps.length,1);
   for (const map of world.maps) {
     assert.equal(Object.keys(map.positions).length,2);
@@ -114,6 +122,13 @@ test('新規fixtureは8人物/2用語/2場所/6出来事と画像・組織・図
   assert.deepEqual(graph.organizationIds,[...orgs]);
   assert.equal(graph.relations.length,3);
   for (const g of world.graphs) {
+    if(g.format==='canvas') {
+      // 自由配置の図: 設定資料の項目は実在し、吹き出しと矢印のテンプレートを含む
+      assert.ok(g.items.filter(it=>it.kind==='entry').every(it=>entries.some(e=>e.id===it.ref)||orgs.has(it.ref)));
+      if(g.name.includes('想い')) assert.ok(g.items.some(it=>it.kind==='balloon') && g.links.every(l=>l.template));
+      else { const DM=require('../renderer/diagram-model'), f=g.items.find(it=>it.look==='frame'); assert.ok(f && DM.contained(g,f.id).length>=2, '組織の枠の中に所属するキャラ'); }
+      continue;
+    }
     if(g.format==='free') {
       assert.equal(g.nodes.length,4);assert.equal(g.edges.length,3);
       const ids=new Set(g.nodes.map(n=>n.id));assert.ok(g.edges.every(e=>ids.has(e.a)&&ids.has(e.b)));
@@ -156,7 +171,7 @@ test('再生成は保存済み編集・未保存編集・履歴・画像を一�
   await ensureFixture(dir);
   const s = new Store(dir), h = new History(dir), initial = await h.head();
   const person = (await s.load()).entries.find(e=>e.kind==='人物');
-  await s.saveEntry({...person,name:'編集した灯',stats:{...person.stats,card:'text'}});
+  await s.saveEntry({...person,name:'編集した灯',stats:{version:1,blocks:[{card:'text',detail:'bars',items:[{name:'体力',mode:'number',min:0,max:100,unit:'pt',value:1}]},{card:'hidden',detail:'bars',items:[{name:'好感度',mode:'number',min:0,max:100,unit:'%',value:50}]}]}});
   await s.updateWorld({title:'自分の検証世界'});
   const saved = await h.save('利用者の編集');
   await s.saveEntry({...person,name:'未保存の名前',desc:'まだ履歴には保存していない'});

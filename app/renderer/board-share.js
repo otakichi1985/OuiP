@@ -44,9 +44,10 @@
       busy = true;
       panel().querySelectorAll("[data-bs-action]").forEach(b => b.disabled = true);
       status("処理中…");
+      if ($("bs-busy")) $("bs-busy").hidden = false;
       try { return await fn(); }
       catch (e) { status("できませんでした: " + String(e.message || e), true); throw e; }
-      finally { busy = false; panel().querySelectorAll("[data-bs-action]").forEach(b => b.disabled = false); }
+      finally { busy = false; if ($("bs-busy")) $("bs-busy").hidden = true; panel().querySelectorAll("[data-bs-action]").forEach(b => b.disabled = false); }
     }
     function decorate() {
       const S = getState();
@@ -58,7 +59,8 @@
         el.classList.add("bs-card");
         el.tabIndex = readOnly() ? -1 : 0;
         if (e) {
-          el.innerHTML = `<span class="k">${esc(e.kind)}</span>${e.image ? `<img class="bs-image" src="${esc(assetURL(e.image))}" alt="${esc(e.name)}の画像" draggable="false">` : ""}<div class="bs-title">${e.icon ? `<img class="bs-icon" src="${esc(assetURL(e.icon))}" alt="" draggable="false">` : `<span class="bs-initial">${esc([...String(e.name || "")][0] || "")}</span>`}<b>${esc(e.name)}</b></div>${e.reading ? `<div class="bs-reading">${esc(e.reading)}</div>` : ""}${e.desc ? `<div class="bs-desc">${esc(e.desc)}</div>` : ""}`;
+          const picked = n.imageId && ImageSet.list(e).some((item) => item.image === n.imageId) ? n.imageId : e.image;
+          el.innerHTML = `<span class="k">${esc(e.kind)}</span>${picked ? `<img class="bs-image" src="${esc(assetURL(picked))}" alt="${esc(e.name)}の画像" draggable="false">` : ""}<div class="bs-title">${e.icon || picked ? `<img class="bs-icon" src="${esc(assetURL(e.icon || picked))}" alt="" draggable="false">` : `<span class="bs-initial">${esc([...String(e.name || "")][0] || "")}</span>`}<b>${esc(e.name)}</b></div>${e.reading ? `<div class="bs-reading">${esc(e.reading)}</div>` : ""}${e.desc ? `<div class="bs-desc">${esc(e.desc)}</div>` : ""}`;
         } else if (n.type === "memo") el.innerHTML = `<span class="k">メモ</span><div class="bs-memo">${esc(n.text)}</div>`;
         if (acts) el.append(acts);
         el.querySelectorAll("img").forEach(img => img.addEventListener("load", () => drawLinks(), { once: true }));
@@ -138,7 +140,7 @@
         const names = S.entries.filter(e => refs.has(e.id)).map(e => e.name || "名前なし");
         if (!window.confirm(`ボード共有ファイルを書き出しますか？\n\n${names.length}件の設定カード: ${names.join("、") || "なし"}\n\n載せた設定カードの全内容（画像・アイコン・名前・読み・説明・見出しと文章・項目・タグ・詳細）を、非表示の内容も含めて書き出します。メモ・配置・ボードの線も含みます。\n世界の情報・履歴・ボード外への参照・相関図の関係・地図座標は含みません。\n本文の個人情報などは自動で除かれません。共有前に内容を確認してください。`)) { status("書き出しをやめました"); return; }
         const result = await api.exportBoardFile();
-        status(canceled(result) ? "書き出しをやめました" : "共有ファイルを書き出しました"); return result;
+        status(canceled(result) ? "書き出しをやめました" : "共有ファイルを書き出しました" + (result?.kept ? `。WebPの画像${result.kept}枚は小さくできず、元の大きさのまま入れました` : "")); return result;
       });
     }
     // 受け取ったボードは、まず見るだけで開く。取り込むものを選んでから、選んだ分だけを今のボードへ足す。
@@ -274,7 +276,8 @@
         };
         block(e ? e.kind : "メモ", 11, "#a0a7b6");
         if (e) {
-          card.image = await image(e.image); card.icon = await image(e.icon);
+          const picked = n.imageId && ImageSet.list(e).some((item) => item.image === n.imageId) ? n.imageId : e.image;
+          card.image = await image(picked); card.icon = await image(e.icon);
           if (card.image) { card.imageY = cursor; cursor += 134; }
           card.iconY = cursor;
           block(e.name || "名前なし", 17, "#e4e6ec", 176, displayFont, true, 52);
@@ -381,6 +384,7 @@
       panel().querySelector(".wsh").insertBefore(tools, $("ws-close"));
       const note = document.createElement("div"); note.id = "bs-status"; note.className = "bs-status"; note.setAttribute("role", "status"); note.setAttribute("aria-live", "polite");
       panel().querySelector(".wsh").after(note);
+      const busyBar = document.createElement("div"); busyBar.id = "bs-busy"; busyBar.className = "busy-bar"; busyBar.hidden = true; busyBar.innerHTML = "<span></span>"; note.after(busyBar);
       // 発表表示の右下に出す小さな操作。マウスを2秒動かさないと消える。
       const presentControls = document.createElement("div"); presentControls.className = "bs-present-controls";
       presentControls.innerHTML = '<button class="b quiet sm" type="button" data-bs-action="fit">全体</button><button class="b quiet sm" type="button" data-bs-action="present-end">終了</button>';

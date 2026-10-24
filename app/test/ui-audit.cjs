@@ -20,9 +20,8 @@ async function rendererAudit() {
   check(bookTab === '出来事', 'End selects timeline');
   key(document.activeElement, 'Home'); await wait();
   check(bookTab === '人物', 'Home returns to characters');
-  click('[data-kind="場所"]'); click('[data-view="地図"]');
-  const mapTab = document.querySelector('[data-view="地図"]'); mapTab.focus(); key(mapTab, 'Home');
-  check(view.場所 === '一覧' && document.activeElement.dataset.view === '一覧', 'nested place tabs support keyboard and restore focus');
+  click('[data-book-tab="maps"]');
+  check(bookTab === 'maps' && $('q').hidden && $('facets').hidden, 'map is its own tab without the retired nested view switch');
   click('[data-kind="人物"]');
   $('q').value = '存在しない検索'; $('q').dispatchEvent(new Event('input', { bubbles: true }));
   check($('bookbody').textContent.includes('条件に合うキャラはありません') && $('bookbody').querySelector('[data-clear-search]'), 'filtered empty has a recovery action');
