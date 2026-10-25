@@ -3,7 +3,6 @@
 const FreeGraph = require('../renderer/free-graph');
 const DiagramModel = require('../renderer/diagram-model');
 const OrganizationGraph = require('../renderer/organizations');
-const ImageCrop = require('../renderer/image-crop');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const styles = `<style>text{fill:#e4e6ec;font:14px sans-serif}.edge{stroke:#6cc4b4;stroke-width:2;fill:none}.friend{stroke-dasharray:6 5}.rival{stroke:#f0b866;stroke-dasharray:2 5}.elab{font-size:12px;paint-order:stroke;stroke:#12151c;stroke-width:4px;stroke-linejoin:round}.organization-frame rect{fill:#6cc4b4;fill-opacity:.035;stroke:#6cc4b4;stroke-opacity:.6}.organization-frame text{fill:#6cc4b4}.organization-node rect{fill:#222733;stroke:#6cc4b4}.ini{fill:#12151c;font-size:19px}a:focus{outline:2px solid #6cc4b4}</style>`;
 function svg(name, bounds, body, description) {
@@ -53,10 +52,8 @@ function legacyDiagram(graph, entries, organizations) {
   const list = [...all.map(e => e.name),...m.relations.map(r => `${names.get(r.a)} ― ${names.get(r.b)}${r.label ? '：'+r.label : ''}`)];
   const lines = m.relations.map(r => {const a=positions[r.a],b=positions[r.b]; return `<line class="edge ${r.style}" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/><text class="elab" x="${(a[0]+b[0])/2}" y="${(a[1]+b[1])/2-4}" text-anchor="middle">${esc(r.label)}</text>`;}).join('');
   const nodes = all.map(e => {
-    const [x,y] = positions[e.id], org = m.groups.includes(e);
-    const src = e.icon || e.image;
-    const crop = src ? ImageCrop.style(ImageCrop.get(e, 'icon')) : '';
-    const face = src ? `<foreignObject x="-22" y="-22" width="44" height="44"><div xmlns="http://www.w3.org/1999/xhtml" style="width:44px;height:44px;border-radius:50%;overflow:hidden"><img src="${esc(src)}" alt="" style="display:block;width:100%;height:100%;${crop}"></div></foreignObject>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0])}</text>`;
+    const [x,y] = positions[e.id], org = m.groups.includes(e), clip = `clip-${graph.id}-${e.id}`;
+    const face = (e.image || e.icon) ? `<defs><clipPath id="${clip}"><circle r="22"/></clipPath></defs><image href="${esc(e.image || e.icon)}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clip})"/>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0])}</text>`;
     return `<a href="#${org ? 'org' : 'entry'}-${e.id}" aria-label="${esc(e.name)}の詳細"><g class="${org ? 'organization-node' : 'nd'}" transform="translate(${x},${y})">${org ? `<rect x="-65" y="-18" width="130" height="36" rx="5"/><text y="5" text-anchor="middle">${esc(e.name.slice(0,10))}</text>` : `<circle r="22" fill="hsl(${e.hue || 0} 45% 62%)"/>${face}<text y="46" text-anchor="middle">${esc(e.name)}</text>`}<title>${esc(e.name)}</title></g></a>`;
   }).join('');
   const frames = m.display === 'frames' ? m.frames : [];

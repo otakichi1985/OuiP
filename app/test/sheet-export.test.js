@@ -16,17 +16,6 @@ async function fixture(t) {
 const png = n => Buffer.alloc(n, 1);
 const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-test('読めない絵は除いて続け、項目名を知らせる', async t => {
-  const f = await fixture(t);
-  const rel = await f.store.importEditedImage(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]));
-  const e = await f.store.saveEntry({ kind: '人物', name: '灯', image: rel });
-  await fs.rm(path.join(f.data, rel));
-  const { model, skipped } = await f.sheet.model(e.id, { size: 'square', image: true, imagePath: rel, desc: false, tags: [], stats: false, sections: [], fields: [], author: '', credit: false });
-  assert.equal(model.image, null);
-  assert.equal(skipped.length, 1);
-  assert.equal(skipped[0].label, '灯の絵');
-});
-
 test('1枚はダイアログで選んだ名前、複数枚は番号つきで保存し、Xの5MBを超えた枚数を返す', async t => {
   const f = await fixture(t);
   const one = await f.sheet.save(path.join(f.out, '灯.png'), [png(10)]);

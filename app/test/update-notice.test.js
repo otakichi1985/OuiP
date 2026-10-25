@@ -28,24 +28,18 @@ test('非対応は通信せず、確認失敗後は再試行できる', async ()
   assert.equal(updater.busy, false);
   assert.equal((await updater.check()).kind, 'available');
 });
-async function screen(info, options = {}) {
+async function screen(info) {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, { hidden: true, innerHTML: '', textContent: '', attrs: {}, classList: { toggle() {} }, setAttribute(name, value) { this.attrs[name] = value; }, focus() {}, querySelector(selector) { return selector === '.label' ? null : { focus() {} }; } });
     return nodes.get(id);
   };
-  let listener, calls = 0, downloads = 0; const applies = [];
-  const api = {
-    startupUpdate: async () => { calls++; if (info instanceof Error) throw info; return info; },
-    updateInfo: async () => info,
-    checkUpdate: async () => ({ ...info, kind: 'current' }),
-    downloadUpdate: async () => { downloads++; return { version: info.version }; },
-    applyUpdate: async rollback => { applies.push(rollback); },
-  };
-  const ctx = require('../renderer/updates').createUpdatesUI({ api, $: get, esc: value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]), document: { addEventListener: (_name, fn) => { listener = fn; }, querySelector: () => options.editorOpen ? {} : null }, toast() {} });
+  let listener, calls = 0, downloads = 0;
+  const api = { startupUpdate: async () => { calls++; if (info instanceof Error) throw info; return info; }, updateInfo: async () => info, checkUpdate: async () => ({ ...info, kind: 'current' }), downloadUpdate: () => { downloads++; } };
+  const ctx = require('../renderer/updates').createUpdatesUI({ api, $: get, esc: value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]), document: { addEventListener: (_name, fn) => { listener = fn; } }, toast() {} });
   await new Promise(resolve => setImmediate(resolve));
   const click = async dataset => { const b = { dataset, disabled: false, isConnected: true }; await listener({ target: { closest: () => b } }); };
-  return { get, ctx, click, calls: () => calls, downloads: () => downloads, applies: () => applies };
+  return { get, ctx, click, calls: () => calls, downloads: () => downloads };
 }
 test('起動時カードに版/変更点、安全なテキスト、あとで・更新内容の導線', async () => {
   const s = await screen({ current: '0.2.0', supported: true, kind: 'available', version: '0.2.1', notes: '- <img src=x onerror=attack()>\n- 更新修正' });
@@ -61,35 +55,8 @@ test('起動時カードに版/変更点、安全なテキスト、あとで・�
   assert.equal(s.get('update-btn').textContent, 'アプリの更新あり');
   await s.click({ updateOpen: '' });
   assert.equal(s.get('veil').hidden, false);
-  assert.match(s.get('viewer').innerHTML, /data-update-now/);
-  assert.doesNotMatch(s.get('viewer').innerHTML, /data-update-download/);
+  assert.match(s.get('viewer').innerHTML, /data-update-download/);
   assert.equal(s.downloads(), 0);
-});
-test('「更新して再起動」1回でダウンロードと適用まで進む', async () => {
-  const s = await screen({ current: '0.2.0', supported: true, kind: 'available', version: '0.2.1' });
-  await s.click({ updateOpen: '' });
-  await s.click({ updateNow: '' });
-  assert.equal(s.downloads(), 1);
-  assert.deepEqual(s.applies(), [false]);
-  assert.match(s.get('viewer').innerHTML, /data-update-apply/);
-});
-test('編集中は更新を始めず、確定を促す', async () => {
-  const s = await screen({ current: '0.2.0', supported: true, kind: 'available', version: '0.2.1' }, { editorOpen: true });
-  await s.click({ updateOpen: '' });
-  await s.click({ updateNow: '' });
-  assert.equal(s.downloads(), 0);
-  assert.deepEqual(s.applies(), []);
-  assert.match(s.get('update-status').textContent, /編集/);
-});
-test('準備済み・旧版へ戻すも1回の操作で適用する', async () => {
-  const ready = await screen({ current: '0.2.0', supported: true, kind: 'ready', version: '0.2.1', backup: '0.1.9' });
-  await ready.click({ updateOpen: '' });
-  assert.match(ready.get('viewer').innerHTML, /data-update-apply/);
-  assert.doesNotMatch(ready.get('viewer').innerHTML, /data-update-now|data-update-check/);
-  await ready.click({ updateApply: '' });
-  assert.deepEqual(ready.applies(), [false]);
-  await ready.click({ updateRollback: '' });
-  assert.deepEqual(ready.applies(), [false, true]);
 });
 test('最新・未公開・開発版には通知せず、失敗は閉じられる', async () => {
   for (const kind of ['current', 'unpublished', 'unsupported']) {
@@ -101,4 +68,10 @@ test('最新・未公開・開発版には通知せず、失敗は閉じられ�
   assert.match(s.get('update-notice').innerHTML, /再確認/);
   await s.click({ updateDismiss: '' });
   assert.equal(s.get('update-notice').hidden, true);
+});
+test('準備済みの通知から開くとダウンロードではなく再起動', async () => {
+  const s = await screen({ current: '0.2.0', supported: true, kind: 'ready', version: '0.2.1' });
+  await s.click({ updateOpen: '' });
+  assert.match(s.get('viewer').innerHTML, /data-update-apply/);
+  assert.doesNotMatch(s.get('viewer').innerHTML, /data-update-download|data-update-check/);
 });

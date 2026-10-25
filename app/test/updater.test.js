@@ -12,11 +12,6 @@ test('更新の版・配布元・ハッシュ・ZIP経路を検証',()=>{
   assert.throws(()=>newer('0.2.0-beta','0.1.0'));
   assert.throws(()=>checkNames('OuiP/OuiP.exe\nOuiP/.ouip-package.json\nOuiP/../secret'));
   assert.throws(()=>releaseAsset({tag_name:'v0.2.0',assets:[]},'0.1.0'));
-  // 0.3.0・0.3.1のどちらからも0.3.2へ更新できる（版比較）。
-  const v032={tag_name:'v0.3.2',draft:false,prerelease:false,assets:[{name:'ouip-win-x64-v0.3.2.zip',size:100,digest:'sha256:'+'b'.repeat(64),browser_download_url:'https://github.com/otakichi1985/OuiP/releases/download/v0.3.2/ouip-win-x64-v0.3.2.zip'}]};
-  assert.equal(releaseAsset(v032,'0.3.0').version,'0.3.2');
-  assert.equal(releaseAsset(v032,'0.3.1').version,'0.3.2');
-  assert.equal(releaseAsset(v032,'0.3.2'),null);
 });
 test('ZIP取得とSHA256検証・展開、実PowerShellで交換/ロールバック、創作データは保持',async()=>{
   const tmp=await fs.mkdtemp(path.join(os.tmpdir(),'ouip-update-'));

@@ -35,7 +35,7 @@ test('タグ絞り込みは開閉見出しを持ち、閉じても条件と件�
   assert.doesNotMatch(html, /data-ui-open="facet:人物:wide" open/);
   assert.match(html, /選択中 1/);
   assert.match(html, /data-fv="港" aria-pressed="true"/);
-  assert.equal(h.element('bookbody').innerHTML, '<div class="entries" data-card-size="medium" data-card-kind="人物">a</div>');
+  assert.equal(h.element('bookbody').innerHTML, '<div class="entries" data-card-size="medium">a</div>');
   assert.equal(h.run('sel.人物.所属.size'), 1);
 });
 test('タブ切替直前のDOM状態を元タブへ保存し、別タブと混同しない', () => {
@@ -64,7 +64,7 @@ test('別々の分類で複数のタグを選ぶと、分類間はすべて一�
     {id:'c', kind:'人物', name:'C', tags:{所属:['山'], 性別:['女性']}},
   ]`);
   h.run("renderBook(); sel.人物.所属.add('港'); renderBook()");
-  assert.equal(h.element('bookbody').innerHTML, '<div class="entries" data-card-size="medium" data-card-kind="人物">ab</div>');
+  assert.equal(h.element('bookbody').innerHTML, '<div class="entries" data-card-size="medium">ab</div>');
   h.run("sel.人物.性別.add('女性'); renderBook()");
   const body = h.element('bookbody').innerHTML;
   assert.match(body, /a<\/div>$/);
@@ -80,6 +80,6 @@ test('値がほとんど重ならない数値のタグは範囲で絞り込み�
   assert.doesNotMatch(facets, /data-fc="年齢"/, '年齢は値のボタンにしない');
   assert.match(facets, /data-fc="所属"/, '種類の少ないタグは今までどおり');
   h.run("ranges.人物 = {年齢: {min: 17, max: 19}}; renderBook()");
-  assert.equal(h.element('bookbody').innerHTML, '<div class="entries" data-card-size="medium" data-card-kind="人物">p1p2p3</div>');
+  assert.equal(h.element('bookbody').innerHTML, '<div class="entries" data-card-size="medium">p1p2p3</div>');
   assert.match(h.element('facets').innerHTML, /選択中 1/);
 });

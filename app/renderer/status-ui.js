@@ -76,11 +76,11 @@
     if (item.mode === 'rough') return `<span class="sa-levels" role="group" aria-label="${esc(item.name)}の段階">${item.levels.map((l, k) => `<button type="button" class="chipbtn" data-sa-level="${k}" aria-pressed="${String(raw) === String(k)}">${esc(l)}</button>`).join('')}</span>`;
     return `<input type="text" class="sa-text" data-sa-value maxlength="${StatusModel.LIMITS.text}" value="${esc(raw ?? '')}" aria-label="${esc(item.name)}" placeholder="未設定">`;
   }
-  // 割り当て画面の先頭に出す「今の表示」。読み取り専用で、入力のたびに描き直す（押してもどこへも移らない）。
+  // 割り当て画面の先頭に出す「今の見え方」。読み取り専用で、入力のたびに描き直す（押してもどこへも移らない）。
   function renderAssignPreview(draft, sets, enabled) {
     let parsed;
     try { parsed = readAssign(draft, sets); }
-    catch (_) { return '<p class="small muted">入力を直すと表示が出ます。</p>'; }
+    catch (_) { return '<p class="small muted">入力を直すと見え方が出ます。</p>'; }
     const entry = { kind: '人物', statusSets: parsed.statusSets, statusHidden: parsed.statusHidden };
     const world = { statusConcepts: sets, statusEnabled: enabled };
     const marks = StatusModel.highlights(entry, world);
@@ -109,7 +109,7 @@
     const add = (sets || []).length
       ? (free.length ? `<div class="row sa-add"><select data-sa-add aria-label="割り当てるステータス">${free.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select><button type="button" class="b sm" data-sa-action="add">＋ 割り当てる</button></div>` : '<p class="small muted">定義はすべて割り当て済みです。</p>')
       : '<p class="small muted">ステータスの定義がまだありません。<button type="button" class="b quiet sm" data-sa-action="go-sets">ステータスタブで作る</button></p>';
-    return `<div class="status-assign">${enabled === false ? '<p class="small muted">この世界観ではステータスを使わない設定です（ステータスタブで切り替えられます）。</p>' : ''}<div class="sa-preview" data-sa-preview aria-label="今の表示"><p class="ss-preview-sublabel">今の表示</p>${renderAssignPreview(draft, sets, enabled)}</div><div class="row sa-view-row"><label class="sa-hide-all small"><input type="checkbox" data-sa-hide-all ${draft.hidden ? 'checked' : ''}>このキャラはステータスを出さない</label><label class="small sa-card-view">大カードのステータス<select data-sa-card-view aria-label="このキャラの大カードでのステータスの見せ方"><option value="lines"${draft.cardView !== 'graph' ? ' selected' : ''}>文字一覧</option><option value="graph"${draft.cardView === 'graph' ? ' selected' : ''}>グラフ</option></select></label></div>${blocks}${add}${legacyCount ? '' : ''}<p class="cs-error" data-sa-error role="alert"></p></div>`;
+    return `<div class="status-assign">${enabled === false ? '<p class="small muted">この世界観ではステータスを使わない設定です（ステータスタブで切り替えられます）。</p>' : ''}<div class="sa-preview" data-sa-preview aria-label="今の見え方"><p class="ss-preview-sublabel">今の見え方</p>${renderAssignPreview(draft, sets, enabled)}</div><div class="row sa-view-row"><label class="sa-hide-all small"><input type="checkbox" data-sa-hide-all ${draft.hidden ? 'checked' : ''}>このキャラはステータスを出さない</label><label class="small sa-card-view">大カードのステータス<select data-sa-card-view aria-label="このキャラの大カードでのステータスの見せ方"><option value="lines"${draft.cardView !== 'graph' ? ' selected' : ''}>文字一覧</option><option value="graph"${draft.cardView === 'graph' ? ' selected' : ''}>グラフ</option></select></label></div>${blocks}${add}${legacyCount ? '' : ''}<p class="cs-error" data-sa-error role="alert"></p></div>`;
   }
   // 画面の入力を下書きへ戻す（再描画の前に必ず呼ぶ）。
   function readAssignDom(root, draft) {
@@ -131,7 +131,7 @@
     let draft = createAssignDraft(entry);
     const draw = () => { root.innerHTML = renderAssign(draft, { sets: getSets(), enabled, legacyCount }); };
     // 値の入力中も見本だけ描き直す（入力欄は作り直さないので、打っている途中の位置が変わらない）。
-    const paintPreview = () => { const node = root.querySelector('[data-sa-preview]'); if (node) node.innerHTML = `<p class="ss-preview-sublabel">今の表示</p>${renderAssignPreview(draft, getSets(), enabled)}`; };
+    const paintPreview = () => { const node = root.querySelector('[data-sa-preview]'); if (node) node.innerHTML = `<p class="ss-preview-sublabel">今の見え方</p>${renderAssignPreview(draft, getSets(), enabled)}`; };
     const click = (ev) => {
       const t = ev.target.closest('button'); if (!t || !root.contains(t)) return;
       const sec = t.closest('[data-sa-set]'), i = sec ? Number(sec.dataset.saSet) : -1;
@@ -458,4 +458,3 @@
 
   return Object.freeze({ PRESETS, KIND, createAssignDraft, stepNumber, parseValue, readAssign, renderAssign, createSetDraft, resizeLevelList, readSetDraft, renderSetForm, renderMigration, renderSetPreview, createStatusUI });
 });
-

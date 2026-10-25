@@ -37,14 +37,12 @@ document.addEventListener('change', (ev) => {
   if (ev.target.matches('[data-accent-custom]')) paintThemeChoice();
   if (ev.target.matches('[data-image-thumb]')) {
     const form = ev.target.closest('#ef'); if (!form) return;
-    const draft = imageDraft(form);
-    if (draft.thumb !== ev.target.value) $("f-crops").value = "{}";
-    redrawImageSet(form, draft.images, ev.target.value);
+    const draft = imageDraft(form); redrawImageSet(form, draft.images, ev.target.value);
   }
-  if (ev.target.matches('[data-board-mode]')) {
-    const n = S.board.items.find((item) => item.id === ev.target.dataset.boardMode);
+  if (ev.target.matches('[data-board-image]')) {
+    const n = S.board.items.find((item) => item.id === ev.target.dataset.boardImage);
     if (!n) return;
-    n.imageMode = ev.target.value === "icon" ? "icon" : "card";
+    n.imageId = ev.target.value;
     boardSave().then(renderBoard);
   }
 });
@@ -328,7 +326,7 @@ function renderBook() {
   else if (kind === "出来事") body.innerHTML = timeline(list);
   else if (v === "相関図") body.innerHTML = relmap(list);
   else if (v === "地図") body.innerHTML = geomap(list);
-  else body.innerHTML = (kind === "人物" ? statusUI.migrationBanner() : "") + (reorder ? '<p class="small muted reorder-note">カードをドラッグすると順番を変えられます。</p>' : "") + (list.length ? `<div class="entries${reorder ? " reordering" : ""}" data-card-size="${cardSize}" data-card-kind="${kind}">${list.map(card).join("")}</div>` : noMatch(kindLabel(kind)));
+  else body.innerHTML = (kind === "人物" ? statusUI.migrationBanner() : "") + (reorder ? '<p class="small muted reorder-note">カードをドラッグすると順番を変えられます。</p>' : "") + (list.length ? `<div class="entries${reorder ? " reordering" : ""}" data-card-size="${cardSize}">${list.map(card).join("")}</div>` : noMatch(kindLabel(kind)));
   if (kind === '出来事' && all.length && !list.length) {
     const empty = body.querySelector('.empty');
     if (empty) empty.outerHTML = noMatch('出来事');
@@ -338,9 +336,8 @@ function renderBook() {
   } finally { UIAccess.restore(focused); }
 }
 function card(e) {
-  if (e.kind === "場所") return placeCard(e);
-  const surface = e.kind === "人物" ? (cardSize === "large" ? "large" : "small") : "card";
-  const pic = `<span class="face${e.image ? "" : " face-initial"}"${e.image || e.kind !== "人物" ? '' : ` style="background:hsl(${Number(e.hue) || 0} 45% 62%)"`}>${e.image ? cropImage(e, surface, "crop-img", `${e.name}のカード画像`) : esc([...e.name][0] || "")}</span>`;
+  const crop = e.imageCrop && e.imageCrop.fit === "cover" ? ` style="object-fit:cover;object-position:${e.imageCrop.x}% ${e.imageCrop.y}%"` : "";
+  const pic = `<span class="face${e.image ? "" : " face-initial"}"${e.image || e.kind !== "人物" ? '' : ` style="background:hsl(${Number(e.hue) || 0} 45% 62%)"`}>${e.image ? `<img src="${assetURL(e.image)}" alt="${esc(e.name)}のカード画像" draggable="false"${crop}>` : esc([...e.name][0] || "")}</span>`;
   const tags = Object.values(e.tags || {}).flat();
   const basicTags = (position) => e.kind === "人物" ? `<span class="card-tags card-tags-${position}">${Object.entries(e.tags || {}).filter(([key, values]) => values.length && (e.tagPositions?.[key] || "below") === position).map(([key, values]) => `<span class="card-tag"><span class="card-tag-key">${esc(key)}</span><span>${esc(values.map(value => CharacterUnits.format(value, key, e.tagUnits?.[key])).join("、"))}</span></span>`).join("")}</span>` : "";
   // ステータスの項目のうち、カードの名前の上・下・下部に出すもの（位置は定義の既定かキャラごとの指定）。
@@ -349,12 +346,6 @@ function card(e) {
   const slot = (position) => statusMarks(position) + basicTags(position);
   const oc = openCount(e);
   return `<div class="en${reorder ? " reordering" : ""}" draggable="${reorder || !$("wspanel").hidden}" data-drag="${e.id}"><button class="open-btn" type="button" data-entry="${e.id}">${pic}${e.kind === "人物" ? slot("above") : `<span class="k">${esc(tags.join(" ・ ") || kindLabel(e.kind))}</span>`}<span class="character-name">${characterIcon(e)}<span class="t">${esc(e.name)}</span></span>${e.kind === "人物" ? `<span class="name-reading">${esc(e.reading || "")}</span>` : ""}${e.kind === "人物" ? slot("below") : ""}<p class="card-desc">${esc(e.desc || "")}</p><span class="pills">${oc ? `<span class="pill open">未定 ${oc}</span>` : ""}</span>${e.kind === "人物" ? slot("bottom") : ""}</button>${e.kind === "人物" ? `<div class="card-stats">${CharacterStats.renderCardColumn(StatusModel.resolve(e, S.world, { surface: "card" }), e.statusCardView === "graph" ? "graph" : "lines")}</div>` : ""}</div>`;
-}
-function placeCard(e) {
-  const tags = Object.values(e.tags || {}).flat();
-  const oc = openCount(e);
-  const pic = `<span class="face place-face${e.image ? "" : " face-initial"}">${e.image ? cropImage(e, "place", "crop-img", `${e.name}の画像`) : esc([...e.name][0] || "")}</span>`;
-  return `<div class="en place-card${reorder ? " reordering" : ""}" draggable="${reorder || !$("wspanel").hidden}" data-drag="${e.id}"><button class="open-btn" type="button" data-entry="${e.id}">${pic}<span class="k">${esc(tags.join(" ・ ") || kindLabel(e.kind))}</span><span class="character-name"><span class="t">${esc(e.name)}</span></span><p class="card-desc">${esc(e.desc || "")}</p><span class="pills">${oc ? `<span class="pill open">未定 ${oc}</span>` : ""}</span></button></div>`;
 }
 // 並び替え: 今の種類の並びを全体の並びへ戻して保存する。動かないときや同じ並びのときは保存しない。
 async function saveKindOrder(next) {
@@ -370,30 +361,54 @@ async function applyReorder(movingId, targetId, after) {
 function assetURL(rel) {
   return esc("ouip-data://local/" + rel.split("/").map(encodeURIComponent).join("/"));
 }
-// 画面ごとの見え方で画像を出す。枠は呼び出し側が作り、ここは img だけを返す。
-function cropImage(entry, surface, className = "crop-img", alt = "") {
-  const src = surface === "icon" ? ImageSet.iconSource(entry) : entry?.image;
-  if (!src) return "";
-  return `<img class="${className}" src="${assetURL(src)}" alt="${esc(alt)}" draggable="false" style="${ImageCrop.style(ImageCrop.get(entry, surface))}">`;
-}
-// SVG の中に HTML の画像を置き、アイコンの見え方をそのまま使う。
-function svgFace(entry, size = 44, radius = "50%") {
-  const src = ImageSet.iconSource(entry);
-  if (!src) return "";
-  const s = Math.max(1, Number(size) || 44);
-  return `<foreignObject x="${-s / 2}" y="${-s / 2}" width="${s}" height="${s}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${s}px;height:${s}px;border-radius:${radius};overflow:hidden"><img src="${assetURL(src)}" alt="" draggable="false" style="display:block;width:100%;height:100%;${ImageCrop.style(ImageCrop.get(entry, "icon"))}"></div></foreignObject>`;
-}
-// 名前横・カード内の小さい顔。アイコンの見え方を使う。
 function characterIcon(e) {
-  const src = ImageSet.iconSource(e);
-  if (e.kind !== "人物" || !src) return "";
-  return `<span class="character-icon crop-frame"><img class="crop-img" src="${assetURL(src)}" alt="" draggable="false" style="${ImageCrop.style(ImageCrop.get(e, "icon"))}"></span>`;
+  const face = e.image || e.icon;
+  return e.kind === "人物" && face ? `<img class="character-icon" src="${assetURL(face)}" alt="" draggable="false">` : "";
 }
 function readingLabel(e) {
   return e.kind === "人物" && e.reading ? `<span class="name-reading">${esc(e.reading)}</span>` : "";
 }
-function imageControl(key, value, label = key === "image" ? "カード画像" : "アイコン") {
-  return `<div class="image-control" data-image-control="${key}"><span class="small">${label}</span><input type="hidden" id="f-${key}" value="${esc(value || "")}"><div class="image-preview ${key === "icon" ? "icon-preview" : ""}">${value ? `<img src="${assetURL(value)}" alt="${label}" draggable="false">` : `<span class="small muted">未設定</span>`}</div><div class="row"><button class="b sm" type="button" data-pick-character="${key}">${value ? "変更" : "画像を選ぶ"}</button><button class="b quiet sm" type="button" data-clear-character="${key}" ${value ? "" : "disabled"}>取り外し</button></div></div>`;
+// カードのサムネの見せ方（全体を収める／枠いっぱいに切って位置を選ぶ）。画像があるときだけ出す。
+function imageCropControl(e) {
+  if (!e.image) return "";
+  const c = e.imageCrop && e.imageCrop.fit === "cover" ? e.imageCrop : { fit: "contain", x: 50, y: 50 };
+  const at = (n) => ([0, 50, 100].includes(Number(n)) ? Number(n) : 50);
+  const x = at(c.x), y = at(c.y), cover = c.fit === "cover";
+  const side = { "-1": "左", "0": "中央", "1": "右" }, vert = { "-1": "上", "0": "中", "1": "下" };
+  const grid = [-1, 0, 1].flatMap((gy) => [-1, 0, 1].map((gx) => {
+    const px = 50 + gx * 50, py = 50 + gy * 50;
+    const on = cover && x === px && y === py;
+    return `<button type="button" data-crop-pos="${px},${py}" aria-pressed="${on}" aria-label="${side[gx]}${vert[gy]}を見せる"><span aria-hidden="true">●</span></button>`;
+  })).join("");
+  return `<div class="image-crop${cover ? " is-cover" : ""}" data-image-crop data-crop-fit="${c.fit}" data-crop-x="${x}" data-crop-y="${y}">
+    <span class="l">カードのサムネ</span>
+    <div class="crop-row">
+    <span class="crop-preview"><img src="${assetURL(e.image)}" alt="サムネの見え方" draggable="false" style="object-fit:${cover ? "cover" : "contain"};object-position:${x}% ${y}%"></span>
+    <div class="crop-controls">
+      <div class="seg" role="group" aria-label="サムネの合わせ方"><button type="button" data-crop-fit-choice="contain" aria-pressed="${!cover}">全体を収める</button><button type="button" data-crop-fit-choice="cover" aria-pressed="${cover}">枠いっぱいに切る</button></div>
+      <div class="crop-grid" role="group" aria-label="切る位置">${grid}</div>
+    </div>
+    </div>
+  </div>`;
+}
+function syncCropBox(box) {
+  if (!box) return;
+  const cover = box.dataset.cropFit === "cover";
+  box.classList.toggle("is-cover", cover);
+  const x = Number(box.dataset.cropX), y = Number(box.dataset.cropY);
+  box.querySelectorAll("[data-crop-fit-choice]").forEach((el) => el.setAttribute("aria-pressed", String(el.dataset.cropFitChoice === box.dataset.cropFit)));
+  box.querySelectorAll("[data-crop-pos]").forEach((el) => el.setAttribute("aria-pressed", String(cover && el.dataset.cropPos === `${x},${y}`)));
+  const img = box.querySelector(".crop-preview img");
+  if (img) { img.style.objectFit = cover ? "cover" : "contain"; img.style.objectPosition = `${x}% ${y}%`; }
+}
+function imageControl(key, value, adjust) {
+  const label = key === "image" ? "カード画像" : "アイコン";
+  return `<div class="image-control" data-image-control="${key}" data-image-adjust="${adjust ? esc(JSON.stringify(adjust)) : ""}"><span class="small">${label}</span><input type="hidden" id="f-${key}" value="${esc(value || "")}"><div class="image-preview ${key === "icon" ? "icon-preview" : ""}">${value ? `<img src="${assetURL(value)}" alt="${label}" draggable="false">` : `<span class="small muted">未設定</span>`}</div><div class="row"><button class="b sm" type="button" data-pick-character="${key}">${value ? "変更" : "画像を選ぶ"}</button><button class="b quiet sm" type="button" data-clear-character="${key}" ${value ? "" : "disabled"}>取り外し</button></div></div>`;
+}
+// 画像コントロールが持つ「元画像からの見せ方」。調整をやり直すときの出発点に使う。
+function readImageAdjust(control) {
+  try { return control?.dataset.imageAdjust ? JSON.parse(control.dataset.imageAdjust) : null; }
+  catch { return null; }
 }
 
 // 相関図: 人物の位置はドラッグで動かして保存。位置が無い人は円に並べる
@@ -419,11 +434,11 @@ function relmap(list) {
   const nodes = list
     .map((e) => {
       const [x, y] = P[e.id];
-      const face = svgFace(e, 44, "50%") || `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0] || "")}</text>`;
+      const face = (e.image || e.icon) ? `<defs><clipPath id="clip-${e.id}"><circle r="22"/></clipPath></defs><image href="${assetURL(e.image || e.icon)}" x="-22" y="-22" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${e.id})"/>` : `<text class="ini" y="6" text-anchor="middle">${esc([...e.name][0] || "")}</text>`;
       return `<g class="nd" data-node="${e.id}" data-which="rel" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="${esc(e.name)}"><circle r="22" fill="hsl(${Number(e.hue) || 0} 45% 62%)"/>${face}<text y="46" text-anchor="middle">${esc(e.name)}</text></g>`;
     })
     .join("");
-  return `<div class="legend"><span>実線 家族・師弟</span><span>破線 友人・知人</span><span style="color:var(--warn)">点線 対立</span></div><div class="vis"><svg viewBox="0 0 ${RW} ${RH}" role="img" aria-label="関係図">${GraphLayout.gridMarkup(graph?.grid, graph?.id)}${edges}${nodes}</svg></div>`;
+  return `<div class="legend"><span>実線 家族・師弟</span><span>破線 友人・知人</span><span style="color:var(--warn)">点線 対立</span></div><div class="vis"><svg viewBox="0 0 ${RW} ${RH}" role="img" aria-label="相関図">${GraphLayout.gridMarkup(graph?.grid, graph?.id)}${edges}${nodes}</svg></div>`;
 }
 
 // 地図: 取り込んだ画像の上にピン。画像が無ければ方眼
@@ -745,7 +760,7 @@ function openEntry(id) {
   const e = byId(id);
   if (!e) return;
   if (e.kind === '組織') return organizationForm(id);
-  (statsEditors || []).forEach((ed) => ed.destroy()); statsEditors = []; statusAssign?.destroy(); statusAssign = null;
+  statsEditors.forEach((ed) => ed.destroy()); statsEditors = []; statusAssign?.destroy(); statusAssign = null;
   cur = id;
   const D = $("drawer");
   const drawerView = viewState.capture(D);
@@ -776,7 +791,7 @@ function openEntry(id) {
   let entryPage = pages[0].key;
   const pageTabs = pages.length > 1 ? `${attachedTags}<div class="row edit-pages" role="tablist" aria-label="表示する項目">${pages.map((p) => `<button type="button" role="tab" data-entry-page-tab="${p.key}" aria-selected="${p.key === entryPage}">${esc(p.label)}</button>`).join("")}</div>` : attachedTags;
   const pageBody = pages.map((p) => `<section class="edit-page${p.key === entryPage ? " edit-page-active" : ""}" data-entry-page="${p.key}"><h4 class="edit-page-title">${esc(p.label)}</h4>${p.html}</section>`).join("");
-  D.innerHTML = `<div class="drawer-resize" data-drawer-resize role="separator" aria-label="ドラッグで幅を変える" tabindex="0"></div><div class="row editor-toolbar"><button class="b quiet sm" type="button" data-close>閉じる</button><div class="editor-width" role="group" aria-label="編集画面の幅"><button class="b quiet sm" type="button" data-editor-narrow aria-pressed="${D.classList.contains('editor-narrow')}">狭く</button><button class="b quiet sm" type="button" data-editor-expand aria-pressed="${D.classList.contains('editor-expanded')}">全画面</button></div>${e.kind === '人物' ? `<button class="b quiet sm" type="button" data-sheet-export="${esc(id)}">設定シートを書き出す</button>` : ''}<button class="b sm primary" type="button" data-edit>編集</button></div><div class="drawer-body" data-ui-scroll="drawer:${esc(id)}">${pageTabs}<div class="editor-fields">${pageBody}</div></div>`;
+  D.innerHTML = `<div class="drawer-resize" data-drawer-resize role="separator" aria-label="ドラッグで幅を変える" tabindex="0"></div><div class="row editor-toolbar"><button class="b quiet sm" type="button" data-close>閉じる</button><div class="editor-width" role="group" aria-label="編集画面の幅"><button class="b quiet sm" type="button" data-editor-narrow aria-pressed="${D.classList.contains('editor-narrow')}">狭く</button><button class="b quiet sm" type="button" data-editor-expand aria-pressed="${D.classList.contains('editor-expanded')}">全画面</button></div>${e.kind === '人物' ? `<button class="b quiet sm" type="button" data-sheet-export="${esc(id)}">画像で書き出す</button>` : ''}<button class="b sm primary" type="button" data-edit>編集</button></div><div class="drawer-body" data-ui-scroll="drawer:${esc(id)}">${pageTabs}<div class="editor-fields">${pageBody}</div></div>`;
   D.hidden = false;
   // page tab switching
   D.querySelectorAll('[data-entry-page-tab]').forEach((btn) => {
@@ -795,7 +810,7 @@ document.addEventListener('toggle', (ev) => {
 
 // ---- 引き出し: 直す・足す ----
 function fieldRow(f, i) {
-  return `<div class="frow" data-frow>${f.no != null ? `<input type="hidden" data-fno value="${f.no}">` : ""}<label class="sr" for="fk${i}">項目名</label><input type="text" id="fk${i}" data-fk value="${esc(f.key)}" placeholder="項目名"><label class="sr" for="fv${i}">値</label><input type="text" id="fv${i}" data-fv value="${esc(f.open ? "" : f.value)}" placeholder="${f.open ? "未定" : "値"}" ${f.open ? "disabled" : ""}><label class="ck" title="未定にすると番号が振られ、概要の一覧に並びます"><input type="checkbox" data-fo ${f.open ? "checked" : ""}>未定${f.no != null ? " " + NO(f.no) : ""}</label><button class="x" type="button" data-rmrow aria-label="この項目を削除">×</button></div>`;
+  return `<div class="frow" data-frow>${f.no != null ? `<input type="hidden" data-fno value="${f.no}">` : ""}<label class="sr" for="fk${i}">項目名</label><input type="text" id="fk${i}" data-fk value="${esc(f.key)}" placeholder="項目名"><label class="sr" for="fv${i}">値</label><input type="text" id="fv${i}" data-fv value="${esc(f.open ? "" : f.value)}" placeholder="${f.open ? "未定" : "値"}" ${f.open ? "disabled" : ""}><label class="ck" title="未定にすると番号が振られ、概要の一覧に並びます"><input type="checkbox" data-fo ${f.open ? "checked" : ""}>未定${f.no != null ? " " + NO(f.no) : ""}</label><button class="x" type="button" data-rmrow aria-label="この項目を消す">×</button></div>`;
 }
 function tagRow(k, v, i, position = "below", selectedUnit) {
   const values = [...new Set([...(TAG_VALUES[k] || []), ...S.entries.flatMap((e) => e.tags?.[k] || [])])];
@@ -810,19 +825,12 @@ function tagPicker(k) {
 function sectionRow(s, i) {
   return `<details class="section-editor" data-section open><summary>文章セクション</summary><div class="row"><label class="sr" for="st${i}">見出し</label><input type="text" id="st${i}" data-section-title value="${esc(s.title)}" placeholder="見出し（例: 生い立ち）"><button class="b quiet sm" type="button" data-rmsection>削除</button></div><label class="sr" for="sb${i}">本文</label><textarea id="sb${i}" data-section-text rows="5" placeholder="この人物について">${esc(s.text)}</textarea></details>`;
 }
-// 見え方の要約。3つ（用語は2つ）の実物枠を並べ、調整画面を開く。
-function cropSummary(e) {
-  const surfaces = e.kind === "人物"
-    ? [["large", "大カード"], ["small", "小・中"], ["icon", "アイコン"]]
-    : e.kind === "場所" ? [["place", "場所カード"]] : [["card", "カード"], ["icon", "アイコン"]];
-  if (!e.image && !e.icon) return "";
-  const items = surfaces.map(([surface, label]) => `<button type="button" class="crop-summary-item" data-edit-crops="${surface}" aria-label="${label}の表示を調整"><span class="crop-frame crop-summary-${surface}">${cropImage(e, surface, "crop-img", label)}</span><span class="small muted">${label}</span></button>`).join("");
-  return `<div class="crop-summary" data-crop-summary>${items}<button class="b quiet sm" type="button" data-edit-crops>表示を調整</button></div>`;
-}
 // 人物の複数画像。画像の同一性はパス。サムネイルはラジオで明示的に選ぶ。
 function imageSetControl(e) {
   const items = ImageSet.list(e);
   const thumb = ImageSet.thumbnail(e)?.image || "";
+  const thumbItem = items.find((item) => item.image === thumb);
+  const cropEntry = { ...e, image: thumb, imageCrop: thumbItem?.crop };
   return `<div class="image-set" data-image-set data-thumbnail="${esc(thumb)}">
     <input type="hidden" id="f-images" value="${esc(JSON.stringify(items))}">
     <p class="small muted image-set-hint"${items.length > 1 ? "" : " hidden"}>画像をドラッグすると順番を変えられます。</p>
@@ -830,10 +838,10 @@ function imageSetControl(e) {
       <img src="${assetURL(item.image)}" alt="${esc(e.name || "キャラ")}の絵${i + 1}" draggable="true" data-image-drag="${esc(item.image)}">
       <label class="image-set-thumb"><input type="radio" name="entry-thumbnail" data-image-thumb value="${esc(item.image)}" ${item.image === thumb ? "checked" : ""}>サムネイル</label>
       <label class="sr" for="img-cap-${i}">画像のキャプション</label><input type="text" id="img-cap-${i}" data-image-caption value="${esc(item.caption || "")}" maxlength="1000" placeholder="キャプション（例: 制服・正面）">
-      <div class="row image-set-actions"><button class="b quiet sm" type="button" data-image-replace="${esc(item.image)}">変更</button><button class="b quiet sm danger" type="button" data-image-remove="${esc(item.image)}">削除</button></div>
+      <div class="row image-set-actions"><button class="b quiet sm" type="button" data-image-replace="${esc(item.image)}">変更</button><button class="b quiet sm" type="button" data-image-adjust="${esc(item.image)}">調整</button><button class="b quiet sm danger" type="button" data-image-remove="${esc(item.image)}">削除</button></div>
     </div>`).join("") || '<p class="small muted">まだ画像がありません。</p>'}</div>
-    <div class="row"><button class="b quiet sm" type="button" data-image-add>＋ 画像を追加</button><span class="small muted">PNG・JPEG／20MBまで。詳細では絵の全体を表示します。</span></div>
-    ${cropSummary(e)}
+    <div class="row"><button class="b quiet sm" type="button" data-image-add>＋ 画像を追加</button><span class="small muted">PNG・JPEG／20MBまで。カード・関係図・共有ボードにはサムネイルを使います。</span></div>
+    ${thumb ? imageCropControl(cropEntry) : ""}
   </div>`;
 }
 function imageDraft(form) {
@@ -845,43 +853,11 @@ function imageDraft(form) {
 function redrawImageSet(form, images, thumb) {
   const set = form.querySelector("[data-image-set]");
   if (!set) return;
-  const crops = readCrops(form), icon = $("f-icon")?.value || null;
-  const e = { kind: "人物", name: $("f-name")?.value || "", images, image: thumb, crops, icon };
+  const e = { kind: "人物", name: $("f-name")?.value || "", images, image: thumb, imageCrop: images.find((item) => item.image === thumb)?.crop };
   set.outerHTML = imageSetControl(e);
 }
-function readCrops(form) {
-  try { return JSON.parse($("f-crops")?.value || "{}") || {}; }
-  catch { return {}; }
-}
-// 編集中の下書きから見え方の要約を作り直す。画像一覧の入力は触らない。
-function syncCropSummary(form) {
-  const summary = form.querySelector("[data-crop-summary]");
-  if (!summary) return;
-  const kind = form.dataset.kind;
-  const draft = imageDraft(form);
-  const image = kind === "人物" ? (draft.thumb || draft.images[0]?.image || null) : ($("f-image")?.value || null);
-  const icon = kind === "人物" ? ($("f-icon")?.value || null) : null;
-  summary.outerHTML = cropSummary({ kind, name: $("f-name")?.value || "", image, icon, crops: readCrops(form) });
-}
-function openCropEditor(form, active) {
-  const kind = form.dataset.kind;
-  const draft = imageDraft(form);
-  const image = kind === "人物" ? (draft.thumb || draft.images[0]?.image || null) : ($("f-image")?.value || null);
-  const icon = kind === "人物" ? ($("f-icon")?.value || null) : null;
-  if (!image && !icon) { toast("先に画像を選んでください"); return; }
-  CropEditor.open({
-    kind, image, icon, crops: readCrops(form), name: $("f-name")?.value || "", active,
-    onChange(crops, nextIcon) {
-      $("f-crops").value = JSON.stringify(crops || {});
-      if ($("f-icon")) $("f-icon").value = nextIcon || "";
-    },
-    onClose() { syncCropSummary(form); },
-    pickIcon: () => api.pickImage(),
-    reportError: (error) => imageError(error),
-  });
-}
 function openForm(id, focusKey) {
-  (statsEditors || []).forEach((ed) => ed.destroy()); statsEditors = []; statusAssign?.destroy(); statusAssign = null;
+  statsEditors.forEach((ed) => ed.destroy()); statsEditors = []; statusAssign?.destroy(); statusAssign = null;
   const e = id ? byId(id) : { kind, name: "", desc: "", fields: [], tags: Object.fromEntries(TAG_HINT[kind].map((k) => [k, []])), year: { n: null, label: "" }, refs: [] };
   cur = id || null;
   const D = $("drawer");
@@ -892,9 +868,7 @@ function openForm(id, focusKey) {
   const makePage = (key, label, html) => html.trim() ? { key, label, html } : null;
   const pageBasic = makePage("basic", "基本", `
     <div class="field"><label class="l" for="f-name">名前</label><input type="text" id="f-name" value="${esc(e.name)}" required autocomplete="off"></div>
-    ${["人物", "用語", "場所"].includes(e.kind) ? `<input type="hidden" id="f-crops" value="${esc(JSON.stringify(e.crops || {}))}">` : ""}
-    ${e.kind === "人物" ? `<input type="hidden" id="f-icon" value="${esc(e.icon || "")}">` : ""}
-    ${e.kind === "人物" ? `<h4 class="form-heading">画像</h4>${imageSetControl(e)}` : e.kind === "用語" ? `<h4 class="form-heading">画像</h4><div class="character-images">${imageControl("image", e.image)}</div><p class="small muted">カード・関係図に使う1枚の画像です。PNG・JPEG／20MBまで。詳細では絵の全体を表示します。</p>${cropSummary(e)}` : e.kind === "場所" ? `<h4 class="form-heading">画像</h4><div class="character-images">${imageControl("image", e.image, "場所の画像")}</div><p class="small muted">場所カードに使う横長（16:9）の画像です。PNG・JPEG／20MBまで。詳細では絵の全体を表示します。</p>${cropSummary(e)}` : ""}
+    ${e.kind === "人物" ? `<h4 class="form-heading">画像</h4>${imageSetControl(e)}` : e.kind === "用語" ? `<h4 class="form-heading">画像</h4><div class="character-images">${imageControl("image", e.image, e.imageAdjust)}</div><p class="small muted">カード・名前横・関係図に使う1枚の画像です。PNG・JPEG／20MBまで</p>${imageCropControl(e)}` : ""}
     ${e.kind === "人物" ? `<div class="field"><label class="l" for="f-reading">読み仮名</label><input type="text" id="f-reading" value="${esc(e.reading || "")}" autocomplete="off" placeholder="例: あかり"></div>` : ""}
     <div class="field field-wide"><label class="l" for="f-desc">説明</label><textarea id="f-desc" rows="3">${esc(e.desc)}</textarea></div>
     ${["人物", "用語"].includes(e.kind) ? `<details open class="detail-group editor-optional"><summary>設定項目・未定</summary><div id="f-fields">${(e.fields || []).map(fieldRow).join("")}</div><button class="b quiet sm" type="button" data-addfield style="align-self:flex-start">＋ 項目</button></details>` : ""}
@@ -945,7 +919,7 @@ function openForm(id, focusKey) {
         }
       });
       function mountStatBlocks(list) {
-        (statsEditors || []).forEach((ed) => ed.destroy()); statsEditors = []; statusAssign?.destroy(); statusAssign = null;
+        statsEditors.forEach((ed) => ed.destroy()); statsEditors = []; statusAssign?.destroy(); statusAssign = null;
         statHolder.innerHTML = list.length ? list.map((_, i) => `<section class="stat-block"><div class="row stat-block-head"><h5>ステータス ${i + 1}</h5><div class="row"><button type="button" class="b quiet sm" data-block-up="${i}" aria-label="ステータス ${i + 1}を上へ移動" title="上へ移動" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="b quiet sm" data-block-down="${i}" aria-label="ステータス ${i + 1}を下へ移動" title="下へ移動" ${i === list.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="b quiet sm danger" data-block-remove="${i}">削除</button></div></div><div data-stat-editor="${i}"></div></section>`).join('') : '<p class="small muted">旧形式のステータスはすべて削除されます（決定で反映）。</p>';
         list.forEach((draft, i) => statsEditors.push(CharacterStats.mountEditor(statHolder.querySelector(`[data-stat-editor="${i}"]`), null, { draft, candidates: CharacterStats.candidates(S.entries) })));
       }
@@ -982,11 +956,20 @@ function readForm(form) {
     const draft = imageDraft(form);
     e.images = draft.images;
     e.image = draft.thumb || draft.images[0]?.image || null;
-    e.icon = $("f-icon")?.value || null;
-    e.crops = readCrops(form);
-  } else if (k === "用語" || k === "場所") {
+    const thumbItem = e.images.find((item) => item.image === e.image);
+    e.imageAdjust = thumbItem?.adjust || null;
+    const crop = form.querySelector("[data-image-crop]");
+    e.imageCrop = e.image && crop && crop.dataset.cropFit === "cover"
+      ? { fit: "cover", x: Number(crop.dataset.cropX), y: Number(crop.dataset.cropY) }
+      : null;
+    if (thumbItem) { if (e.imageCrop) thumbItem.crop = e.imageCrop; else delete thumbItem.crop; }
+  } else if (k === "用語") {
     e.image = $("f-image").value || null;
-    e.crops = readCrops(form);
+    e.imageAdjust = readImageAdjust(form.querySelector('[data-image-control="image"]'));
+    const crop = form.querySelector("[data-image-crop]");
+    e.imageCrop = e.image && crop && crop.dataset.cropFit === "cover"
+      ? { fit: "cover", x: Number(crop.dataset.cropX), y: Number(crop.dataset.cropY) }
+      : null;
   }
   if (k === "人物") {
     // ステータスは「ブロック」の並び（レーダー1個・棒グラフ1個…）。空のもの（項目がない）は捨てる。
@@ -1099,12 +1082,10 @@ function renderBoard() {
         const e = byId(n.ref);
         if (!e) return "";
         c = e.kind === "人物" ? `hsl(${Number(e.hue) || 0} 45% 62%)` : "var(--accent)";
-        const place = e.kind === "場所";
-        const imageMode = place ? "card" : n.imageMode === "icon" ? "icon" : "card";
-        const surface = place ? "place" : imageMode === "icon" ? "icon" : (e.kind === "人物" ? "small" : "card");
-        const src = surface === "icon" ? ImageSet.iconSource(e) : e.image;
-        const picker = place ? "" : `<label class="small board-image-pick">表示<select data-board-mode="${n.id}"><option value="card"${imageMode === "card" ? " selected" : ""}>カード</option><option value="icon"${imageMode === "icon" ? " selected" : ""}>アイコン</option></select></label>`;
-        h = `${src ? `<span class="board-card-picture${place ? " is-wide" : imageMode === "icon" ? " is-icon" : ""}"><span class="crop-frame"><img class="crop-img" src="${assetURL(src)}" alt="" draggable="false" style="${ImageCrop.style(ImageCrop.get(e, surface))}"></span></span>` : ""}<span class="k">${esc(kindLabel(e.kind))}</span><div><b>${esc(e.name)}</b></div>${e.desc ? `<div class="small muted">${esc(e.desc.slice(0, 60))}</div>` : ""}${picker}`;
+        const imageItems = ImageSet.list(e);
+        const image = imageItems.some((item) => item.image === n.imageId) ? n.imageId : e.image;
+        const picker = imageItems.length > 1 ? `<label class="small board-image-pick">絵<select data-board-image="${n.id}">${imageItems.map((item, i) => `<option value="${esc(item.image)}" ${image === item.image ? "selected" : ""}>${esc(item.caption || `絵${i + 1}`)}</option>`).join("")}</select></label>` : "";
+        h = `${image ? `<img class="board-card-image" src="${assetURL(image)}" alt="" draggable="false">` : ""}<span class="k">${esc(kindLabel(e.kind))}</span><div><b>${esc(e.name)}</b></div>${e.desc ? `<div class="small muted">${esc(e.desc.slice(0, 60))}</div>` : ""}${picker}`;
       }
       const isSel = bsel === n.id;
       return `<div class="bi ${isSel ? "sel" : ""} ${linking && linking !== n.id ? "target" : ""}" tabindex="0" data-bi="${n.id}" style="left:${n.x}px;top:${n.y}px;--nc:${c}">${h}${isSel ? `<div class="acts"><button class="chipbtn" type="button" data-link="${n.id}" aria-pressed="${linking === n.id}">${linking ? "やめる" : "つなぐ"}</button>${n.type === "entry" ? `<button class="chipbtn" type="button" data-entry="${n.ref}">開く</button>` : `<button class="chipbtn" type="button" data-editmemo="${n.id}">編集</button>`}<button class="chipbtn" type="button" data-rmbi="${n.id}">取り外し</button></div>` : ""}</div>`;
@@ -1340,8 +1321,7 @@ document.addEventListener("click", async (ev) => {
       if (image && image !== old) {
         const draft = imageDraft(form), item = draft.images.find((x) => x.image === old);
         if (item) {
-          item.image = image;
-          if (draft.thumb === old) $("f-crops").value = "{}";
+          item.image = image; delete item.adjust; delete item.crop;
           redrawImageSet(form, draft.images, draft.thumb === old ? image : draft.thumb);
         }
       }
@@ -1349,15 +1329,24 @@ document.addEventListener("click", async (ev) => {
     finally { if (b.isConnected) b.disabled = false; }
     return;
   }
-  if ('editCrops' in d) {
+  if ('imageAdjust' in d) {
     const form = b.closest("#ef"); if (!form) return;
-    openCropEditor(form, d.editCrops);
+    const draft = imageDraft(form), item = draft.images.find((x) => x.image === d.imageAdjust);
+    if (!item) return;
+    const old = item.image;
+    await editImage(old, async (adjusted, adjust) => {
+      if (!form.isConnected) return;
+      const current = imageDraft(form), currentItem = current.images.find((x) => x.image === old);
+      if (!currentItem) return;
+      currentItem.image = adjusted;
+      if (adjust) currentItem.adjust = adjust; else delete currentItem.adjust;
+      redrawImageSet(form, current.images, current.thumb === old ? adjusted : current.thumb);
+    }, null, item.adjust);
     return;
   }
   if ('imageRemove' in d) {
     const form = b.closest("#ef"); if (!form) return;
     const draft = imageDraft(form), images = draft.images.filter((x) => x.image !== d.imageRemove);
-    if (draft.thumb === d.imageRemove) $("f-crops").value = "{}";
     redrawImageSet(form, images, draft.thumb === d.imageRemove ? images[0]?.image || "" : draft.thumb);
     return;
   }
@@ -1412,6 +1401,11 @@ document.addEventListener("click", async (ev) => {
       $("q").value = "";
     } else { Sk[d.fc] ??= new Set(); Sk[d.fc].has(d.fv) ? Sk[d.fc].delete(d.fv) : Sk[d.fc].add(d.fv); }
     renderBook();
+  } else if (d.cropFitChoice || d.cropPos) {
+    const box = b.closest("[data-image-crop]");
+    if (d.cropPos) { box.dataset.cropFit = "cover"; [box.dataset.cropX, box.dataset.cropY] = d.cropPos.split(","); }
+    else box.dataset.cropFit = d.cropFitChoice;
+    syncCropBox(box);
   } else if (b.id === "reorder-btn") {
     reorder = !reorder;
     renderBook();
@@ -1429,31 +1423,22 @@ document.addEventListener("click", async (ev) => {
     b.disabled = true;
     try {
       const image = await api.pickImage();
-      if (image) await run(() => api.updateWorld({ image }));
+      if (image) await editImage(image, async (adjusted, adjust) => { await run(() => api.updateWorld({image:adjusted, imageAdjust:adjust})); }, 3);
     }
     catch (e) { imageError(e); }
     finally { if (b.isConnected) b.disabled = false; }
   } else if ("worldimageClear" in d) await run(() => api.updateWorld({ image: null }));
   else if (d.pickCharacter) {
     const control = b.closest("[data-image-control]");
-    const form = b.closest("#ef");
     b.disabled = true;
     try {
       const value = await api.pickImage();
-      if (value && control.isConnected) {
-        control.outerHTML = imageControl(d.pickCharacter, value, form?.dataset.kind === "場所" ? "場所の画像" : undefined);
-        if (d.pickCharacter === "image") { $("f-crops").value = "{}"; syncCropSummary(form); }
-      }
+      if (value && control.isConnected) control.outerHTML = imageControl(d.pickCharacter, value);
     } catch (e) {
       imageError(e);
     }
     finally { if (b.isConnected) b.disabled = false; }
-  } else if (d.clearCharacter) {
-    const control = b.closest("[data-image-control]");
-    const form = b.closest("#ef");
-    control.outerHTML = imageControl(d.clearCharacter, null, form?.dataset.kind === "場所" ? "場所の画像" : undefined);
-    if (d.clearCharacter === "image") { $("f-crops").value = "{}"; syncCropSummary(form); }
-  }
+  } else if (d.clearCharacter) b.closest("[data-image-control]").outerHTML = imageControl(d.clearCharacter, null);
   else if ("addsection" in d) {
     $("f-sections").insertAdjacentHTML("beforeend", sectionRow({ title: "", text: "" }, Date.now()));
     $("f-sections").lastElementChild.querySelector("input").focus();
@@ -1771,5 +1756,3 @@ async function start() {
   await refresh();
 }
 start();
-
-

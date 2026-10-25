@@ -7,7 +7,6 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const GraphLayout = require("../renderer/graph-layout");
 const ImageSet = require("../renderer/image-set");
-const ImageCrop = require("../renderer/image-crop");
 const CharacterStats = require("../renderer/character-stats");
 const CharacterUnits = require("../renderer/character-units");
 const FreeGraph = require('../renderer/free-graph');
@@ -82,7 +81,26 @@ function normalizeTags(tags) {
   }
   return out;
 }
-// 画面ごとの見え方（ImageCrop）。使わない枠は落とし、既定だけなら持たない。
+// カードのサムネの見せ方。既定（全体を収める・中央）は持たず、切り取るときだけ項目に残す。
+function normalizeImageCrop(value) {
+  if (!value || typeof value !== "object") return undefined;
+  const fit = value.fit === "cover" ? "cover" : "contain";
+  const at = (n) => ([0, 50, 100].includes(Number(n)) ? Number(n) : 50);
+  const crop = { fit, x: at(value.x), y: at(value.y) };
+  return crop.fit === "contain" && crop.x === 50 && crop.y === 50 ? undefined : crop;
+}
+// 画像の調整。元画像（取り込んだ元のファイル）と、そこから作った見せ方を一緒に残す。
+// もう一度調整するときは、切り抜き済みではなく元画像から作り直せる。
+function normalizeImageAdjust(value) {
+  if (!value || typeof value !== "object") return undefined;
+  if (typeof value.source !== "string") return undefined;
+  const number = (n, min, max) => (Number.isFinite(Number(n)) && Number(n) >= min && Number(n) <= max ? Number(n) : null);
+  const w = number(value.w, 1, 3000), h = number(value.h, 1, 3000);
+  const base = number(value.base, 0.0001, 100), scale = number(value.scale, 0.01, 100);
+  const x = number(value.x, -1e6, 1e6), y = number(value.y, -1e6, 1e6);
+  if ([w, h, base, scale, x, y].some((v) => v === null)) return undefined;
+  return { source: value.source, w: Math.round(w), h: Math.round(h), base, scale, x, y };
+}
 // 旧世界は読み込み時だけ変換する。最初に図を編集するまでは既存ファイルを変えない。
 function collections(world, entries, relations) {
   return {
@@ -110,6 +128,14 @@ class Store {
     if (value !== null && (typeof value !== "string" || !/^assets\/(character|image)-[0-9a-f]{64}\.(png|jpg|jpeg|webp)$/.test(value))) throw new Error("画像の場所が不正");
     if (value && !fs.existsSync(this.p(value))) throw new Error("画像が見つかりません");
     return value;
+  }
+
+  // 画像の調整の記録。元画像が実在するときだけ残す。
+  checkAdjust(value) {
+    const adjust = normalizeImageAdjust(value);
+    if (!adjust) return undefined;
+    try { this.checkImage(adjust.source); } catch { return undefined; }
+    return adjust;
   }
 
   async init() {
@@ -140,9 +166,10 @@ class Store {
     return this.serial(async () => {
       const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
       for (const k of ["title", "note", "calendar"]) if (k in patch) w[k] = String(patch[k] ?? "");
-      // 作者名は設定シートや閲覧用ファイルに載せる名前。前後の空白を除き、長すぎる値は拒否する。
+      // 作者名は共有の画像やサイトに載せる名前。前後の空白を除き、長すぎる値は拒否する。
       if ("author" in patch) { const author = String(patch.author ?? "").trim(); if (author.length > 200) throw new Error("作者名は200文字以内にしてください"); w.author = author; }
-      if ("image" in patch) w.image = this.checkImage(patch.image);
+      if ("image" in patch) { w.image = this.checkImage(patch.image); if (!("imageAdjust" in patch)) delete w.imageAdjust; }
+      if ("imageAdjust" in patch) { const adjust = this.checkAdjust(patch.imageAdjust); if (w.image && adjust) w.imageAdjust = adjust; else delete w.imageAdjust; }
       // 一覧の並び。存在する項目だけを重複なく並べ、送られなかった項目は元の順で末尾に残す。
       if ("order" in patch) {
         if (!Array.isArray(patch.order) || patch.order.some((id) => typeof id !== "string")) throw new Error("並び順が不正です");
@@ -203,8 +230,6 @@ class Store {
       const remaining = new Set(w.organizations.map((o) => o.id));
       const removed = new Set(oldOrganizations.filter((o) => !remaining.has(o.id)).map((o) => o.id));
       if (removed.size) await this.cleanOrganizationReferences(w, removed);
-      // 比率の調整は廃止。概要の画像は元画像を全体表示する。
-      delete w.imageAdjust;
       await writeJson(this.p("world.json"), w);
       return w;
     });
@@ -268,8 +293,8 @@ class Store {
       if (type === "maps") {
         if (d.image && !/^assets\/map\.(png|jpg|jpeg|webp)$/.test(d.image)) this.checkImage(d.image);
         d.image = d.image || null;
-        // 比率の調整は廃止。地図の背景は元画像を全体表示する。
-        delete d.imageAdjust;
+        const adjust = this.checkAdjust("imageAdjust" in input ? input.imageAdjust : (input.image === undefined || input.image === prev.image ? prev.imageAdjust : undefined));
+        if (d.image && adjust) d.imageAdjust = adjust; else delete d.imageAdjust;
         // 画像にグリッドを重ねて場所を置きやすくする。使わないときは保存しない。
         if ("grid" in input) { if (input.grid) d.grid = true; else { delete d.grid; delete d.gridSize; } }
         if (d.grid && "gridSize" in input) d.gridSize = Math.round(Math.min(200, Math.max(10, Number(input.gridSize) || 50)));
@@ -363,29 +388,33 @@ class Store {
         tags: normalizeTags(input.tags ?? prev.tags ?? (input.kind === "人物" ? Object.fromEntries(CHARACTER_TAGS.map((k) => [k, []])) : {})),
       };
       if (e.kind === "用語") {
-        const image = this.checkImage("image" in input ? input.image : prev.image ?? null);
-        e.image = image;
-        const crops = ImageCrop.normalizeCrops("crops" in input ? input.crops : prev.crops, "用語");
-        if (crops && e.image) e.crops = crops;
-      }
-      if (e.kind === "場所") {
-        const image = this.checkImage("image" in input ? input.image : prev.image ?? null);
-        e.image = image;
-        const crops = ImageCrop.normalizeCrops("crops" in input ? input.crops : prev.crops, "場所");
-        if (crops && e.image) e.crops = crops;
+        for (const key of ["image"]) {
+          const value = key in input ? input[key] : prev[key] ?? null;
+          e[key] = this.checkImage(value);
+          const adjustKey = key + "Adjust";
+          const adjust = this.checkAdjust(adjustKey in input ? input[adjustKey] : prev[adjustKey]);
+          if (e[key] && adjust) e[adjustKey] = adjust;
+        }
+        const crop = normalizeImageCrop(input.imageCrop === undefined ? prev.imageCrop : input.imageCrop);
+        if (e.image && crop) e.imageCrop = crop;
       }
       if (e.kind === "人物") {
-        // アイコンだけ別画像にしたいときの任意の画像。なければカード画像から切り出す。
-        const icon = this.checkImage("icon" in input ? input.icon : prev.icon ?? null);
+        // 旧アイコンは互換のため別に保持する（カード画像の複数枚とは別）。
+        const icon = this.checkImage(input.icon === undefined ? prev.icon ?? null : input.icon);
         e.icon = icon;
+        const iconAdjust = this.checkAdjust(input.iconAdjust === undefined ? prev.iconAdjust : input.iconAdjust);
+        if (e.icon && iconAdjust) e.iconAdjust = iconAdjust;
         // 複数画像。古い1枚データ（image/imageAdjust/imageCrop）はここで1枚目として読む。
         const source = input.images !== undefined ? input.images : ImageSet.list(prev);
         const images = [], seen = new Set();
         if (Array.isArray(source)) for (const raw of source) {
           if (!raw || typeof raw.image !== "string" || !raw.image || seen.has(raw.image)) continue;
           const image = this.checkImage(raw.image);
-          if (!image) continue;
+          const adjust = this.checkAdjust(raw.adjust);
+          const crop = normalizeImageCrop(raw.crop);
           const item = { image };
+          if (adjust) item.adjust = adjust;
+          if (crop) item.crop = crop;
           const caption = String(raw.caption ?? "").trim().slice(0, 1000);
           if (caption) item.caption = caption;
           images.push(item); seen.add(image);
@@ -399,11 +428,25 @@ class Store {
           const image = this.checkImage(requestedThumb);
           if (image) { thumb = { image }; images.unshift(thumb); }
         }
+        // 旧形式の1枚更新（imagesを送らない）では、送られた調整・切り取りをサムネイルへ当てる。
+        if (thumb && input.images === undefined && ("imageAdjust" in input || "imageCrop" in input)) {
+          if ("imageAdjust" in input) {
+            const adjust = this.checkAdjust(input.imageAdjust);
+            if (adjust) thumb.adjust = adjust; else delete thumb.adjust;
+          }
+          if ("imageCrop" in input) {
+            const crop = normalizeImageCrop(input.imageCrop);
+            if (crop) thumb.crop = crop; else delete thumb.crop;
+          }
+        }
         if (images.length) e.images = images;
-        e.image = thumb ? thumb.image : null;
-        // 見え方。大カード・小/中カード・アイコンの位置と拡大率だけを持つ。
-        const crops = ImageCrop.normalizeCrops("crops" in input ? input.crops : prev.crops, "人物");
-        if (crops && (e.image || e.icon)) e.crops = crops;
+        if (thumb) {
+          e.image = thumb.image;
+          if (thumb.adjust) e.imageAdjust = thumb.adjust;
+          if (thumb.crop) e.imageCrop = thumb.crop;
+        } else {
+          e.image = null;
+        }
       }
       if (e.kind === "人物") {
         e.tagUnits = CharacterUnits.normalize(e.tags, input.tagUnits === undefined ? prev.tagUnits ?? {} : input.tagUnits);
@@ -501,7 +544,7 @@ class Store {
       const items = (board.items || []).map((i) => ({
         id: i.id || newId("b"),
         type: i.type === "entry" ? "entry" : "memo",
-        ...(i.type === "entry" ? { ref: i.ref, ...(typeof i.imageId === "string" && i.imageId ? { imageId: i.imageId } : {}), ...(i.imageMode === "icon" || i.imageMode === "card" ? { imageMode: i.imageMode } : {}) } : { text: String(i.text || "") }),
+        ...(i.type === "entry" ? { ref: i.ref, ...(typeof i.imageId === "string" && i.imageId ? { imageId: i.imageId } : {}) } : { text: String(i.text || "") }),
         x: Math.round(Number(i.x) || 0),
         y: Math.round(Number(i.y) || 0),
       }));
@@ -552,4 +595,3 @@ function openItems(entries) {
 }
 
 module.exports = { Store, openItems, KINDS, SCHEMA, writeJson, readJson };
-

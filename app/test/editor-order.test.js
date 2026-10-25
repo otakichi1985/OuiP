@@ -88,7 +88,7 @@ test('既存readFormは変更後のDOM順でタグ/文章/設定項目を読む'
   const sections=new Element();h.form.appendChild(sections);
   for(const name of ['one','two']){const row=new Element('details',{section:''});for(const key of ['sectionTitle','sectionText']){const input=new Element('input',{[key]:''});input.value=name;row.appendChild(input);}sections.appendChild(row);}
   Order.step(sections.children[1],-1);
-  const ctx=vm.createContext({cur:'person', statsEditors:[], statusAssign:null, selectedOrganizationIds:()=>[], readCrops:()=>({}), imageDraft:()=>({images:[],thumb:''}), $:id=>({value:id==='f-name'?'名前':id==='f-icon'||id==='f-image'?'':'説明'})});
+  const ctx=vm.createContext({cur:'person', statsEditors:[], statusAssign:null, selectedOrganizationIds:()=>[], readImageAdjust:()=>null, imageDraft:()=>({images:[],thumb:''}), $:id=>({value:id==='f-name'?'名前':id==='f-icon'||id==='f-image'?'':'説明'})});
   vm.runInContext(app.slice(app.indexOf('function readForm(form)'),app.indexOf('// ---- 保存・履歴 ----')),ctx);
   const saved=ctx.readForm(h.form);
   assert.deepEqual(Object.keys(saved.tags),['a-tk','c-tk','b-tk']);

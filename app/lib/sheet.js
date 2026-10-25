@@ -5,7 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const CharacterStats = require('../renderer/character-stats');
 const ImageSet = require('../renderer/image-set');
-const ImageCrop = require('../renderer/image-crop');
 const StatusModel = require('../renderer/status-model');
 const CharacterUnits = require('../renderer/character-units');
 
@@ -58,14 +57,11 @@ function sheetModel(state, entryId, input) {
   if (!entry || entry.kind !== '人物') fail('キャラが見つかりません');
   const o = normalizeOptions(entry, input);
   const fields = o.fields ? list(entry.fields).filter(f => nonblank(f.key)).map(f => ({ key: String(f.key), open: !!f.open, value: f.open ? '' : String(f.value ?? ''), number: f.open && Number.isFinite(f.no) ? fieldNumber(f.no) : '' })) : [];
-  // 使う絵がサムネイルなら、小・中カードの見え方を使う。別の絵は全体を収める。
-  const crop = o.imagePath === entry.image ? ImageCrop.get(entry, 'small') : null;
-  const cropStyle = crop && (crop.x !== 50 || crop.y !== 50 || crop.zoom !== 1) ? ImageCrop.style(crop) : '';
   return {
     size: o.size, ...SIZES[o.size],
     name: String(entry.name || '名称未定'), reading: String(entry.reading || ''),
     desc: o.desc ? String(entry.desc || '') : '',
-    image: o.image ? o.imagePath : null, icon: entry.icon || null, cropStyle,
+    image: o.image ? o.imagePath : null, icon: (entry.icon || entry.image) || null,
     hue: Number.isFinite(entry.hue) ? entry.hue : null,
     tags: o.tags.map(key => [key, list(entry.tags[key]).map(value => CharacterUnits.format(value, key, entry.tagUnits?.[key]))]),
     stats: o.stats ? StatusModel.resolve(entry, state.world) : null,
@@ -101,8 +97,7 @@ function blocks(model) {
 function renderSheetHTML(model) {
   const initial = esc([...model.name][0] || '？');
   const hue = model.hue === null ? '' : ` style="--hue:${Number(model.hue)}"`;
-  const cropStyle = model.cropStyle ? ` style="${esc(model.cropStyle)}"` : '';
-  const picture = model.image ? `<span class="hero-image-frame"><img class="hero-image${model.cropStyle ? ' is-crop' : ''}" src="${esc(model.image)}" alt=""${cropStyle}></span>` : `<div class="hero-image placeholder"${hue}>${model.icon ? `<img src="${esc(model.icon)}" alt="">` : initial}</div>`;
+  const picture = model.image ? `<img class="hero-image" src="${esc(model.image)}" alt="">` : `<div class="hero-image placeholder"${hue}>${model.icon ? `<img src="${esc(model.icon)}" alt="">` : initial}</div>`;
   const sign = [model.world, model.author ? `作者 ${model.author}` : ''].filter(Boolean).map(esc).join(' ・ ');
   const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${styles}</style></head>

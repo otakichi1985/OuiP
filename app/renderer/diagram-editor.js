@@ -4,10 +4,10 @@
 // 必要なもの（状態の取得・保存・読み直し・項目を開く・画像のURL・座標変換）は引数で受け取り、app.js の変数を直接見ない。
 (function (root, factory) {
   const isNode = typeof module === 'object' && module.exports;
-  const api = factory(isNode ? require('./diagram-model') : root.DiagramModel, isNode ? require('./image-set') : root.ImageSet);
+  const api = factory(isNode ? require('./diagram-model') : root.DiagramModel);
   if (isNode) module.exports = api;
   else root.DiagramEditor = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (D, ImageSet) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (D) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const KIND_LABEL = { 人物: 'キャラ', 用語: '用語', 場所: '場所', 出来事: '出来事' };
   const SHAPES = [['box', '文字の箱'], ['ellipse', '楕円'], ['balloon', '吹き出し'], ['cloud', '雲の吹き出し']];
@@ -72,7 +72,7 @@
     function resolveRef(ref) {
       const { entries, world } = getState();
       const e = entries.find((x) => x.id === ref);
-      if (e) { const face = ImageSet.iconSource(e); return { name: e.name, kind: KIND_LABEL[e.kind] || e.kind, image: face ? assetURL(face) : null, crop: face && typeof ImageCrop !== 'undefined' ? ImageCrop.style(ImageCrop.get(e, 'icon')) : '', color: e.kind === '人物' ? `hsl(${Number(e.hue) || 0} 45% 62%)` : null }; }
+      if (e) return { name: e.name, kind: KIND_LABEL[e.kind] || e.kind, image: (e.icon || e.image) ? assetURL(e.icon || e.image) : null, color: e.kind === '人物' ? `hsl(${Number(e.hue) || 0} 45% 62%)` : null };
       const o = (world.organizations || []).find((x) => x.id === ref);
       return o ? { name: o.name, kind: '組織', image: null, color: '#91b8e8' } : null;
     }
@@ -153,7 +153,7 @@
       return `<div class="dg-tpl-head"><p class="dg-head">矢印のテンプレート</p>${tpls.length ? `<span class="dg-tpl-count">${idx + 1} / ${tpls.length}</span>` : ''}</div>
         ${tpls.length ? `<div class="dg-tpl-nav"><button type="button" class="b quiet sm dg-tpl-navbtn" data-dg-tpl-prev aria-label="前のテンプレート" title="前のテンプレート">‹</button><div class="dg-tpl-strip" role="group" aria-label="矢印のテンプレート">${tpls.map((x, i) => `<button type="button" class="dg-tpl-chip${i === idx ? ' is-active' : ''}" draggable="true" data-dg-tpl-select="${i}" data-dg-tpl-drag="${esc(x.id)}" aria-pressed="${i === idx}" aria-label="${esc(x.name)}。矢印へドラッグして適用" title="${esc(x.name)}を矢印へドラッグして適用">${sample(x)}<span class="dg-tpl-chip-name">${esc(x.name)}</span></button>`).join('')}</div><button type="button" class="b quiet sm dg-tpl-navbtn" data-dg-tpl-next aria-label="次のテンプレート" title="次のテンプレート">›</button></div>
         <p class="small muted dg-tpl-hint">見本を矢印へドラッグすると適用されます。選ぶと直せます。</p>
-        <div class="dg-tpl-editor" data-dg-tpl="${idx}"><div class="dg-grid2"><label>名前<input class="inp" type="text" data-dg-tpl-field="name" value="${esc(t.name)}" aria-label="テンプレートの名前"></label><label>矢印に入る文字<input class="inp" type="text" data-dg-tpl-field="label" value="${esc(t.label)}" placeholder="空なら入れない" aria-label="矢印に入る文字"></label></div><div class="dg-tpl-look"><label>色<input type="color" data-dg-tpl-field="color" value="${esc(t.color)}" aria-label="${esc(t.name)}の色"></label><label>線の種類<select class="inp" data-dg-tpl-field="dash" aria-label="${esc(t.name)}の線の種類">${Object.entries(DASH_LABEL).map(([k, v]) => `<option value="${k}"${t.dash === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label>太さ<input class="inp" type="number" min="1" max="8" data-dg-tpl-field="width" value="${t.width}" aria-label="${esc(t.name)}の太さ"></label><button type="button" class="b quiet sm danger dg-x" data-dg-tpl-remove="${idx}" aria-label="${esc(t.name)}を削除" title="削除">×</button></div></div>` : '<p class="small muted">テンプレートがありません。下の「＋ テンプレート」で作れます。</p>'}
+        <div class="dg-tpl-editor" data-dg-tpl="${idx}"><div class="dg-grid2"><label>名前<input class="inp" type="text" data-dg-tpl-field="name" value="${esc(t.name)}" aria-label="テンプレートの名前"></label><label>矢印に入る文字<input class="inp" type="text" data-dg-tpl-field="label" value="${esc(t.label)}" placeholder="空なら入れない" aria-label="矢印に入る文字"></label></div><div class="dg-tpl-look"><label>色<input type="color" data-dg-tpl-field="color" value="${esc(t.color)}" aria-label="${esc(t.name)}の色"></label><label>線の種類<select class="inp" data-dg-tpl-field="dash" aria-label="${esc(t.name)}の線の種類">${Object.entries(DASH_LABEL).map(([k, v]) => `<option value="${k}"${t.dash === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label>太さ<input class="inp" type="number" min="1" max="8" data-dg-tpl-field="width" value="${t.width}" aria-label="${esc(t.name)}の太さ"></label><button type="button" class="b quiet sm danger dg-x" data-dg-tpl-remove="${idx}" aria-label="${esc(t.name)}を消す" title="消す">×</button></div></div>` : '<p class="small muted">テンプレートがありません。下の「＋ テンプレート」で作れます。</p>'}
         <button type="button" class="b quiet sm dg-tpl-add" data-dg-tpl-add>＋ テンプレート</button>
         <p class="dg-head">新しい矢印</p><label>最初に使うテンプレート<select class="inp" data-dg-default-template>${tpls.map((x) => `<option value="${esc(x.id)}"${lastTemplate === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`;
     }
@@ -427,4 +427,3 @@
   }
   return Object.freeze({ createHistory, createDiagramEditor });
 });
-

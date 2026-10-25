@@ -59,27 +59,15 @@
         el.classList.add("bs-card");
         el.tabIndex = readOnly() ? -1 : 0;
         if (e) {
-          const place = e.kind === "場所";
-          const mode = place ? "card" : n.imageMode === "icon" ? "icon" : "card";
-          const surface = place ? "place" : mode === "icon" ? "icon" : (e.kind === "人物" ? "small" : "card");
-          const src = surface === "icon" ? ImageSet.iconSource(e) : e.image;
-          const cropStyle = typeof ImageCrop !== "undefined" ? ImageCrop.style(ImageCrop.get(e, surface)) : "";
-          const picture = src ? `<span class="bs-picture${place ? " is-wide" : mode === "icon" ? " is-icon" : ""}"><span class="bs-crop"><img class="bs-image" src="${esc(assetURL(src))}" alt="${esc(e.name)}の画像" draggable="false" style="${cropStyle}"></span></span>` : "";
-          const iconSrc = ImageSet.iconSource(e);
-          const iconStyle = iconSrc && typeof ImageCrop !== "undefined" ? ImageCrop.style(ImageCrop.get(e, "icon")) : "";
-          const titleIcon = iconSrc ? `<span class="bs-icon-frame"><img class="bs-icon" src="${esc(assetURL(iconSrc))}" alt="" draggable="false" style="${iconStyle}"></span>` : `<span class="bs-initial">${esc([...String(e.name || "")][0] || "")}</span>`;
-          const picker = readOnly() || place ? "" : `<label class="small board-image-pick">表示<select data-board-mode="${esc(n.id)}"><option value="card"${mode === "card" ? " selected" : ""}>カード</option><option value="icon"${mode === "icon" ? " selected" : ""}>アイコン</option></select></label>`;
-          el.innerHTML = `<span class="k">${esc(e.kind)}</span>${picture}<div class="bs-title">${titleIcon}<b>${esc(e.name)}</b></div>${e.reading ? `<div class="bs-reading">${esc(e.reading)}</div>` : ""}${e.desc ? `<div class="bs-desc">${esc(e.desc)}</div>` : ""}${picker}`;
+          const picked = n.imageId && ImageSet.list(e).some((item) => item.image === n.imageId) ? n.imageId : e.image;
+          el.innerHTML = `<span class="k">${esc(e.kind)}</span>${picked ? `<img class="bs-image" src="${esc(assetURL(picked))}" alt="${esc(e.name)}の画像" draggable="false">` : ""}<div class="bs-title">${e.icon || picked ? `<img class="bs-icon" src="${esc(assetURL(e.icon || picked))}" alt="" draggable="false">` : `<span class="bs-initial">${esc([...String(e.name || "")][0] || "")}</span>`}<b>${esc(e.name)}</b></div>${e.reading ? `<div class="bs-reading">${esc(e.reading)}</div>` : ""}${e.desc ? `<div class="bs-desc">${esc(e.desc)}</div>` : ""}`;
         } else if (n.type === "memo") el.innerHTML = `<span class="k">メモ</span><div class="bs-memo">${esc(n.text)}</div>`;
         if (acts) el.append(acts);
         el.querySelectorAll("img").forEach(img => img.addEventListener("load", () => drawLinks(), { once: true }));
         el.querySelectorAll("img").forEach(img => img.addEventListener("error", () => {
-          if (!el.querySelector(".bs-image-error")) {
-            const note = document.createElement("div"); note.className = "bs-image-error";
-            note.textContent = "画像を表示できません。PNG 書き出し時に読み込みを確認してください。";
-            el.append(note);
-          }
-          drawLinks();
+          const note = document.createElement("div"); note.className = "bs-image-error";
+          note.textContent = "画像を表示できません。PNG 書き出し時に読み込みを確認してください。";
+          img.replaceWith(note); drawLinks();
         }, { once: true }));
       }
       drawLinks();

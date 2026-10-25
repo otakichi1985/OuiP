@@ -5,7 +5,6 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const Stats = require('../renderer/character-stats');
 const ImageSet = require('../renderer/image-set');
-const ImageCrop = require('../renderer/image-crop');
 const StatusModel = require('../renderer/status-model');
 const Units = require('../renderer/character-units');
 const Timeline = require('../renderer/timeline-model');
@@ -52,11 +51,14 @@ function entry(input,entryIds,organizationIds) {
     out.refs=(e.refs||[]).filter(key=>entryIds.has(key));
   }
   for(const key of ['image','icon']) if(e[key]) out[key]=text(e[key],200);
-  const crops = ImageCrop.normalizeCrops(e.crops, e.kind);
-  if(crops) out.crops = crops;
   if(e.kind==='人物') {
     const images=ImageSet.list(e).map(item=>({image:text(item.image,200),...(item.caption?{caption:text(item.caption,1000)}:{})}));
     if(images.length) out.images=images;
+  }
+  // カードのサムネの切り取り（枠いっぱいに切る）も、アプリと同じ見え方で書き出す。
+  if(out.image && e.imageCrop && e.imageCrop.fit === 'cover') {
+    const at = n => ([0,50,100].includes(Number(n)) ? Number(n) : 50);
+    out.imageCrop = { fit: 'cover', x: at(e.imageCrop.x), y: at(e.imageCrop.y) };
   }
   return out;
 }
@@ -97,7 +99,7 @@ function project(state,selection) {
     return {...base,members,organizationIds:orgs,positions:positions({...original,...groupPositions},allowed),groupDisplay:g.groupDisplay==='nodes'?'nodes':'frames',relations:array((g.relations||[]).filter(r=>allowed.has(r.a)&&allowed.has(r.b)),1000).map(r=>({a:r.a,b:r.b,label:text(r.label||'',1000),style:['family','friend','rival'].includes(r.style)?r.style:'friend'}))};
   });
   const maps=selected(world.maps||[],mapIds).map(m=>({id:id(m.id),name:text(m.name,1000),image:m.image?text(m.image,200):null,positions:positions(m.positions,places)}));
-  // 作者名は、概要の「設定シートや閲覧用ファイルに載せる名前」として入れたもの。
+  // 作者名は、概要の「共有の画像やサイトに載せる名前」として入れたもの。
   const model={title:text(selection.title,1000).trim(),author:text(world.author||'',200).trim(),template,entries,organizations,graphs,maps};
   if(!model.title)fail('閲覧用ファイルの名前を入れてください');
   if(selection.includeIntro) {model.note=text(world.note||'');if(world.image)model.image=text(world.image,200);}
@@ -126,8 +128,7 @@ class SiteExport {
     const hash=/-(\w{64})\./.exec(rel);if(hash&&crypto.createHash('sha256').update(bytes).digest('hex')!==hash[1])fail('画像の内容とハッシュが一致しません');
     return {bytes,type:ext==='jpg'?'jpeg':ext};
   }
-  // 変換に失敗したら、その絵だけ除いて続け、呼び出し側へ知らせる（全体は止めない）。WebPは読めないので元のまま入れ、kept で知らせる。
-  // info.skipped: 読めなかった絵（場所・形式・変換のいずれかで失敗。{label, reason}）。
+  // 変換に失敗したら、どの項目の画像かを添えて止める（原寸のまま黙って入れない）。WebPは読めないので元のまま入れ、kept で知らせる。
   async convert(rel,label,encode,type) {
     const {bytes,type:original}=await this.read(rel);
     if(this.nativeImage&&ExportImage.isWebP(bytes)) return {uri:`data:image/webp;base64,${bytes.toString('base64')}`,size:bytes.length,kept:true};
@@ -154,15 +155,9 @@ class SiteExport {
     let done=0;
     const take=async(rel,label)=>{
       if(!images.has(rel)) {
-        let ref=null;
-        try {
-          const image=await this.image(rel,label);total+=image.size;
-          if(image.kept)info.kept=(info.kept||0)+1;
-          const n=images.size;table[n]=image.uri;ref=`ouip-img:${n}`;
-        } catch(e) {
-          (info.skipped||(info.skipped=[])).push({label:label||'名称未定',reason:String(e.message||e)});
-        }
-        images.set(rel,ref);
+        const image=await this.image(rel,label);total+=image.size;
+        if(image.kept)info.kept=(info.kept||0)+1;
+        const n=images.size;table[n]=image.uri;images.set(rel,`ouip-img:${n}`);
         done++;
         onProgress({phase:"images",done,total:allImages.size});
       }
@@ -174,7 +169,7 @@ class SiteExport {
     }
     model.images=table;
     const templates=DiagramModel.normalizeTemplates((await this.store.load()).world.linkTemplates);
-    const canvasRefs=g=>Object.fromEntries(Object.entries(g.refs||{}).map(([id,r])=>{ if(!r) return [id,null]; const e=r.selected?model.entries.find(x=>x.id===id):null; return [id,{name:r.name,kind:r.kind,image:e?(e.icon||e.image||null):null,crop:e?ImageCrop.style(ImageCrop.get(e,'icon')):''}]; }));
+    const canvasRefs=g=>Object.fromEntries(Object.entries(g.refs||{}).map(([id,r])=>{ if(!r) return [id,null]; const e=r.selected?model.entries.find(x=>x.id===id):null; return [id,{name:r.name,kind:r.kind,image:e?(e.icon||e.image||null):null}]; }));
     model.graphs=model.graphs.map(g=>({id:g.id,name:g.name,svg:g.format==='free'?freeDiagram(g):g.format==='canvas'?canvasDiagram(g,canvasRefs(g),templates):legacyDiagram(g,model.entries,model.organizations)}));
     model.maps=model.maps.map(m=>({id:m.id,name:m.name,svg:mapDiagram(m,model.entries)}));
     onProgress({phase:"html",done:0,total:1});

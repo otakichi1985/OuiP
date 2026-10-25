@@ -45,7 +45,43 @@ test("人物の画像とアイコンを別々に保持し、取り外し・履�
   }
 });
 
-test("見え方は枠ごとの位置と拡大率だけを持ち、既定は持たない", async () => {
+test("画像の調整は元画像と見せ方を一緒に持ち、いつでも元画像から作り直せる", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ouip-adjust-"));
+  try {
+    const s = new Store(path.join(dir, "data"));
+    await s.init();
+    const source = await s.importEditedImage(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII=", "base64"));
+    const output = await s.importEditedImage(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
+    const adjust = { source, w: 640, h: 640, base: 0.5, scale: 2, x: 320, y: 320 };
+    const e = await s.saveEntry({ kind: "人物", name: "灯", image: output, imageAdjust: adjust });
+    assert.equal(e.image, output, "表示は作り直した画像のまま");
+    assert.deepEqual(e.imageAdjust, adjust, "元画像と見せ方を残す");
+    // 部分更新では前の調整を保つ。
+    const kept = await s.saveEntry({ id: e.id, kind: "人物", name: "灯改" });
+    assert.deepEqual(kept.imageAdjust, adjust);
+    // 別の画像に差し替えると、前の元画像への調整は残さない。
+    const replaced = await s.saveEntry({ id: e.id, kind: "人物", name: "灯改2", image: source, imageAdjust: null });
+    assert.equal("imageAdjust" in replaced, false);
+    // 壊れた調整や、実在しない元画像は残さない。
+    const bad = await s.saveEntry({ id: e.id, kind: "人物", name: "灯改3", image: output, imageAdjust: { source, w: 10 } });
+    assert.equal("imageAdjust" in bad, false);
+    const missing = await s.saveEntry({ id: e.id, kind: "人物", name: "灯改4", image: output, imageAdjust: { ...adjust, source: "assets/image-" + "0".repeat(64) + ".png" } });
+    assert.equal("imageAdjust" in missing, false);
+    // 概要の画像と地図の画像も同じ扱い。
+    await s.updateWorld({ image: output, imageAdjust: adjust });
+    assert.deepEqual((await s.load()).world.imageAdjust, adjust);
+    await s.updateWorld({ image: source });
+    assert.equal("imageAdjust" in (await s.load()).world, false);
+    const map = await s.saveDiagram("maps", { name: "世界地図", image: output, imageAdjust: adjust });
+    assert.deepEqual(map.imageAdjust, adjust);
+    const map2 = await s.saveDiagram("maps", { id: map.id, name: "世界地図", image: source });
+    assert.equal("imageAdjust" in map2, false);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("カードのサムネの切抜き位置は既定を持たず、切り取るときだけ項目に残る", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ouip-crop-"));
   try {
     const s = new Store(path.join(dir, "data"));
@@ -54,70 +90,21 @@ test("見え方は枠ごとの位置と拡大率だけを持ち、既定は持�
     await fs.writeFile(source, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII=", "base64"));
     const image = await s.importCharacterImage(source);
     const plain = await s.saveEntry({ kind: "人物", name: "灯", image });
-    assert.equal("crops" in plain, false);
-    const cropped = await s.saveEntry({ kind: "人物", name: "灯", image, crops: {
-      large: { x: 20, y: 80, zoom: 2 }, small: { x: 0, y: 100, zoom: 1 }, icon: { x: 50, y: 50, zoom: 1 },
-    } });
-    assert.deepEqual(cropped.crops, { large: { x: 20, y: 80, zoom: 2 }, small: { x: 0, y: 100, zoom: 1 } });
-    // 部分更新では前の見え方を保つ。
-    const partial = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯改" });
-    assert.deepEqual(partial.crops, { large: { x: 20, y: 80, zoom: 2 }, small: { x: 0, y: 100, zoom: 1 } });
-    // 範囲外は端へ寄せ、既定（中央・100%）の枠は持たない。
-    const coerced = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯", image, crops: {
-      large: { x: 142, y: -7, zoom: 99 }, small: { x: 50, y: 50, zoom: 1 },
-    } });
-    assert.deepEqual(coerced.crops, { large: { x: 100, y: 0, zoom: 8 } });
-    // 明示的に空にすると持たない。
-    const reset = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯", image, crops: {} });
-    assert.equal("crops" in reset, false);
-    // 廃止した調整・切り取りの項目は保存しない。
-    const old = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯", image, imageCrop: { fit: "cover", x: 0, y: 100 }, imageAdjust: { source: image, w: 1, h: 1, base: 1, scale: 1, x: 0, y: 0 } });
-    assert.equal("imageCrop" in old, false);
-    assert.equal("imageAdjust" in old, false);
-    // 画像を外すと見え方も残さない。
-    const noImage = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯", image: null });
-    assert.equal("crops" in noImage, false);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("場所は16:9の見え方と画像を持つ", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ouip-place-crop-"));
-  try {
-    const s = new Store(path.join(dir, "data"));
-    await s.init();
-    const source = path.join(dir, "original.png");
-    await fs.writeFile(source, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII=", "base64"));
-    const image = await s.importCharacterImage(source);
-    const place = await s.saveEntry({ kind: "場所", name: "灯台の岬", image, crops: { place: { x: 10, y: 20, zoom: 1.5 }, card: { x: 1, y: 2, zoom: 3 } } });
-    assert.equal(place.image, image);
-    assert.deepEqual(place.crops, { place: { x: 10, y: 20, zoom: 1.5 } });
-    const kept = await s.saveEntry({ id: place.id, kind: "場所", name: "灯台の岬2" });
-    assert.equal(kept.image, image);
-    assert.deepEqual(kept.crops, place.crops);
-    const removed = await s.saveEntry({ id: place.id, kind: "場所", name: "灯台の岬3", image: null });
-    assert.equal(removed.image, null);
-    assert.equal("crops" in removed, false);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("用語はカードとアイコンの2つの見え方を持つ", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ouip-term-crop-"));
-  try {
-    const s = new Store(path.join(dir, "data"));
-    await s.init();
-    const source = path.join(dir, "original.png");
-    await fs.writeFile(source, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII=", "base64"));
-    const image = await s.importCharacterImage(source);
-    const term = await s.saveEntry({ kind: "用語", name: "灯台", image, crops: { card: { x: 10, y: 20, zoom: 1.5 }, icon: { x: 80, y: 0, zoom: 2 }, large: { x: 1, y: 2, zoom: 3 } } });
-    assert.deepEqual(term.crops, { card: { x: 10, y: 20, zoom: 1.5 }, icon: { x: 80, y: 0, zoom: 2 } });
-    const kept = await s.saveEntry({ id: term.id, kind: "用語", name: "灯台2" });
-    assert.deepEqual(kept.crops, term.crops);
-    const old = await s.saveEntry({ id: term.id, kind: "用語", name: "灯台3", image, imageCrop: { fit: "cover", x: 0, y: 100 } });
-    assert.equal("imageCrop" in old, false);
+    assert.equal("imageCrop" in plain, false);
+    const cropped = await s.saveEntry({ kind: "人物", name: "灯", image, imageCrop: { fit: "cover", x: 0, y: 100 } });
+    assert.deepEqual(cropped.imageCrop, { fit: "cover", x: 0, y: 100 });
+    // 不正な値は中央に寄せ、既定（全体・中央）は持たない。
+    const coerced = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯", image, imageCrop: { fit: "cover", x: 42, y: -7 } });
+    assert.deepEqual(coerced.imageCrop, { fit: "cover", x: 50, y: 50 });
+    const reset = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯", image, imageCrop: null });
+    assert.equal("imageCrop" in reset, false);
+    // 部分更新（imageCropを送らない）では前の値を保つ。
+    const kept = await s.saveEntry({ id: cropped.id, kind: "人物", name: "灯改", imageCrop: { fit: "cover", x: 0, y: 0 } });
+    const partial = await s.saveEntry({ id: kept.id, kind: "人物", name: "灯改2" });
+    assert.deepEqual(partial.imageCrop, { fit: "cover", x: 0, y: 0 });
+    // 画像を外すと切抜きも残さない。
+    const noImage = await s.saveEntry({ id: kept.id, kind: "人物", name: "灯改2", image: null });
+    assert.equal("imageCrop" in noImage, false);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
