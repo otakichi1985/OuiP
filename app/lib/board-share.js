@@ -8,6 +8,7 @@ const StatusModel = require('../renderer/status-model');
 const CharacterUnits = require('../renderer/character-units');
 const ExportImage = require('./export-image');
 const ImageSet = require('../renderer/image-set');
+const ImageCrop = require('../renderer/image-crop');
 const LIMITS = Object.freeze({json:30*1024*1024, images:20*1024*1024, items:200, entries:100, links:1000});
 const IMAGE = /^assets\/(?:image|character)-([a-f0-9]{64})\.(png|jpg|jpeg|webp)$/;
 const fail = (text) => { throw new Error('共有ボード: '+text); };
@@ -70,6 +71,8 @@ function card(e) {
  if(e.kind==='人物') {out.sections=list(e.sections??[],200).map(s=>({title:text(s.title,1000),text:text(s.text??'')})); if(e.hue!==undefined){if(!Number.isFinite(e.hue)) fail('色が不正です');out.hue=e.hue;}}
  if(e.kind==='出来事') {const y=e.year??{};if(y.n!==null&&y.n!==undefined&&!Number.isFinite(y.n)) fail('年が不正です');out.year={n:y.n??null,label:text(y.label??'',1000)};}
  for(const key of ['image','icon']) if(e[key]) { if(!IMAGE.test(e[key])) fail('画像の場所が不正です');out[key]=e[key]; }
+ const crops=ImageCrop.normalizeCrops(e.crops,e.kind);
+ if(crops) out.crops=crops;
  if(e.kind==='人物') {
    const images=ImageSet.list(e).map(item=>({image:item.image,...(item.caption?{caption:text(item.caption,1000)}:{})}));
    if(images.some(item=>!IMAGE.test(item.image))) fail('画像の場所が不正です');
@@ -78,7 +81,7 @@ function card(e) {
  return out;
 }
 function board(input,entries) {
- const items=list(input.items,LIMITS.items).map(i=>{const out={id:id(i.id),type:i.type};if(!['entry','memo'].includes(i.type)) fail('ボード項目が不正です');for(const k of ['x','y']) {if(!Number.isFinite(i[k])||Math.abs(i[k])>1000000) fail('座標が不正です');out[k]=Math.round(i[k]);}if(i.type==='entry'){out.ref=id(i.ref);if(!entries.has(out.ref)) fail('参照カードがありません');if(typeof i.imageId==='string'&&i.imageId){if(!IMAGE.test(i.imageId))fail('画像の場所が不正です');out.imageId=i.imageId;}}else out.text=text(i.text??'');return out;});
+ const items=list(input.items,LIMITS.items).map(i=>{const out={id:id(i.id),type:i.type};if(!['entry','memo'].includes(i.type)) fail('ボード項目が不正です');for(const k of ['x','y']) {if(!Number.isFinite(i[k])||Math.abs(i[k])>1000000) fail('座標が不正です');out[k]=Math.round(i[k]);}if(i.type==='entry'){out.ref=id(i.ref);if(!entries.has(out.ref)) fail('参照カードがありません');if(typeof i.imageId==='string'&&i.imageId){if(!IMAGE.test(i.imageId))fail('画像の場所が不正です');out.imageId=i.imageId;}if(i.imageMode==='card'||i.imageMode==='icon')out.imageMode=i.imageMode;}else out.text=text(i.text??'');return out;});
  const ids=unique(items);
  const links=list(input.links,LIMITS.links).map(l=>{if(!ids.has(l.from)||!ids.has(l.to)||l.from===l.to) fail('線の参照が不正です');return {id:id(l.id),from:l.from,to:l.to,label:text(l.label??'',1000)};});unique(links);
  return {items,links};

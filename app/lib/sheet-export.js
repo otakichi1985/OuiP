@@ -66,8 +66,14 @@ class SheetExport {
   model(entryId, options) {
     return this.store.serial(async () => {
       const model = Sheet.sheetModel(await this.store.load(), entryId, options);
-      for (const key of ['image', 'icon']) if (model[key]) model[key] = (await this.images.sheetImage(model[key], model.name)).uri;
-      return model;
+      // 読めない絵は除いて続け、呼び出し側へ知らせる（全体は止めない）。
+      const skipped = [];
+      for (const key of ['image', 'icon']) {
+        if (!model[key]) continue;
+        try { model[key] = (await this.images.sheetImage(model[key], model.name)).uri; }
+        catch (e) { skipped.push({ label: model.name + (key === 'icon' ? 'のアイコン' : 'の絵'), reason: String(e.message || e) }); model[key] = null; }
+      }
+      return { model, skipped };
     });
   }
   // 同時に1つだけ作る。作るたびに保存データを読み直し、選んだ項目だけで組み立てる。
@@ -75,8 +81,8 @@ class SheetExport {
     if (this.busy) fail('作成中です。終わってからもう一度操作してください');
     this.busy = true;
     try {
-      const model = await this.model(entryId, options);
-      return { model, ...(await capture(this.electron, Sheet.renderSheetHTML(model), model)) };
+      const { model, skipped } = await this.model(entryId, options);
+      return { model, skipped, ...(await capture(this.electron, Sheet.renderSheetHTML(model), model)) };
     } finally { this.busy = false; }
   }
   // 複数ページは「名前-1.png」「名前-2.png」で保存する。ダイアログが上書きを確かめたのは選んだ名前だけなので、既にあれば止める。

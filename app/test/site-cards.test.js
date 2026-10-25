@@ -27,7 +27,8 @@ test('年表以外の一覧は、絵のない項目にも同じ枠と行を持�
   const people = section(html, 'characters');
   assert.match(people, /class="entry-grid card-grid"/);
   assert.match(html, /\.card-grid \.picture-link\{display:grid;place-items:center;aspect-ratio:1\/1;overflow:hidden/, '正方形の枠で画像を切る');
-  assert.match(html, /\.card-grid \.entry-image\{width:100%;height:auto;min-height:100%;object-fit:contain/, '枠より縦長の画像ははみ出した上下を切る');
+  assert.match(html, /\.entry-picture \.entry-image\{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover/, '枠を埋めて切る');
+  assert.match(html, /\.card-grid \.entry-picture\{width:100%;aspect-ratio:1\/1\}/, '小・中は正方形の枠');
   assert.equal((people.match(/class="entry-image entry-placeholder person"/g) || []).length, 2, '絵のない人物は頭文字の枠');
   assert.match(people, /style="--hue:120"[^>]*>灯</);
   for (const slot of ['class="reading"', 'class="prose description"', 'class="unset-slot"']) assert.equal(people.split(slot).length - 1, 2, `${slot}は説明や読みが無くても置く`);
@@ -49,23 +50,45 @@ test('大は横長のカードにし、ステータスを1行ずつカード内�
   assert.match(html, /:root\[data-card-size="large"\] \.card-grid \.entry-card\{display:grid/);
   assert.match(html, /:root\[data-card-size="large"\] \.card-grid \.entry-card:has\(> \.card-stats\)\{grid-template-columns:150px minmax\(0,1fr\) 240px/);
   assert.match(html, /:root\[data-card-size="large"\] \.card-grid \.picture-link\{grid-area:picture;width:150px;aspect-ratio:1\/1\.4142\}/, '大の絵の枠は1:√2');
-  assert.match(html, /:root\[data-card-size="large"\] \.card-grid \.entry-image\{width:100%;height:auto;aspect-ratio:auto;object-fit:contain\}/, '大は縦を自然の高さにし、はみ出す上下を切る');
+  assert.match(html, /:root\[data-card-size="large"\] \.card-grid \.entry-picture\{width:150px;aspect-ratio:1\/1\.4142\}/, '大の枠は1:√2');
+  assert.match(html, /:root\[data-card-size="large"\] \.entry-picture \.entry-image-large\{display:block\}/, '大は大カードの見え方を使う');
   assert.doesNotMatch(html, /max-width:220px/, '狭い画面でも大の画像だけ広げない（アプリは150pxのまま）');
   assert.match(html, /:root:not\(\[data-card-size="medium"\]\):not\(\[data-card-size="large"\]\) \.card-grid \.reading\{display:none\}/, '小は絵と名前だけ');
 });
 
-test('カードのサムネの切り取り（枠いっぱいに切る・位置）を書き出しへ反映する', async t => {
+test('大カードと小・中カードの見え方を書き出しへ反映する', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ouip-site-crop-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const source = path.join(dir, 'source.png');
   await fs.writeFile(source, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII=', 'base64'));
   const store = new Store(dir); await store.init();
   const image = await store.importCharacterImage(source);
-  const cropped = await store.saveEntry({ kind: '人物', name: '灯', image, imageCrop: { fit: 'cover', x: 0, y: 100 } });
+  const cropped = await store.saveEntry({ kind: '人物', name: '灯', image, crops: {
+    large: { x: 0, y: 100, zoom: 2 }, small: { x: 100, y: 0, zoom: 1.5 },
+  } });
   const build = entryIds => new SiteExport({ store, dir }).build({ title: '試験', includeIntro: false, entryIds, organizationIds: [], graphIds: [], mapIds: [] });
-  assert.match(await build([cropped.id]), /<img class="entry-image"[^>]*style="object-fit:cover;object-position:0% 100%;height:100%"/, '切り取り位置を画像へ反映する');
+  const html = await build([cropped.id]);
+  assert.match(html, /class="entry-image entry-image-large"[^>]*style="object-fit:cover;object-position:0% 100%;transform:scale\(2\)/, '大カードの位置と拡大を反映する');
+  assert.match(html, /class="entry-image entry-image-small"[^>]*style="object-fit:cover;object-position:100% 0%;transform:scale\(1\.5\)/, '小・中カードの位置と拡大を反映する');
   const plain = await store.saveEntry({ kind: '人物', name: '潮', image });
-  assert.doesNotMatch(await build([plain.id]), /class="entry-image"[^>]*style="object-fit:cover/, '既定の「全体を収める」では切り取らない');
+  assert.match(await build([plain.id]), /class="entry-image entry-image-small"[^>]*style="object-fit:cover;object-position:50% 50%;transform:scale\(1\)/, '既定は中央・100%');
+});
+
+test('場所は16:9の横長カードで書き出し、名前の横の丸アイコンは付けない', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ouip-site-place-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const source = path.join(dir, 'source.png');
+  await fs.writeFile(source, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII=', 'base64'));
+  const store = new Store(dir); await store.init();
+  const image = await store.importCharacterImage(source);
+  const place = await store.saveEntry({ kind: '場所', name: '検証の岬', image, crops: { place: { x: 50, y: 40, zoom: 1.2 } } });
+  const html = await new SiteExport({ store, dir }).build({ title: '試験', includeIntro: false, entryIds: [place.id], organizationIds: [], graphIds: [], mapIds: [] });
+  assert.match(html, /<article class="entry-card place-card"/);
+  assert.match(html, /class="entry-picture is-place"/);
+  assert.match(html, /class="entry-image entry-image-place"[^>]*style="object-fit:cover;object-position:50% 40%;transform:scale\(1\.2\)/);
+  assert.match(html, /\.entry-picture\.is-place\{aspect-ratio:16\/9\}/);
+  const card = html.slice(html.indexOf('<article class="entry-card place-card"'), html.indexOf('</article>', html.indexOf('<article class="entry-card place-card"')));
+  assert.doesNotMatch(card, /entry-icon-frame/, '場所の名前の横に丸アイコンを付けない');
 });
 
 test('詳細はダイアログで開き、スクリプトのない閲覧ではカードの中で開ける', async t => {
