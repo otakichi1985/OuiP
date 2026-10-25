@@ -38,19 +38,24 @@ test('閲覧用HTMLは同じ画像を1回だけ埋め込み、最初の1か所�
   const graph = await store.saveDiagram('graphs', { name: '仲間', members: [a.id, b.id], positions: { [a.id]: [200, 200], [b.id]: [500, 250] } });
   const html = await new SiteExport({ store, dir }).build({ title: '試験', includeIntro: false, entryIds: [a.id, b.id], organizationIds: [], graphIds: [graph.id], mapIds: [] });
   assert.equal(html.split(PNG.toString('base64')).length - 1, 1, '画像の中身は1回だけ');
-  assert.equal((html.match(/ src="data:image\/png;base64,[^"]+" data-ouip-id="0"/g) || []).length, 1, '最初の1か所（カードの絵）は本物の画像');
-  assert.equal((html.match(/data-ouip-src="0"/g) || []).length, 1, '名前の横は番号で指す');
-  assert.equal((html.match(/data-ouip-href="0"/g) || []).length, 1, '関係図の顔も番号で指す');
+  assert.equal((html.match(/ src="data:image\/png;base64,[^"]+" data-ouip-id="0"/g) || []).length, 1, '最初の1か所（大カードの絵）は本物の画像');
+  assert.ok((html.match(/data-ouip-src="0"/g) || []).length >= 2, '小・中の絵と名前の横は番号で指す');
+  assert.match(html, /<foreignObject[\s\S]*?data-ouip-src="0"/, '関係図の顔も番号で指す');
   assert.doesNotMatch(html, /(?:src|href)="ouip-img:/, '番号のままのsrc/hrefを残さない');
   const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
   assert.match(script, /data-ouip-id/);
 });
 
-test('変換に失敗したら、どの項目の画像かを知らせて止める（原寸のまま入れない）', async t => {
+test('変換に失敗した絵は除いて続け、項目名と理由を知らせる（原寸のまま黙って入れない）', async t => {
   const { dir, store, image } = await world(t);
   const a = await store.saveEntry({ kind: '人物', name: '灯', image });
   const broken = { createFromBuffer: () => ({ isEmpty: () => true }) };
-  await assert.rejects(new SiteExport({ store, dir, nativeImage: broken }).build({ title: '試験', includeIntro: false, entryIds: [a.id], organizationIds: [], graphIds: [], mapIds: [] }), /「灯」の画像を変換できませんでした/);
+  const info = {};
+  const html = await new SiteExport({ store, dir, nativeImage: broken }).build({ title: '試験', includeIntro: false, entryIds: [a.id], organizationIds: [], graphIds: [], mapIds: [] }, info, () => {});
+  assert.equal(info.skipped.length, 1);
+  assert.equal(info.skipped[0].label, '灯');
+  assert.match(info.skipped[0].reason, /変換できませんでした/);
+  assert.doesNotMatch(html, /data-ouip-id="0"/, '読めなかった絵は入れない');
   await assert.rejects(new BoardShare({ store, dir, nativeImage: broken }).exportPayload({ items: [{ id: 'i-a', type: 'entry', ref: a.id, x: 0, y: 0 }], links: [] }), /「灯」の画像を変換できませんでした/);
 });
 
@@ -86,7 +91,8 @@ test('Electronの中で、PNG・JPEGを長辺1600px以内のJPEG（透過は白�
   assert.equal(r.site.pngLeft, 0);
   assert.equal(r.site.kept, 1);
   const jpegs = r.site.images.filter(i => i.type === 'image/jpeg');
-  assert.equal(jpegs.length, 2, JSON.stringify(r.site.images.map(i => i.type)));
+  // カードの絵2枚（PNGとJPEG）と、名前の横のアイコン1枚（別画像）。WebPは変換しない。
+  assert.equal(jpegs.length, 3, JSON.stringify(r.site.images.map(i => i.type)));
   assert.equal(r.site.images.filter(i => i.type === 'image/webp').length, 1);
   for (const image of jpegs) assert.ok(Math.max(image.size.width, image.size.height) <= 1600, JSON.stringify(image.size));
   const big = jpegs.find(i => i.corner[0] >= 250);
@@ -94,11 +100,11 @@ test('Electronの中で、PNG・JPEGを長辺1600px以内のJPEG（透過は白�
   assert.ok(big.corner.slice(0, 3).every(v => v >= 250), '透明だった角は白: ' + big.corner);
   assert.ok(big.bytes < r.original.png / 2, `PNG ${r.original.png} → JPEG ${big.bytes}`);
   assert.ok(jpegs.some(i => i !== big && i.size.width === 1600 && i.size.height === 800), '2000×1000のJPEGも1600×800に');
-  assert.equal(r.site.srcRefs, 3, '3人の名前の横（絵を番号で指す）');
+  assert.equal(r.site.srcRefs, 5, '同じ絵を大・小・名前の横で使い回す所を番号で指す');
   assert.equal(r.site.opened.refsFilled, r.site.opened.refs, '開くと番号の所へ画像が入る（CSPの下でsite.jsが動く）');
   assert.equal(r.site.opened.filled, r.site.opened.count);
   assert.ok(r.site.opened.decodedWidth > 0, '入った画像を表示できる');
-  assert.equal(r.site.noScript.filled, 3, 'スクリプトなしでもカードの絵は見える（名前の横は出ない）');
+  assert.equal(r.site.noScript.filled, 4, 'スクリプトなしでもカード3枚と名前の横のアイコン1枚は見える');
   assert.ok(r.largeMs < 3000, '3000×3000のPNG 1枚の変換: ' + r.largeMs + 'ms');
   // 設定シート: PNGのまま縮める（透過は残る）。WebPは元のまま
   assert.equal(r.sheet.type, 'image/png'); assert.deepEqual(r.sheet.size, { width: 1600, height: 800 });

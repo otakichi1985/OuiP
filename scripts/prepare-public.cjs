@@ -3,8 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { root, app, dist, assert, files, reset } = require('./package.cjs');
-function prepare(outputName = 'public-source') {
-  const selections = ['README.md', 'RELEASE_NOTES.md', 'scripts/package.cjs', 'scripts/prepare-public.cjs',
+function prepare(outputName = JSON.parse(fs.readFileSync(path.join(app, 'package.json'))).version) {
+  const selections = ['README.md', 'RELEASE_NOTES.md', 'scripts/package.cjs', 'scripts/prepare-public.cjs', 'scripts/make-test-env.cjs',
     'app/main.js', 'app/preload.js', 'app/package.json', 'app/package-lock.json'];
   for (const dir of ['lib', 'renderer', 'share', 'test']) {
     for (const file of files(path.join(app, dir))) {
@@ -27,10 +27,11 @@ function prepare(outputName = 'public-source') {
     assert(!personalPath.test(text), `Personal absolute path detected: ${rel}`);
     assert(!credential.test(text), `Possible credential detected: ${rel}`);
   }
-  assert(/^public-source(?:-[a-zA-Z0-9.-]+)?$/.test(outputName), 'Use a named public-source staging directory');
-  const output = path.join(dist, outputName);
+  assert(/^v?\d+\.\d+\.\d+$/.test(outputName), 'Use a version name like 0.3.3');
+  const publicDir = path.join(dist, 'public');
+  const output = path.join(publicDir, outputName);
   assert(!fs.existsSync(path.join(output, '.git')), 'public-source is now a release repository. Preserve it; export to a new staging path before publishing another version.');
-  reset(output);
+  reset(output, publicDir);
   for (const rel of selections) {
     const dest = path.join(output, rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });

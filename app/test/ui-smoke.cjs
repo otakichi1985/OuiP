@@ -54,7 +54,7 @@ async function screenshotView(action, name) {
   if (action === 'restore') {
     const saved = window.__ouipCaptureSession;
     if (!saved) return;
-    $('veil').hidden = true; imageEdit = null; imageDrag = null;
+    $('veil').hidden = true; imageEdit = null; imageDrag = null; $('viewer').classList.remove('crop-editor');
     // Restore original DOM nodes, retaining draft values/listeners and the final editor shot.
     ({ page, bookTab, kind, q, cur, statsEditors, penMode, bsel, linking, lsel } = saved);
     for (const [target, source] of [[tabQueries, saved.queries], [sel, saved.filters]]) {
@@ -83,7 +83,7 @@ async function screenshotView(action, name) {
     OuipTheme.set(name.startsWith('light') ? 'light' : 'dark'); OuipTheme.setAccent(name === 'appearance' ? 'indigo' : 'celadon'); OuipTheme.setBase(name === 'appearance' ? 'kinari' : 'sumikon'); paintThemeChoice(); $('theme-menu').open = false;
     // Clear test-owned transient UI, never stored entries/graphs/board data.
     $('veil').hidden = true; $('viewer').replaceChildren();
-    $('viewer').classList.remove('image-editor'); $('viewer').scrollTop = 0;
+    $('viewer').classList.remove('image-editor'); $('viewer').classList.remove('crop-editor'); $('viewer').scrollTop = 0;
     imageEdit = null; imageDrag = null; statsEditors = null; cur = null;
     $('drawer').hidden = true; $('drawer').replaceChildren();
     $('drawer').classList.remove('editor-expanded'); $('drawer').scrollTop = 0;
@@ -91,7 +91,7 @@ async function screenshotView(action, name) {
     bsel = null; linking = null; lsel = null; bdrag = null;
     ndrag = null; pan = null; penStart = null; penMode = false; freeGraphDrag = null; freeGraphConnect = null; timelineController.clearDrag();
     clearTimeout(toast.h); $('toast').hidden = true; $('update-notice').hidden = true;
-    page = name === 'header' || name === 'image' || name === 'appearance' ? 'world' : 'book';
+    page = name === 'header' || name === 'appearance' ? 'world' : 'book';
     const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : graphView || name === 'organization' ? 'graphs' : '人物';
     assert(document.documentElement.dataset.theme === (name.startsWith('light') ? 'light' : 'dark'), 'capture theme not applied');
     selectBookTab(tab); q = ''; tabQueries[tab] = ''; sel[tab] = {}; $('q').value = '';
@@ -109,6 +109,14 @@ async function screenshotView(action, name) {
     }
     if (name === 'empty') { q = '一致しない撮影用の言葉'; tabQueries[tab] = q; $('q').value = q; }
     render(); scrollTo(0, 0);
+    if (name === 'image') {
+      const person = S.entries.find(e => e.kind === '人物' && e.image);
+      assert(person, 'missing character image');
+      openEntry(person.id);
+      document.querySelector('[data-edit]').click();
+      document.querySelector('[data-edit-crops]').click();
+      assert($('viewer').classList.contains('crop-editor'), 'crop editor not opened');
+    }
     if (name === 'tags' || name === 'tags-closed') {
       const group = $('facets').querySelector('details');
       assert(group, 'missing tag filters'); group.open = name === 'tags';
@@ -124,7 +132,6 @@ async function screenshotView(action, name) {
       node.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',bubbles:true,cancelable:true}));
       assert($('free-node-form'), 'node editor did not open');
     }
-    if (name === 'image') { assert(S.world.image, 'missing overview image'); await editImage(S.world.image, async () => {}); }
     if (name === 'appearance') $('theme-menu').open = true;
     await document.fonts.ready;
     for (const img of [...document.images].filter(visible)) {
@@ -135,20 +142,21 @@ async function screenshotView(action, name) {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await new Promise(resolve => setTimeout(resolve, 220)); // existing 180ms entrance animation
   }
-  assert($('drawer').hidden && cur === null && statsEditors === null, 'drawer/editor remains open');
+  if (name !== 'image') assert($('drawer').hidden && cur === null && statsEditors === null, 'drawer/editor remains open');
   assert($('wspanel').hidden && !BoardShareUI.state.readOnly && !BoardShareUI.state.busy && !bsel && !linking && !lsel, 'board state remains active');
   assert(!document.querySelector('#viewer #graph-arrange-form'), 'stale alignment modal');
   const image = name === 'image', modal = image || name === 'graph-node';
-  assert($('veil').hidden === !modal && Boolean(imageEdit) === image, 'unexpected modal/image state');
-  assert(page === (name === 'header' || name === 'appearance' || image ? 'world' : 'book'), 'wrong page: ' + page);
+  assert($('veil').hidden === !modal, 'unexpected modal/image state');
+  assert(page === (name === 'header' || name === 'appearance' ? 'world' : 'book'), 'wrong page: ' + page);
   assert(document.querySelector('[data-page][aria-current="page"]')?.dataset.page === page, 'selected page mismatch');
   let marker;
-  if (name === 'timeline' || name === 'map' || name === 'empty' || name === 'light' || graphView || name === 'organization' || name === 'tags' || name === 'tags-closed') {
-    const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : name.startsWith('tags') || name === 'empty' || name === 'light' ? '人物' : 'graphs';
+  if (name === 'timeline' || name === 'map' || name === 'empty' || name === 'light' || graphView || name === 'organization' || name === 'tags' || name === 'tags-closed' || image) {
+    const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : name === 'image' || name.startsWith('tags') || name === 'empty' || name === 'light' ? '人物' : 'graphs';
     assert(bookTab === tab && visible($('p-book')) && !visible($('p-world')), 'wrong book tab: ' + bookTab);
     const selected = $('booktabs').querySelector('[aria-selected="true"]');
     assert(selected && (selected.dataset.kind || selected.dataset.bookTab) === tab, 'selected tab mismatch');
-    marker = name.startsWith('tags') || name === 'light' ? $('facets') : name === 'empty' ? document.querySelector('#bookbody .empty-state') : name === 'map' ? document.querySelector('#bookbody svg[data-camera^="maps:"]') : name === 'timeline' ? document.querySelector('#bookbody .timeline-layout') : name === 'graph-node' ? $('free-node-form') : document.querySelector(name === 'organization' ? '#bookbody .organization-graph svg[data-camera]' : '#bookbody svg.free-graph[data-camera^="graphs:"]');
+    marker = name === 'image' ? $('viewer').querySelector('[data-crop-stage]') : name.startsWith('tags') || name === 'light' ? $('facets') : name === 'empty' ? document.querySelector('#bookbody .empty-state') : name === 'map' ? document.querySelector('#bookbody svg[data-camera^="maps:"]') : name === 'timeline' ? document.querySelector('#bookbody .timeline-layout') : name === 'graph-node' ? $('free-node-form') : document.querySelector(name === 'organization' ? '#bookbody .organization-graph svg[data-camera]' : '#bookbody svg.free-graph[data-camera^="graphs:"]');
+    if (image) assert($('viewer').classList.contains('crop-editor') && $('viewer').querySelector('[data-crop-window]'), 'crop editor not rendered');
     if (name === 'organization') {
       const frames = [...document.querySelectorAll('[data-organization-frame] text')];
       const nodes = [...document.querySelectorAll('[data-node]')];
@@ -169,10 +177,7 @@ async function screenshotView(action, name) {
     }
   } else {
     assert(visible($('p-world')) && !visible($('p-book')), 'overview not rendered');
-    if (image) {
-      assert($('viewer').classList.contains('image-editor') && $('image-editor-form') && imageEdit.image.naturalWidth > 0, 'image editor not rendered');
-      marker = $('image-canvas');
-    } else if (name === 'appearance') {
+    if (name === 'appearance') {
       assert($('theme-menu').open && document.querySelector('[data-accent-choice="indigo"]').getAttribute('aria-pressed') === 'true', 'appearance menu not open with indigo');
       marker = $('theme-menu').querySelector('.menu-pop');
     } else marker = $('world-image').querySelector('img');
@@ -184,7 +189,7 @@ async function screenshotView(action, name) {
   const y = (Math.max(0, r.top) + Math.min(r.bottom, innerHeight)) / 2;
   const front = document.elementFromPoint(x, y);
   assert(front && (front === marker || marker.contains(front) || front.contains(marker)), 'view marker occluded: ' + JSON.stringify({point:[x,y],marker:[r.x,r.y,r.width,r.height],front:front?.outerHTML?.slice(0,220)}));
-  return { requested: name, page, bookTab, modal: image ? 'image-editor' : name === 'graph-node' ? 'free-node-form' : 'none', marker: marker.id || marker.tagName, viewport: [innerWidth, innerHeight], visibility: document.visibilityState };
+  return { requested: name, page, bookTab, modal: image ? 'crop-editor' : name === 'graph-node' ? 'free-node-form' : 'none', marker: marker.id || marker.tagName, viewport: [innerWidth, innerHeight], visibility: document.visibilityState };
 }
 
 // Runs in the generated main harness, after (and outside) all smoke stages.
@@ -271,15 +276,15 @@ async function captureViews(w, execute, rendererSource, artifactBase) {
         w.setContentSize(width,height); w.webContents.setZoomFactor(zoom);
         await execute(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`);
         await execute(`(() => {
-          const c=$('image-canvas'),stage=c.closest('.image-stage'),apply=$('image-apply');
-          resizeImageFrame();
-          const r=c.getBoundingClientRect(),s=stage.getBoundingClientRect(),a=apply.getBoundingClientRect();
-          if(a.top<0||a.bottom>innerHeight||a.right>innerWidth||r.height<10||r.width<10||r.top<s.top||r.bottom>s.bottom+1||$('viewer').scrollWidth>$('viewer').clientWidth+1)throw Error('image frame/actions overflow '+JSON.stringify({viewport:[innerWidth,innerHeight],apply:[a.x,a.y,a.width,a.height],frame:[r.x,r.y,r.width,r.height],stage:[s.x,s.y,s.width,s.height]}));
-          c.focus(); window.__imageKeyX=imageEdit.x;
+          const c=$('viewer').querySelector('[data-crop-stage]'),close=$('viewer').querySelector('[data-crop-close]');
+          const r=c.getBoundingClientRect(),a=close.getBoundingClientRect();
+          if(a.top<0||a.bottom>innerHeight||a.right>innerWidth||r.height<10||r.width<10||r.top<0||$('viewer').scrollWidth>$('viewer').clientWidth+1)throw Error('crop editor frame/actions overflow '+JSON.stringify({viewport:[innerWidth,innerHeight],close:[a.x,a.y,a.width,a.height],frame:[r.x,r.y,r.width,r.height]}));
+          window.__cropBefore=null;
+          const z=$('viewer').querySelector('[data-crop-zoom]'); z.value='140'; z.dispatchEvent(new Event('input',{bubbles:true}));
+          const win=$('viewer').querySelector('[data-crop-window]');
+          window.__cropBefore=win.style.left+'|'+win.style.top;
         })()`);
-        w.webContents.sendInputEvent({type:'keyDown',keyCode:'Right'}); w.webContents.sendInputEvent({type:'keyUp',keyCode:'Right'});
-        await new Promise(r=>setTimeout(r,100));
-        await execute(`if(imageEdit.x!==window.__imageKeyX+10)throw Error('native image arrow movement failed')`);
+        await execute(`(() => { const n=[...$('viewer').querySelectorAll('[data-crop-nudge]')].find(x=>!x.disabled); if(!n) throw Error('crop nudge has no movable axis'); n.click(); const win=$('viewer').querySelector('[data-crop-window]'); if(win.style.left+'|'+win.style.top===window.__cropBefore) throw Error('crop nudge did not move'); })()`);
         await w.webContents.capturePage(undefined,{stayHidden:false,stayAwake:true});
         const frame=await w.webContents.capturePage(undefined,{stayHidden:false,stayAwake:true});
         await fs.writeFile(artifactBase+'-image-'+width+'x'+height+'-zoom'+Math.round(zoom*100)+'.png',frame.toPNG());
@@ -394,6 +399,7 @@ async function freeGraphScenario() {
   check((await graph(id)).grid.visible && (await graph(id)).grid.snap && (await graph(id)).grid.size === 30, 'grid defaults visible/snap/30');
   {
     check(document.querySelectorAll('header .nav button > svg.icon').length === 3 && ['site-export-btn','save-btn','hist-btn','update-btn'].every(id => $(id).querySelector(':scope > svg.icon')), 'landmark icons sit beside the header labels');
+    check($('w-author').placeholder.includes('閲覧用ファイル'), 'author name placeholder names the exports');
     {
       const menu = $('theme-menu'), pick = choice => { menu.open = true; document.querySelector(`[data-theme-choice="${choice}"]`).click(); };
       const token = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -636,19 +642,10 @@ async function scenario() {
   check(!(await ouip.load()).world.image, "world image clear");
   click('[data-worldimage]'); await wait();
   console.log('smoke: world selected');
-  check($('image-ratio').value === '3' && Math.abs($('image-canvas').width/$('image-canvas').height-3)<.02, 'overview picker defaults to header frame');
-  check(!(await ouip.load()).world.image, 'overview picker does not apply before decision');
-  click('[data-vclose]'); await wait();
-  check(!(await ouip.load()).world.image, 'overview picker cancellation keeps previous image');
-  click('[data-worldimage]'); await wait();
-  $('image-ratio').value='0.75'; $('image-ratio').dispatchEvent(new Event('change',{bubbles:true}));
-  $('image-editor-form').requestSubmit();
-  for(let i=0;i<20 && !$('veil').hidden;i++) await wait();
-  const pickedWorld=(await ouip.load()).world.image;
-  check(pickedWorld && pickedWorld!==state.world.image,'overview picker applies adjusted image');
-  click('[data-adjust-world]'); await wait();
-  check($('image-ratio').value==='0.75' && imageEdit.source && imageEdit.source!==pickedWorld && Math.abs($('image-canvas').width/$('image-canvas').height-.75)<.01,'overview reopens chosen ratio from the original instead of header default');
-  click('[data-vclose]'); await wait();
+  const pickedWorld = (await ouip.load()).world.image;
+  check(pickedWorld, 'overview picker applies the image');
+  check(!(await ouip.load()).world.imageAdjust, 'overview image does not keep a ratio adjustment');
+  check(!document.querySelector('[data-adjust-world]'), 'overview has no image adjustment button');
   {
     // 概要: 件数と未定を1画面目に出す。広い画面は右の列に固定し未定は列の中でスクロール、狭い画面は最初の5件と「すべて表示」。
     const realEntries = S.entries;
@@ -747,14 +744,14 @@ async function scenario() {
   $('f-reading').value = 'あたらしいじんぶつ';
   click('[data-image-add]'); await wait();
   const originalCharacterImage = JSON.parse($('f-images').value)[0].image;
-  click('[data-image-adjust]'); await wait();
-  check(!$('image-apply').disabled, 'image adjustment applies without crop mode');
-  click('[data-image-zoom="in"]');
-  const applyRect = $('image-apply').getBoundingClientRect();
-  check(applyRect.width > 0 && applyRect.top >= 0 && applyRect.bottom <= innerHeight, 'image apply reachable at current viewport');
-  $('image-editor-form').requestSubmit();
-  for (let i=0;i<20 && !$('veil').hidden;i++) await wait();
-  check($('veil').hidden && JSON.parse($('f-images').value)[0].image !== originalCharacterImage && $('f-name').value === '新しい人物' && $('f-reading').value === 'あたらしいじんぶつ', 'character adjusted image changes draft only and preserves input');
+  check(document.querySelector('[data-crop-summary]') && document.querySelector('[data-edit-crops]'), 'crop summary after adding an image');
+  click('[data-edit-crops]'); await wait();
+  check($('viewer').classList.contains('crop-editor') && document.querySelectorAll('[data-crop-tab]').length === 3, 'crop editor opens with three frames');
+  const draftZoom = $('viewer').querySelector('[data-crop-zoom]');
+  draftZoom.value = '120'; draftZoom.dispatchEvent(new Event('input', { bubbles: true }));
+  click('[data-crop-close]'); await wait();
+  check($('veil').hidden && $('f-name').value === '新しい人物' && $('f-reading').value === 'あたらしいじんぶつ', 'crop editor preserves adjacent input');
+  check(JSON.parse($('f-crops').value).large?.zoom === 1.2, 'crop draft is kept in the form');
   const tagGroup = $('f-tags').closest('details'), draftTag = gender.querySelector('[data-tv]');
   tagGroup.querySelector('summary').click();
   check(!tagGroup.open && gender.querySelector('[data-tv]') === draftTag && draftTag.value === '女性' && $('f-name').value === '新しい人物', 'folding preserves exact unsaved tag DOM and input');
@@ -825,7 +822,8 @@ async function scenario() {
   check($('bookview').hidden && !$('booktabs').querySelector('[data-view="相関図"]'), 'graph is independent tab');
   console.log('smoke: first graph');
   // 旧図の人物アイコン表示は閲覧互換として維持（新自由ノードへは継承しない）。
-  check(document.querySelector('.nd image').getAttribute('href').includes(state.entries.find((e) => e.icon).icon), "legacy read-only graph icon");
+  const graphFace = document.querySelector('.nd foreignObject img');
+  check(graphFace && graphFace.getAttribute('src').includes(state.entries.find((e) => e.icon).icon), "legacy read-only graph icon");
   click('[data-kind="用語"]');
   const termImage=document.querySelector('.en img');
   await wait();
@@ -865,24 +863,8 @@ async function scenario() {
   check(document.querySelector('.canvas-edit > [data-mapimg].primary') && document.querySelector('.canvas-hint.canvas-hint-corner')?.textContent.includes('背景の画像'), 'map without background offers choosing one on the canvas');
   click('[data-mapimg]'); await wait();
   check((await ouip.load()).world.maps.find(m=>m.name==='北方大陸').image, 'map background');
-  check(document.querySelector('.canvas-edit details.menu [data-adjust-map]') && document.querySelector('.canvas-edit details.menu [data-clear-map-image]') && !document.querySelector('.canvas-edit > [data-mapimg]') && document.querySelector('.canvas-view [data-camera-reset]'), 'map background tools gather in one canvas menu');
-  click('[data-adjust-map]'); await wait();
-  console.log('smoke: image editor');
-  $('image-ratio').value='1.6'; $('image-ratio').dispatchEvent(new Event('change',{bubbles:true}));
-  click('[data-image-fill]');
-  check(imageEdit.base*imageEdit.scale===Math.max(640/imageEdit.image.naturalWidth,400/imageEdit.image.naturalHeight),'image fill');
-  click('[data-image-zoom="in"]'); click('[data-image-fit]');
-  click('[data-image-trim]');
-  const cropCanvas=$('image-canvas'),cropRect=cropCanvas.getBoundingClientRect();cropCanvas.setPointerCapture=()=>{};
-  cropCanvas.dispatchEvent(new PointerEvent('pointerdown',{clientX:cropRect.left+30,clientY:cropRect.top+30,pointerId:4,bubbles:true}));
-  cropCanvas.dispatchEvent(new PointerEvent('pointermove',{clientX:cropRect.left+130,clientY:cropRect.top+130,pointerId:4,bubbles:true}));
-  cropCanvas.dispatchEvent(new PointerEvent('pointerup',{pointerId:4,bubbles:true}));
-  check($('image-ratio').value==='custom' && !imageEdit.selectTrim && !$('image-apply').disabled,'crop selection becomes finish frame');
-  $('image-editor-form').requestSubmit(); await wait(); await wait();
-  for (let i=0;i<20 && !$('veil').hidden;i++) await wait();
-  const cropped = (await ouip.load()).world.maps.find(m=>m.name==='北方大陸').image;
-  console.log('smoke: image cropped');
-  check(cropped !== state.world.image, 'cropped image saved separately');
+  check(document.querySelector('.canvas-edit details.menu [data-clear-map-image]') && !document.querySelector('.canvas-edit details.menu [data-adjust-map]') && !document.querySelector('.canvas-edit > [data-mapimg]') && document.querySelector('.canvas-view [data-camera-reset]'), 'map background tools gather in one canvas menu without an adjust action');
+  check(document.querySelector('.map-background'), 'map background is drawn');
   const selector = $('diagram-select'); selector.value = loaded.world.maps[0].id; selector.dispatchEvent(new Event('change',{bubbles:true}));
   check(document.querySelectorAll('[data-node][data-which="geo"]').length === 1, 'switch map restores pins');
   {
@@ -986,8 +968,13 @@ async function scenario() {
   check(!$('update-notice').hidden && $('update-notice').textContent.includes('再確認'),'offline notice');
   click('[data-update-retry]');await wait();
   check($('update-notice').hidden,'retry unsupported hides notice');
+  UpdatesUI.panel({ current:'0.3.1', supported:true, kind:'available', version:'0.3.2', notes:'- カード画像の調整を修正' });
+  check($('viewer').innerHTML.includes('data-update-now') && !$('viewer').innerHTML.includes('data-update-download'),'update panel goes from one click to download and restart');
+  check($('viewer').innerHTML.includes('更新して再起動') && $('viewer').innerHTML.includes('自動'),'update panel explains automatic restart');
+  click('[data-vclose]');
   click('#site-export-btn');
   check($('site-export-form') && !$('veil').hidden,'site export opens');
+  check($('viewer').textContent.includes('閲覧用ファイルの名前'), 'site export names the file, not a shared site');
   check($('site-selection-count').textContent === '選択 0件' && $('site-export-form').querySelector('[type="submit"]').disabled,'site export starts empty');
   check(['standard','light','paper'].every(value=>$('site-template').querySelector(`option[value="${value}"]`)) && $('site-template').value==='standard','site export offers appearance templates');
   {
@@ -1002,9 +989,12 @@ async function scenario() {
   click('#site-export-form [data-vclose]');
   check($('veil').hidden,'site export closes');
   // 設定シート: 載せるものを選び、仕上がりを見てから画像で書き出す。保存データは変えない。
-  click('[data-kind="人物"]'); openEntry(person.id); click('[data-sheet-export]');
+  click('[data-kind="人物"]'); openEntry(person.id);
+  check(document.querySelector('[data-sheet-export]')?.textContent.trim() === '設定シートを書き出す', 'sheet export button names the sheet');
+  click('[data-sheet-export]');
   const sheetImage=()=>$('sheet-pages')?.querySelector('img');
   for (let i=0;i<80 && !sheetImage()?.naturalWidth;i++) await wait();
+  check(document.querySelector('#sheet-form')?.textContent.includes('確認用のウィンドウ'), 'sheet export announces the capture window');
   check(!$('veil').hidden && sheetImage()?.naturalWidth===1080 && sheetImage().naturalHeight===1080,'sheet preview is exact default square size');
   const portraitSize=document.querySelector('[name="sheet-size"][value="portrait"]'); portraitSize.checked=true; portraitSize.dispatchEvent(new Event('change',{bubbles:true}));
   for (let i=0;i<80 && sheetImage()?.naturalHeight!==1350;i++) await wait();
@@ -1054,7 +1044,7 @@ async function featureScenario(personId) {
     $('veil').hidden = true;
     if ($('ef')) { $('drawer').hidden = true; cur = null; }
   };
-  await stage('image finish frame / persistence / keyboard / retry', async () => {
+  await stage('image storage / card views / world image', async () => {
     $('drawer').hidden = true; cur = null; page = 'world'; render(); scrollTo(0,0);
     const sample = document.createElement('canvas'); sample.width = 900; sample.height = 600;
     const ctx = sample.getContext('2d');
@@ -1065,63 +1055,42 @@ async function featureScenario(personId) {
     const blob = await new Promise(resolve => sample.toBlob(resolve,'image/png'));
     const source = await ouip.importEditedImage(new Uint8Array(await blob.arrayBuffer()));
     await run(() => ouip.updateWorld({image:source}));
-    await editImage(source, async image => { await run(() => ouip.updateWorld({image})); });
-    check(!document.querySelector('[data-image-crop]'),'redundant crop switch removed');
-    set('#image-ratio','0.75'); click('[data-image-zoom="in"]'); click('[data-image-move="left"]');
-    const before = {scale:imageEdit.scale,focusX:($('image-canvas').width/2-imageEdit.x)/(imageEdit.base*imageEdit.scale)};
-    set('#image-ratio','3');
-    check(imageEdit.scale===before.scale && Math.abs(($('image-canvas').width/2-imageEdit.x)/(imageEdit.base*imageEdit.scale)-before.focusX)<1e-6,'changing frame preserves zoom and subject position');
-    set('#image-ratio','0.75');
-    const canvas = $('image-canvas'), x = imageEdit.x;
-    canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
-    check(imageEdit.x===x+10,'image keyboard movement');
-    const wheel = new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}); canvas.dispatchEvent(wheel);
-    check(!wheel.defaultPrevented && imageEdit.scale===before.scale,'ordinary image wheel is not zoom');
-    canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,ctrlKey:true,bubbles:true,cancelable:true}));
-    check(imageEdit.scale>before.scale,'Ctrl image wheel zoom');
-    const applyRect=$('image-apply').getBoundingClientRect(), frame=canvas.getBoundingClientRect();
-    check(applyRect.bottom<=innerHeight && frame.width>10 && frame.height>10 && Math.abs(frame.width/frame.height-.75)<.01,'finish frame and apply fit viewport');
-    $('image-editor-form').requestSubmit();
-    for(let i=0;i<20 && !$('veil').hidden;i++) await wait();
-    const portrait=(await ouip.load()).world.image;
-    check(portrait!==source && $('veil').hidden,'portrait image applied');
-    await editImage(portrait,async image => { await run(() => ouip.updateWorld({image})); });
-    check(Math.abs($('image-canvas').width/$('image-canvas').height-.75)<.01,'reopening restores saved portrait frame instead of default landscape');
-    click('[data-vclose]'); await wait();
-    const shown=$('world-image').querySelector('img'); if(!shown.complete || !shown.naturalWidth) await shown.decode();
-    const shownRect=shown.getBoundingClientRect();
-    check(Math.abs(shownRect.width/shownRect.height-.75)<.01,'overview displays saved portrait ratio');
-    // Character edits stay in the form draft until its own decision.
+    await refresh();
+    const worldImage=$('world-image').querySelector('img'); if(!worldImage.complete || !worldImage.naturalWidth) await worldImage.decode();
+    check(Math.abs(worldImage.naturalWidth/worldImage.naturalHeight-1.5)<.01,'world image keeps its original ratio');
+    check(!document.querySelector('[data-adjust-world]'),'world image adjustment button is gone');
     page='book'; selectBookTab('人物'); render(); openEntry(personId); click('[data-edit]');
-    $('f-name').value='新しい人物'; $('f-desc').value='画像調整中の入力';
-    click('[data-image-adjust]'); await wait();
-    set('#image-ratio','0.75'); click('[data-image-fill]');
-    $('image-editor-form').requestSubmit(); for(let i=0;i<20 && !$('veil').hidden;i++) await wait();
-    check($('f-desc').value==='画像調整中の入力','image apply preserves adjacent form input');
+    check(document.querySelector('[data-crop-summary]') && document.querySelector('[data-edit-crops]'),'crop summary is shown in character edit');
+    check(!document.querySelector('[data-image-adjust]') && !document.querySelector('[data-face]') && !document.querySelector('[data-image-control="icon"]'),'old image adjust / face / icon controls are gone');
+    $('f-desc').value='見え方の入力';
+    click('[data-edit-crops]'); await wait();
+    check($('viewer').classList.contains('crop-editor'),'crop editor opens');
+    check(document.querySelectorAll('[data-crop-tab]').length===3,'crop editor shows three frames');
+    click('[data-crop-tab="small"]'); await wait();
+    check(document.querySelector('[data-crop-tab="small"]').getAttribute('aria-pressed')==='true','small frame is selected');
+    const zoom=$('viewer').querySelector('[data-crop-zoom]'); zoom.value='160'; zoom.dispatchEvent(new Event('input',{bubbles:true}));
+    click('[data-crop-close]'); await wait();
+    check(!$('viewer').classList.contains('crop-editor'),'crop editor closes');
     $('ef').requestSubmit(); await wait();
-    const entry=(await ouip.load()).entries.find(e=>e.id===personId);
+    const saved=(await ouip.load()).entries.find(e=>e.id===personId);
+    check(saved.crops && saved.crops.small && Math.abs(saved.crops.small.zoom-1.6)<.001,'crop is saved to the entry');
+    check(saved.desc==='見え方の入力','adjacent input is preserved');
     await refresh();
     const pic=document.querySelector(`[data-entry="${personId}"] .face img`); if(!pic.complete || !pic.naturalWidth) await pic.decode();
-    const picRect=pic.getBoundingClientRect(), face=pic.closest('.face').getBoundingClientRect();
-    // 一覧のカードは絵の比率に関係なく正方形の枠にそろえ、絵は切らず歪めずに全体を収める。
-    check(Math.abs(face.width-face.height)<1 && Math.abs(pic.naturalWidth/pic.naturalHeight-.75)<.01 && getComputedStyle(pic).objectFit==='contain','card frame is square and keeps the saved portrait ratio inside');
-    await editImage(entry.image,async()=>{}); check(Math.abs($('image-canvas').width/$('image-canvas').height-.75)<.01,'character adjustment reopens saved ratio'); click('[data-vclose]');
-    let attempts=0;
-    await editImage(source,async()=>{if(++attempts===1)throw Error('試験用の適用失敗');});
-    click('[data-image-zoom="in"]'); const retryScale=imageEdit.scale;
-    $('image-editor-form').requestSubmit(); await wait();
-    check(!$('veil').hidden && !$('image-apply').disabled && imageEdit.scale===retryScale && !!document.querySelector('#viewer .operation-error'),'apply failure preserves frame and offers retry');
-    $('image-editor-form').requestSubmit(); for(let i=0;i<20 && !$('veil').hidden;i++)await wait();
-    check($('veil').hidden && attempts===2,'failed image apply can retry');
-    await editImage(source,async()=>{},1); check($('image-ratio').disabled && $('image-ratio').value==='1' && !document.querySelector('[data-image-trim]'),'icon frame explicitly fixed square'); click('[data-vclose]');
-    $('drawer').hidden=true; cur=null; page='world'; render();
-    await editImage(source,async image=>{await run(()=>ouip.updateWorld({image}));}); set('#image-ratio','3'); click('[data-image-fill]');
-    $('image-editor-form').requestSubmit(); for(let i=0;i<20 && !$('veil').hidden;i++) await wait();
-    const header=(await ouip.load()).world.image; await refresh();
-    const headerImage=$('world-image').querySelector('img'); if(!headerImage.complete || !headerImage.naturalWidth) await headerImage.decode();
-    const headerRect=headerImage.getBoundingClientRect();
-    check(Math.abs(headerRect.width/headerRect.height-3)<.02,'overview keeps applied header aspect ratio after reload');
-    await editImage(header,async()=>{}); check(Math.abs($('image-canvas').width/$('image-canvas').height-3)<.02,'header frame reopens at applied ratio'); click('[data-vclose]');
+    check(/object-position/.test(pic.getAttribute('style') || '') && /scale\(1\.6\)/.test(pic.getAttribute('style') || ''),'card uses the saved crop');
+    const iconAsset=saved.images[0].image;
+    await ouip.saveEntry({id:personId,kind:'人物',name:saved.name,icon:iconAsset});
+    await refresh(); openEntry(personId);
+    const shownIcon=document.querySelector('#drawer .character-icon img');
+    check(shownIcon && shownIcon.src.endsWith(iconAsset.split('/').pop()),'name icon uses the icon override');
+    check(!document.querySelector('[data-face]'),'face choice is gone');
+    await ouip.saveEntry({id:personId,kind:'人物',name:saved.name,icon:null});
+    const legacyIcon=await ouip.saveEntry({kind:'人物',name:'旧アイコンの人',icon:iconAsset});
+    await refresh(); openEntry(legacyIcon.id); await wait();
+    check(!document.querySelector('[data-adjust-detail="icon"]'),'icon-only entry has no adjust button');
+    check(document.querySelector('#drawer .character-icon img'),'icon-only entry shows the icon');
+    $('drawer').hidden=true; cur=null;
+    await ouip.deleteEntry(legacyIcon.id); await refresh();
     page='book'; selectBookTab('人物'); render(); scrollTo(0,0); await wait();
   });
   await stage('organization creation / multiple memberships', async () => {
@@ -1637,69 +1606,97 @@ async function featureScenario(personId) {
     set('#q', '並替'); check($('reorder-btn').disabled, 'reorder is disabled while a search narrows the list');
     set('#q', '');
   });
-  await stage('card thumbnail crop fit/position saves and reopens', async () => {
+  await stage('card views: three frames save, reopen, and reset', async () => {
     click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
     openEntry(personId); click('[data-edit]');
-    const box = () => $('drawer').querySelector('[data-image-crop]');
-    const thumb = () => document.querySelector(`[data-entry="${personId}"] .face img`);
-    check(box() && box().querySelector('.crop-preview img'), 'crop control shows for a card with an image');
-    check(!box().classList.contains('is-cover'), 'thumbnail crop defaults to fitting the whole image');
-    check(thumb() && !thumb().getAttribute('style'), 'card thumbnail is uncropped by default');
-    click('[data-crop-fit-choice="cover"]');
-    check(box().dataset.cropFit === 'cover' && box().classList.contains('is-cover') && box().querySelector('.crop-grid button'), 'choosing cover reveals the position grid');
-    $('drawer').querySelector('[data-crop-pos="0,0"]').click();
-    check(box().dataset.cropX === '0' && box().dataset.cropY === '0', 'chosen position is kept in the control');
-    $('ef').requestSubmit(); await wait();
-    check(JSON.stringify((await ouip.load()).entries.find(e => e.id === personId).imageCrop) === JSON.stringify({ fit: 'cover', x: 0, y: 0 }), 'crop is saved to the entry');
-    check(/object-fit:\s*cover/.test(thumb().getAttribute('style') || '') && /object-position:\s*0% 0%/.test(thumb().getAttribute('style') || ''), 'card thumbnail uses the saved crop');
-    click('[data-edit]');
-    check(box().dataset.cropFit === 'cover' && box().dataset.cropX === '0' && box().dataset.cropY === '0' && box().querySelector('[data-crop-pos="0,0"]').getAttribute('aria-pressed') === 'true', 'crop control reopens with the saved crop');
-    click('[data-crop-fit-choice="contain"]');
-    $('ef').requestSubmit(); await wait();
-    check(!('imageCrop' in (await ouip.load()).entries.find(e => e.id === personId)), 'switching back to fit removes the crop from the entry');
-    click('[data-kind="人物"]'); openEntry(personId);
-    check(!thumb().getAttribute('style'), 'card thumbnail returns to uncropped');
-  });
-  await stage('image adjustment keeps the original and reopens from it', async () => {
-    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
-    openEntry(personId); click('[data-edit]');
-    const natural = async rel => { const im = new Image(); im.src = await ouip.readImage(rel); await im.decode(); return [im.naturalWidth, im.naturalHeight]; };
-    const openEditor = async () => { imageEdit = null; $('drawer').querySelector('[data-image-adjust]').click(); for (let i = 0; i < 40 && !(imageEdit && imageEdit.source); i++) await wait(); };
-    const currentEntry = (await ouip.load()).entries.find(e => e.id === personId);
-    const before = currentEntry.imageAdjust?.source || currentEntry.image;
-    const [bw, bh] = await natural(before);
-    await openEditor();
-    check(imageEdit.source === before, 'first adjustment starts from the picked image');
-    set('#image-ratio', '1'); click('[data-image-fill]');
-    $('image-editor-form').requestSubmit(); for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait();
+    check(document.querySelector('[data-crop-summary]') && document.querySelectorAll('[data-crop-summary] .crop-summary-item').length === 3, 'crop summary shows three frames');
+    check([...document.querySelectorAll('[data-crop-summary] [data-edit-crops]')].some(b => b.dataset.editCrops === '' && b.textContent.trim() === '表示を調整'), 'crop summary says 表示を調整');
+    check(!document.querySelector('[data-image-crop]') && !document.querySelector('[data-image-adjust]'), 'old crop and adjust controls are gone');
+    click('[data-edit-crops]'); await wait();
+    check(document.querySelectorAll('[data-crop-tab]').length === 3 && document.querySelector('[data-crop-tab="large"]').getAttribute('aria-pressed') === 'true', 'large frame is the default');
+    check($('viewer').querySelector('#crop-title')?.textContent === '表示を調整', 'crop editor title says 表示を調整');
+    {
+      const win = $('viewer').querySelector('[data-crop-window]');
+      const handle = win.querySelector('[data-crop-handle="se"]');
+      const beforeW = parseFloat(win.style.width);
+      handle.setPointerCapture = () => {};
+      const r = win.getBoundingClientRect();
+      handle.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.right, clientY: r.bottom, pointerId: 8, bubbles: true }));
+      handle.dispatchEvent(new PointerEvent('pointermove', { clientX: r.right - 30, clientY: r.bottom - 30, pointerId: 8, bubbles: true }));
+      handle.dispatchEvent(new PointerEvent('pointerup', { pointerId: 8, bubbles: true }));
+      check(parseFloat(win.style.width) < beforeW, 'dragging a corner shrinks the frame');
+    }
+    const zoom = $('viewer').querySelector('[data-crop-zoom]');
+    zoom.value = '200'; zoom.dispatchEvent(new Event('input', { bubbles: true }));
+    {
+      // 見本は枠からはみ出した絵を切って、枠と同じ範囲だけを見せる。
+      // 位置・切り抜きが style.css 頼みだと、古いCSSで「画像全体」に戻る。
+      const previews = [...$('viewer').querySelectorAll('.crop-mini img')];
+      check(previews.length === 3, 'three preview frames show the image');
+      for (const img of previews) {
+        const cs = getComputedStyle(img);
+        const box = img.closest('.crop-mini').getBoundingClientRect();
+        const r = img.getBoundingClientRect();
+        check(cs.position === 'absolute' && cs.objectFit === 'cover', 'preview image is clipped to its frame');
+        check(r.width >= box.width - 1 && r.height >= box.height - 1, 'preview image covers its frame');
+      }
+      const ctx = $('viewer').querySelector('.crop-context-card img');
+      check(ctx && getComputedStyle(ctx).position === 'absolute' && getComputedStyle(ctx).objectFit === 'cover', 'card sample is clipped to the selected frame');
+      check(getComputedStyle(ctx.parentElement).position === 'relative', 'card sample frame anchors its image');
+    }
+    {
+      const win = $('viewer').querySelector('[data-crop-window]');
+      const beforeLeft = parseFloat(win.style.left);
+      win.setPointerCapture = () => {};
+      const r = win.getBoundingClientRect();
+      win.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, pointerId: 9, bubbles: true }));
+      win.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + r.width / 2 - 40, clientY: r.top + r.height / 2, pointerId: 9, bubbles: true }));
+      win.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, bubbles: true }));
+      check(parseFloat(win.style.left) < beforeLeft, 'dragging the frame left moves it left');
+    }
+    $('viewer').querySelector('[data-crop-nudge="left"]').click();
+    click('[data-crop-close]'); await wait();
     $('ef').requestSubmit(); await wait();
     let saved = (await ouip.load()).entries.find(e => e.id === personId);
-    check(saved.image !== before && saved.imageAdjust && saved.imageAdjust.source === before, 'keeps the original as the re-adjust source');
-    check(Math.abs(saved.imageAdjust.w / saved.imageAdjust.h - 1) < .01, 'records the applied frame');
-    const [ow, oh] = await natural(before);
-    check(ow === bw && oh === bh, 'the original file is still there to rebuild from');
+    check(saved.crops && saved.crops.large && Math.abs(saved.crops.large.zoom - 2) < .001 && saved.crops.large.x < 50, 'large view saves position and zoom');
+    click('[data-card-size="large"]'); await wait();
+    const thumb = () => document.querySelector(`[data-entry="${personId}"] .face img`);
+    check(/transform:scale\(2\)/.test(thumb().getAttribute('style') || ''), 'large card uses the saved view');
+    check(/transform-origin:(?!50% 50%)/.test(thumb().getAttribute('style') || ''), 'large card zooms from the selected point, not the center');
     click('[data-edit]');
-    await openEditor();
-    check(imageEdit.source === before && imageEdit.image.naturalWidth === bw && imageEdit.image.naturalHeight === bh, 'reopening loads the original image, not the crop');
-    check(Math.abs($('image-canvas').width / $('image-canvas').height - 1) < .01, 'restores the saved frame when reopening');
-    click('[data-image-zoom="in"]');
-    $('image-editor-form').requestSubmit(); for (let i = 0; i < 20 && !$('veil').hidden; i++) await wait();
+    click('[data-edit-crops]'); await wait();
+    check(document.querySelector('[data-crop-tab="large"]').getAttribute('aria-pressed') === 'true', 'large frame reopens');
+    check(Math.abs(Number($('viewer').querySelector('[data-crop-zoom]').value) - 200) < 1, 'saved zoom reopens');
+    click('[data-crop-reset]'); await wait();
+    click('[data-crop-close]'); await wait();
     $('ef').requestSubmit(); await wait();
     saved = (await ouip.load()).entries.find(e => e.id === personId);
-    check(saved.imageAdjust.source === before && imageEdit === null, 'the original stays the source after re-applying');
-    openEntry(personId);
+    check(!saved.crops || !saved.crops.large, 'reset removes the saved view');
+    click('[data-card-size="large"]'); await wait();
+    check(/transform:scale\(1\)/.test(thumb().getAttribute('style') || ''), 'card returns to the default view');
   });
   await stage('複数画像・キャプション・サムネイル・詳細パネルとギャラリー', async () => {
     click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
+    let current = (await ouip.load()).entries.find(e => e.id === personId);
+    if ((current.images || []).length < 2) {
+      const c = document.createElement('canvas'); c.width = 4; c.height = 3;
+      const g = c.getContext('2d'); g.fillStyle = '#6cc4b4'; g.fillRect(0, 0, 4, 3);
+      const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
+      const extra = await ouip.importEditedImage(new Uint8Array(await blob.arrayBuffer()));
+      const images = [...(current.images || [{ image: current.image }]), { image: extra }];
+      await ouip.saveEntry({ id: personId, kind: '人物', name: current.name, images, image: current.image, crops: current.crops });
+      await refresh();
+    }
     openEntry(personId); click('[data-edit]');
     check(!!document.querySelector('[data-image-set]'), 'person image editor shows the image set');
     const before = JSON.parse($('f-images').value).length;
     click('[data-image-add]'); await wait();
     const rows = [...document.querySelectorAll('[data-image-item]')];
-    if (rows.length < before + 1) throw Error('added image not visible');
-    const second = rows[before].querySelector('[data-image-thumb]');
+    if (rows.length < 2) throw Error('need at least two images for the multiple-image stage');
+    const secondRow = rows[1];
+    const second = secondRow.querySelector('[data-image-thumb]');
     const secondImage = second.value;
-    const caption = rows[before].querySelector('[data-image-caption]');
+    const caption = secondRow.querySelector('[data-image-caption]');
     caption.value = '2枚目'; caption.dispatchEvent(new Event('input', { bubbles: true }));
     check(rows.every(el => !el.querySelector('[data-image-up],[data-image-down]')), 'image order has no per-image arrows');
     const hint = document.querySelector('.image-set-hint');
@@ -1721,7 +1718,7 @@ async function featureScenario(personId) {
     secondAfter.click(); await wait();
     $('ef').requestSubmit(); await wait();
     const saved = (await ouip.load()).entries.find(e => e.id === personId);
-    check(saved.images.length === before + 1 && saved.image === secondImage, 'thumbnail selection is saved');
+    check(saved.images.length >= 2 && saved.image === secondImage, 'thumbnail selection is saved');
     check(saved.images.find(i => i.image === secondImage)?.caption === '2枚目', 'caption is saved');
     check(JSON.stringify(saved.images.map(i => i.image)) === JSON.stringify(afterOrder), 'dragged image order is saved');
     openEntry(personId);
@@ -1733,7 +1730,71 @@ async function featureScenario(personId) {
     check($('viewer').querySelector('.art-gallery-stage figcaption')?.textContent !== beforeCaption, 'gallery page flips');
     click('[data-vclose]'); $('drawer').hidden = true; cur = null;
   });
-  // 画面を開く操作を一通り押し、例外が出ないことを見る（押されない画面の不具合を見逃さないため）。
+  await stage('icon override and crop editor tabs', async () => {
+    click('[data-kind="人物"]'); $('drawer').hidden = true; cur = null;
+    openEntry(personId); click('[data-edit]');
+    check(!document.querySelector('[data-image-control="icon"]'), 'separate icon registration is gone');
+    check(!document.querySelector('[data-face]'), 'face choice is gone');
+    click('[data-edit-crops]'); await wait();
+    click('[data-crop-tab="icon"]'); await wait();
+    check(document.querySelector('[data-crop-tab="icon"]').getAttribute('aria-pressed') === 'true', 'icon frame can be selected');
+    check(document.querySelector('[data-crop-pick-icon]'), 'icon override can be chosen');
+    const zoom = $('viewer').querySelector('[data-crop-zoom]');
+    zoom.value = '140'; zoom.dispatchEvent(new Event('input', { bubbles: true }));
+    click('[data-crop-close]'); await wait();
+    $('ef').requestSubmit(); await wait();
+    let saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(saved.crops && saved.crops.icon && Math.abs(saved.crops.icon.zoom - 1.4) < .001, 'icon view saves zoom');
+    const asset = saved.images[0].image;
+    await ouip.saveEntry({ id: personId, kind: '人物', name: saved.name, icon: asset });
+    await refresh(); openEntry(personId);
+    const shown = document.querySelector('#drawer .character-icon img');
+    check(shown && shown.src.endsWith(asset.split('/').pop()), 'icon override is shown next to the name');
+    click('[data-edit]');
+    check($('f-icon') && $('f-icon').value === asset, 'icon override is kept in the form');
+    click('[data-edit-crops]'); await wait(); click('[data-crop-tab="icon"]'); await wait();
+    const clear = document.querySelector('[data-crop-clear-icon]');
+    check(clear, 'override can be removed');
+    clear.click(); await wait();
+    click('[data-crop-close]'); await wait();
+    $('ef').requestSubmit(); await wait();
+    saved = (await ouip.load()).entries.find(e => e.id === personId);
+    check(!saved.icon, 'icon override is removed');
+    const legacyIcon = await ouip.saveEntry({ kind: '人物', name: '旧アイコンの人', icon: asset });
+    await refresh(); openEntry(legacyIcon.id); await wait();
+    check(!document.querySelector('[data-adjust-detail="icon"]'), 'icon-only entry has no adjust button');
+    check(document.querySelector('#drawer .character-icon img'), 'icon-only entry shows its icon');
+    $('drawer').hidden = true; cur = null;
+    await ouip.deleteEntry(legacyIcon.id); await refresh();
+  });
+  await stage('place image and 16:9 card', async () => {
+    const c = document.createElement('canvas'); c.width = 900; c.height = 600;
+    const g = c.getContext('2d');
+    g.fillStyle = '#315f63'; g.fillRect(0, 0, 900, 600);
+    g.fillStyle = '#e8e2d2'; g.font = 'bold 80px sans-serif'; g.textAlign = 'center';
+    g.fillText('PLACE', 450, 330);
+    const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
+    const image = await ouip.importEditedImage(new Uint8Array(await blob.arrayBuffer()));
+    const place = await ouip.saveEntry({ kind: '場所', name: '検証の岬', image, crops: { place: { x: 50, y: 40, zoom: 1.2 } } });
+    await refresh(); click('[data-kind="場所"]'); await wait();
+    const face = document.querySelector(`[data-entry="${place.id}"] .place-face`);
+    check(face, 'place card has a wide image frame');
+    const r = face.getBoundingClientRect();
+    check(Math.abs(r.width / r.height - 16 / 9) < .02, 'place card image is 16:9');
+    openEntry(place.id); click('[data-edit]');
+    check(document.querySelectorAll('[data-crop-summary] .crop-summary-item').length === 1, 'place has one crop frame');
+    click('[data-edit-crops]'); await wait();
+    check(document.querySelectorAll('[data-crop-tab]').length === 1 && document.querySelector('[data-crop-tab="place"]'), 'place crop editor uses the place frame');
+    const zoom = $('viewer').querySelector('[data-crop-zoom]');
+    zoom.value = '150'; zoom.dispatchEvent(new Event('input', { bubbles: true }));
+    click('[data-crop-close]'); await wait();
+    $('ef').requestSubmit(); await wait();
+    const saved = (await ouip.load()).entries.find(e => e.id === place.id);
+    check(saved.crops && Math.abs(saved.crops.place.zoom - 1.5) < .001, 'place crop is saved');
+    await ouip.deleteEntry(place.id);
+    await refresh(); click('[data-kind="人物"]'); render();
+  });
+
   await stage('status definitions / organization dialogs open, round-trip and close without errors', async () => {
     let thrown = 0; const count = () => { thrown++; };
     window.addEventListener('error', count); window.addEventListener('unhandledrejection', count);

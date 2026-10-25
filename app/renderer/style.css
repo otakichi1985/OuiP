@@ -131,7 +131,8 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .en .face:has(img){aspect-ratio:auto;display:block;background:var(--surface)}
 .en .face img{display:block;width:100%;height:auto;background:var(--surface)}
 .character-name{display:flex;align-items:center;gap:8px;min-width:0}
-.character-icon{width:32px;height:32px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--raise)}
+.character-icon{display:inline-block;width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--raise)}
+.character-icon .crop-img{display:block;width:100%;height:100%}
 .character-detail-image{display:block;width:auto;height:auto;max-width:100%;max-height:60vh;background:var(--surface);border-radius:6px}
 .entry-image-single{margin:8px 0 0}
 .entry-image-single figcaption,.entry-image-caption{font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
@@ -192,18 +193,17 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .image-preview img{display:block;max-width:100%;width:auto;height:auto;max-height:240px}
 .icon-preview{width:120px;height:120px}
 .icon-preview img{width:100%;height:100%;object-fit:cover}
-/* カードのサムネ: 絵の全体を収めるか、四角の枠いっぱいに切って位置を選ぶ。 */
-.image-crop{margin-top:10px;display:flex;flex-direction:column;gap:6px}
-.crop-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
-.crop-preview{flex:none;width:104px;height:104px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg);display:grid;place-items:center}
-.crop-preview img{width:100%;height:100%;display:block}
-.crop-controls{display:flex;flex-direction:column;gap:6px;min-width:0}
-.image-crop .crop-controls>.seg{align-self:flex-start;width:max-content;max-width:100%}
-.crop-grid{display:none;grid-template-columns:repeat(3,auto);gap:4px;width:max-content}
-.image-crop.is-cover .crop-grid{display:grid}
-.crop-grid button{width:32px;height:28px;border:1px solid var(--line);border-radius:6px;background:var(--raise);color:var(--muted);cursor:pointer;font-size:9px;line-height:1;padding:0}
-.crop-grid button:hover{border-color:var(--hover-line)}
-.crop-grid button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+/* 見え方: 元画像はそのまま、枠ごとの位置と拡大率だけを持つ。 */
+.crop-frame{position:relative;overflow:hidden;display:block;background:var(--bg)}
+.crop-img{display:block;width:100%;height:100%}
+.crop-summary{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:8px}
+.crop-summary-item{display:flex;flex-direction:column;gap:3px;align-items:center;border:0;background:none;color:inherit;padding:0;cursor:pointer;font:inherit}
+.crop-summary-item:hover .crop-frame{border-color:var(--accent)}
+.crop-summary-item .crop-frame{border:1px solid var(--line)}
+.crop-summary-large{width:54px;height:76px}
+.crop-summary-small,.crop-summary-card{width:54px;height:54px}
+.crop-summary-icon{width:40px;height:40px;border-radius:50%}
+.crop-summary .b{margin-left:4px}
 .en .k{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .en .t{font-weight:700;min-width:0;overflow-wrap:anywhere}
 .en p{margin:0;font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -280,7 +280,7 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .edit-pages button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 /* 節の中は、狭いときは1列、広いときは自動で列を増やす。要素を縦に連ねるだけでなく横にも並べる。 */
 .edit-page{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:8px 14px;align-content:start;align-items:start;min-width:0}
-.edit-page>:is(.field-wide,.row,h4,p,details,.entry-head,.character-images,.image-set,.image-crop,.cs-editor,#f-stats,fieldset,.chips,.l){grid-column:1/-1}
+.edit-page>:is(.field-wide,.row,h4,p,details,.entry-head,.character-images,.image-set,.crop-summary,.cs-editor,#f-stats,fieldset,.chips,.l){grid-column:1/-1}
 .field{display:flex;flex-direction:column;gap:2px;min-width:0}
 .edit-page #f-tags,.edit-page #f-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),var(--pair-max-item)));gap:6px;align-items:start}
 /* 操作の枠や「名前と値」の組は、作業領域が広くても伸ばしすぎない（名前と値が離れて視線が左右に散るため）。読む・書く文章は全幅のまま使う。 */
@@ -367,7 +367,11 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .bi.sel{outline:2px solid var(--accent)}
 .bi.target{outline:2px dashed var(--warn-line)}
 .bi .k{font-size:11px;color:var(--muted)}
-.bi .board-card-image{display:block;width:100%;max-height:110px;object-fit:contain;border-radius:4px;background:var(--bg);margin:4px 0 6px;pointer-events:none}
+.bi .board-card-picture{display:flex;align-items:center;justify-content:center;width:100%;height:110px;overflow:hidden;border-radius:4px;background:var(--bg);margin:4px 0 6px;pointer-events:none}
+.bi .board-card-picture .crop-frame{width:auto;height:100%;aspect-ratio:1;border-radius:4px}
+.bi .board-card-picture.is-icon .crop-frame{width:64px;height:64px;border-radius:50%}
+.bi .board-card-picture.is-wide{height:auto}
+.bi .board-card-picture.is-wide .crop-frame{width:100%;height:auto;aspect-ratio:16/9;border-radius:4px}
 .bi .board-image-pick{display:flex;align-items:center;gap:4px;margin-top:6px;color:var(--muted)}
 .bi .board-image-pick select{min-width:0;max-width:100%;font-size:12px}
 .bi .acts{display:flex;gap:4px;margin-top:6px}
@@ -417,9 +421,55 @@ h2.sh .c{color:var(--muted);font-weight:400;font-size:13px;font-variant-numeric:
 .viewer.image-editor .modal-actions{margin:0;padding:10px 0}
 .image-editor .image-result{margin-right:auto;font-size:12px;color:var(--muted)}
 .image-controls{flex-shrink:0;overflow:auto;max-height:35vh;scroll-padding:6px}
+/* 見え方の調整: 3つの実物枠を並べ、選んだ枠を大きく調整する。 */
+.viewer.crop-editor{width:min(1100px,calc(100% - 24px));height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.viewer.crop-editor .vh{position:static;flex-shrink:0}
+.crop-editor-body{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(250px,.8fr);gap:18px;flex:1;min-height:0;overflow:auto;padding:4px 0 14px}
+.crop-stage{display:flex;flex-direction:column;gap:10px;align-items:center;min-width:0}
+.crop-stage-canvas{position:relative;width:100%;height:min(56vh,480px);overflow:hidden;border:1px solid var(--line);border-radius:8px;background-color:var(--surface);background-image:conic-gradient(var(--raise) 25%,transparent 0 50%,var(--raise) 0 75%,transparent 0);background-size:18px 18px;display:grid;place-items:center}
+/* 画像は枠（ステージ）の大きさに固定する。グリッドの自動行に置くと、画像の縦横比で
+   高さが決まってステージからはみ出し、枠や境界線の計算（ステージの大きさ基準）とずれる。 */
+.crop-stage-canvas>img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none}
+.crop-image-bounds{position:absolute;z-index:1;border:1px dashed color-mix(in srgb,var(--fg) 60%,transparent);box-sizing:border-box;pointer-events:none}
+.crop-window{position:absolute;z-index:2;border:2px solid #fff;border-radius:4px;box-shadow:0 0 0 2px var(--accent),0 0 0 9999px rgba(8,12,18,.62);cursor:grab;touch-action:none}
+.crop-window.is-circle{border-radius:50%}
+.crop-window.is-dragging{cursor:grabbing}
+.crop-window.is-resizing{cursor:default}
+.crop-handle{position:absolute;width:12px;height:12px;background:var(--surface);border:2px solid var(--accent);border-radius:2px;box-sizing:border-box;pointer-events:auto}
+.crop-handle[data-crop-handle="nw"]{left:-7px;top:-7px;cursor:nwse-resize}
+.crop-handle[data-crop-handle="ne"]{right:-7px;top:-7px;cursor:nesw-resize}
+.crop-handle[data-crop-handle="sw"]{left:-7px;bottom:-7px;cursor:nesw-resize}
+.crop-handle[data-crop-handle="se"]{right:-7px;bottom:-7px;cursor:nwse-resize}
+.crop-help{margin:0;text-align:center}
+.crop-tools{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center}
+.crop-nudge{display:flex;gap:4px}
+.crop-nudge .b{min-width:34px;padding-inline:6px}
+.crop-zoom{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.crop-zoom input[type="range"]{width:150px}
+.crop-zoom output{min-width:3.5em;color:var(--fg);font-variant-numeric:tabular-nums}
+.crop-actions{justify-content:center}
+.crop-context-card{display:flex;flex-direction:column;gap:4px;width:180px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.crop-context-image{position:relative;display:block;width:100%;overflow:hidden;border-radius:5px;background:var(--bg)}
+.crop-context-image img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}
+.crop-context-name{font-size:13px;font-weight:700}
+.crop-context-tag{align-self:flex-start;font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
+.crop-context-icon{display:flex;align-items:center;gap:8px;font-size:13px}
+.crop-context-face{position:relative;display:block;width:40px;height:40px;border-radius:50%;overflow:hidden;background:var(--bg)}
+.crop-context-face img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}
+.crop-side{border-left:1px solid var(--line);padding-left:14px;min-width:0}
+.crop-tabs{display:grid;gap:8px;margin:8px 0}
+.crop-tab{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;gap:1px 8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--bg);color:var(--fg);cursor:pointer;text-align:left}
+.crop-tab.is-active{border-color:var(--accent);background:var(--surface)}
+.crop-mini{position:relative;display:block;grid-row:1/span 2;width:56px;height:auto;overflow:hidden;border-radius:5px;background:var(--surface)}
+.crop-mini.is-circle{border-radius:50%}
+.crop-mini img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}
+.crop-tab-label{font-size:13px;font-weight:700}
+.crop-tab-note{font-size:11px;color:var(--muted)}
+.crop-icon-tools{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+@media(max-width:860px){.crop-editor-body{grid-template-columns:1fr}.crop-side{border-left:0;border-top:1px solid var(--line);padding-left:0;padding-top:12px}.crop-stage-canvas{height:min(50vh,420px)}}
 @media(max-height:400px){.image-controls{max-height:80px}.viewer.image-editor .vh{padding-block:6px}.viewer.image-editor .modal-actions{flex-wrap:nowrap;gap:6px;padding-block:6px}.image-editor .image-result{min-width:0;line-height:1.4}.image-editor .modal-actions .b{padding-inline:8px}.viewer.image-editor>p{line-height:1.4}.viewer.image-editor .image-stage{min-height:70px;padding:18px}}
 @media(max-width:760px){.image-tools{gap:6px}.image-tools .b{padding-inline:8px}.image-tool-group+.image-tool-group{padding-left:0;border-left:0}.image-stage{padding:18px}.image-tools input[type=range]{width:80px}}
-.image-preview img,.character-detail-image,.world-image>img,.drawer .character-icon{cursor:zoom-in}
+.image-preview img,.character-detail-image,.world-image>img{cursor:zoom-in}
 /* 長文と失敗の扱いは機能の面内に留める。浮遊する操作部は追加しない。 */
 body.modal-open{overflow:hidden}
 #p-book{max-width:1920px;margin-inline:auto}
@@ -465,7 +515,7 @@ body.modal-open{overflow:hidden}
 .entries[data-card-size="large"] .en .open-btn>:not(.face){grid-column:2}
 .entries[data-card-size="large"] .en .face-initial{font-size:56px}
 .en .face,.en .face:has(img){aspect-ratio:1/1;display:grid;place-items:center;width:100%;background:var(--bg)}
-.en .face img{width:100%;height:100%;object-fit:contain}
+.en .face img{width:100%;height:100%;object-fit:cover}
 .en .face-initial{font-size:clamp(28px,calc(var(--card-min) / 4),80px)}
 .en .face-initial:not([style]){background:var(--accent)}
 .en .card-tags,.en .card-tags:empty{display:flex;flex-wrap:nowrap;overflow:hidden;white-space:nowrap;height:1.6em;line-height:1.6;-webkit-mask-image:linear-gradient(to right,#000 85%,transparent);mask-image:linear-gradient(to right,#000 85%,transparent)}
@@ -478,6 +528,15 @@ body.modal-open{overflow:hidden}
 .en .card-stats{display:none}
 .entries[data-card-size="large"] .en .card-stats{display:block;width:240px;padding:12px 12px 12px 0;cursor:default}
 .entries[data-card-size="large"] .en .card-stats:empty{display:none}
+/* 場所は横長16:9のカード。人物・用語の正方形カードとはタブが分かれている。 */
+.entries[data-card-kind="場所"]{--card-min:320px}
+.entries[data-card-kind="場所"] .en.place-card{align-self:start;height:max-content}
+.entries[data-card-kind="場所"] .place-card .open-btn{flex:0 0 auto}
+.entries[data-card-size="large"][data-card-kind="場所"]{--card-min:480px}
+.entries[data-card-kind="場所"] .face.place-face{display:block;aspect-ratio:16/9;width:100%;height:auto;background:var(--surface)}
+.entries[data-card-size="large"][data-card-kind="場所"] .en .open-btn{display:flex;flex-direction:column;gap:4px}
+.entries[data-card-size="large"][data-card-kind="場所"] .en .open-btn>.face{grid-row:auto;width:100%;aspect-ratio:16/9;align-self:auto}
+.entries[data-card-size="large"][data-card-kind="場所"] .en .open-btn>:not(.face){grid-column:auto}
 /* ステータスは「名前 値」を1行ずつ。長い値は…で切り、入らない項目は「ほかN項目」で知らせる（CharacterStats.renderLines）。 */
 .cs-lines{list-style:none;margin:0;padding:0;font-size:13px}
 /* 名前は中身の幅まで（最大6割）、残りを値に。短い名前は切らず、長い値は…で切る。値は右へ寄せる。 */

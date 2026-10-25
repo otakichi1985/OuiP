@@ -7,6 +7,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const CharacterStats = require('../renderer/character-stats');
 const CharacterUnits = require('../renderer/character-units');
+const ImageSet = require('../renderer/image-set');
+const ImageCrop = require('../renderer/image-crop');
 const TimelineModel = require('../renderer/timeline-model');
 const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
 // 閲覧用スクリプトは、数値の範囲で絞る部品（アプリと同じ）と、図の収め方、固定の閲覧コードをつないだもの。
@@ -77,24 +79,27 @@ function renderGallery(entry) {
 function renderEntry(entry, context) {
   const organizations = list(entry.organizationIds).map(key => context.orgs.get(key)).filter(Boolean);
   const refs = list(entry.refs).map(key => context.entries.get(key)).filter(Boolean);
-  // アプリの「カードのサムネ: 枠いっぱいに切る」を、書き出しのカードにも同じ位置で反映する。
-  const crop = entry.imageCrop && entry.imageCrop.fit === 'cover'
-    ? ` style="object-fit:cover;object-position:${[0, 50, 100].includes(Number(entry.imageCrop.x)) ? Number(entry.imageCrop.x) : 50}% ${[0, 50, 100].includes(Number(entry.imageCrop.y)) ? Number(entry.imageCrop.y) : 50}%;height:100%"`
-    : '';
-  const picture = image(entry.image, `${entry.name || '名称未定'}の画像`, 'entry-image', crop);
+  // カードの見え方は、人物は大・小、用語は正方形、場所は横長16:9。
+  const place = entry.kind === '場所';
+  const surfaces = entry.kind === '人物' ? ['large', 'small'] : place ? ['place'] : ['card'];
+  const pictures = entry.image ? surfaces.map(surface => image(entry.image, `${entry.name || '名称未定'}の画像`, `entry-image entry-image-${surface}`, ` style="${ImageCrop.style(ImageCrop.get(entry, surface))};width:100%;height:100%"`)).join('') : '';
+  const picture = pictures ? `<span class="entry-picture${place ? ' is-place' : ''}">${pictures}</span>` : '';
+  const iconSrc = place ? null : ImageSet.iconSource(entry);
+  const icon = iconSrc ? `<span class="entry-icon-frame">${image(iconSrc, '', 'entry-icon', ` style="${ImageCrop.style(ImageCrop.get(entry, 'icon'))}"`)}</span>` : '';
+  const placeholderIcon = iconSrc ? image(iconSrc, '', 'placeholder-icon') : '';
   const stats = CharacterStats.renderDetail(entry.stats);
   const sections = list(entry.sections).map(section => disclosure(section.title || '文章', `<p class="prose">${esc(section.text)}</p>`, true)).join('');
   const year = entry.kind === '出来事' ? `<p class="entry-year">${esc(TimelineModel.yearText(entry, context.calendar))}</p>` : '';
   // 年表以外の一覧は、絵の有無に関係なく同じ大きさのカードにそろえる。絵がなければアイコンか頭文字を枠いっぱいに出す。
   const uniform = context.section !== 'timeline';
   const hue = entry.kind === '人物' && Number.isFinite(entry.hue) ? ` style="--hue:${Number(entry.hue)}"` : '';
-  const placeholder = uniform && !picture ? `<span class="entry-image entry-placeholder${entry.kind === '人物' ? ' person' : ''}"${hue} aria-hidden="true">${image(entry.icon, '', 'placeholder-icon') || esc([...text(entry.name)][0] || '？')}</span>` : '';
+  const placeholder = uniform && !picture ? `<span class="entry-image entry-placeholder${entry.kind === '人物' ? ' person' : ''}"${hue} aria-hidden="true">${placeholderIcon || esc([...text(entry.name)][0] || '？')}</span>` : '';
   const isUnset = unset(entry);
   const cardStats = uniform && entry.kind === '人物' ? CharacterStats.renderLines(entry.cardStats) : '';
   const thumbCaption = entry.kind === '人物' ? (Array.isArray(entry.images) ? entry.images.find(item => item.image === entry.image)?.caption : '') || '' : '';
-  return `<article class="entry-card" id="${esc(id('entry', entry.id))}" data-record data-unset="${isUnset}"${thumbCaption ? ` data-image-caption="${esc(thumbCaption)}"` : ''}>
+  return `<article class="entry-card${place ? ' place-card' : ''}" id="${esc(id('entry', entry.id))}" data-record data-unset="${isUnset}"${thumbCaption ? ` data-image-caption="${esc(thumbCaption)}"` : ''}>
     ${picture || placeholder ? `<a class="picture-link" href="#${esc(id('entry', entry.id))}" aria-label="${esc(entry.name)}の詳細">${picture || placeholder}</a>` : ''}
-    <div class="card-head"><h3>${image(entry.image || entry.icon, '', 'entry-icon')}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
+    <div class="card-head"><h3>${icon}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
     ${cardStats ? `<div class="card-stats">${cardStats}</div>` : ''}
     <details class="entry-detail" data-entry-detail><summary>詳細を読む</summary><div class="entry-body">
       ${renderGallery(entry)}${renderTags(entry)}${sections}${renderFields(entry)}${stats ? `<div class="stats-wrap">${stats}</div>` : ''}

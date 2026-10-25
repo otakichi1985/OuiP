@@ -1,7 +1,7 @@
 /* ステータスの割り当て・定義・移行の画面。名前と値の組なので、作業領域が広くても伸ばしすぎない（--pair-max）。 */
 .status-assign{display:flex;flex-direction:column;gap:10px;max-width:var(--pair-max,720px);min-width:0}
 .sa-hide-all.small,.sa-hide-all,.sa-hide{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
-/* 割り当て画面の先頭の「今の見え方」。読み取り専用で、入力のたびに中だけ変わる。 */
+/* 割り当て画面の先頭の「今の表示」。読み取り専用で、入力のたびに中だけ変わる。 */
 .sa-preview{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);margin-bottom:4px;min-width:0}
 .sa-preview-card{display:flex;flex-direction:column;gap:4px;min-width:0}
 .sa-preview-card .cs-lines{font-size:12px}
@@ -110,3 +110,4 @@
 .ss-row-preview>summary{cursor:pointer;color:var(--muted);min-height:28px;padding-block:4px}
 .ss-preview-inline{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:4px 14px;max-width:960px}
 .ss-preview-inline>.small.muted{grid-column:1/-1}
+

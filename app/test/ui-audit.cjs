@@ -145,7 +145,9 @@ async function mainAudit(w, execute, scenarioSource, output) {
 }
 
 (async () => {
-  const tmp = await fs.mkdtemp(path.resolve(__dirname,'../../dist/ui-audit-tmp-'));
+  const checkDir = path.resolve(__dirname, '../../dist/checks');
+  await fs.mkdir(checkDir, { recursive: true });
+  const tmp = await fs.mkdtemp(path.join(checkDir, 'ui-audit-tmp-'));
   let child;
   try {
     await fs.mkdir(path.join(tmp,'profile'));
@@ -153,7 +155,7 @@ async function mainAudit(w, execute, scenarioSource, output) {
     await store.updateWorld({title:'星渡りの港 — 設定帳',note:'まだ決めていないことも、この世界の一部。'});
     for (let i=0;i<18;i++) await store.saveEntry({kind:'人物',name:i===0?'途切れない非常に長いキャラ名ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789':'港の人物 '+(i+1),desc:'灯台と渡り舟をめぐる物語の設定。決まったことと、これから考えることを整理する。',tags:{役割:[i%2?'船乗り':'灯台守']},fields:[{key:'旅の目的',open:true}]});
     await store.updateWorld({organization:{name:'灯台守の組合',desc:'北の港の灯台を管理する。'}});
-    const output=path.resolve(__dirname,'../../dist/ui-audit');
+    const output=path.join(checkDir, 'ui-audit');
     const main=path.resolve(__dirname,'../main.js'), harness=path.join(tmp,'main.cjs');
     const source=`const {app,ipcMain}=require('electron');const originalPath=app.setPath.bind(app);app.setPath=(n,v)=>originalPath(n,n==='userData'?${JSON.stringify(path.join(tmp,'profile'))}:v);const handle=ipcMain.handle.bind(ipcMain);let attempts=0,displayAttempts=0,failLoad=false;ipcMain.handle=(channel,fn)=>handle(channel,async(...args)=>{if(channel==='load'&&failLoad){failLoad=false;throw Error('監査用の再読込失敗');}if(channel==='saveEntry'&&args[1].name==='監査表示失敗'){const saved=await fn(...args);if(++displayAttempts===1)failLoad=true;return saved;}if(channel==='saveEntry'&&args[1].name==='監査失敗'){attempts++;await new Promise(r=>setTimeout(r,250));if(attempts===1)throw Error('監査用の保存失敗');}return fn(...args);});app.on('browser-window-created',(_e,w)=>{const execute=w.webContents.executeJavaScript.bind(w.webContents);w.webContents.executeJavaScript=async(code,...args)=>{if(code!=='OUIP_AUDIT')return execute(code,...args);try{await (${mainAudit.toString()})(w,execute,${JSON.stringify(rendererAudit.toString())},${JSON.stringify(output)});}catch(e){console.error('AUDIT FAILED: '+e.stack);app.exit(1);}};});require(${JSON.stringify(main)});`;
     await fs.writeFile(harness,source);

@@ -20,4 +20,5 @@
 #sheet-pages img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
 #sheet-pages figcaption{color:var(--muted);font-size:12px;margin-top:4px}
 .viewer.sheet-export-viewer #sheet-form>.modal-actions{position:static;flex-shrink:0;margin:0;padding-block:10px;justify-content:flex-end}
+.viewer.sheet-export-viewer #sheet-form>.modal-actions .sheet-notice{margin:0 auto 0 0;align-self:center}
 @media(max-width:760px){.sheet-body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.sheet-options{max-height:40dvh}}

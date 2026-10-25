@@ -73,7 +73,7 @@ test('描画: 設定資料の名前と顔は描くときに引く。消えた項
   const g = base();
   const svg = D.renderSVG(g, { resolveRef: (ref) => (ref === 'c-1a' ? { name: '灯', kind: 'キャラ', image: 'data:image/png;base64,AAA' } : null), interactive: true, selected: new Set(['di-s', 'dl-1']) });
   assert.match(svg, />灯</);
-  assert.match(svg, /<image href="data:image\/png;base64,AAA"/);
+  assert.match(svg, /<foreignObject[\s\S]*?<img src="data:image\/png;base64,AAA"/);
   assert.match(svg, /削除された/);
   assert.match(svg, /設定資料から消えています/);
   assert.match(svg, /気になる/);
@@ -114,7 +114,7 @@ test('見せ方と組織の枠: 枠は組織だけ、所属するキャラを中
   assert.equal(graph.items[0].id, 'di-org', '枠は背面');
   const svg = D.renderSVG(graph, { resolveRef: (r) => ({ 'org-1a': { name: '灯台守', kind: '組織' }, 'c-1a': { name: '灯', kind: 'キャラ', image: 'x.png' } })[r] || null });
   assert.match(svg, />灯台守</);
-  assert.match(svg, /<image href="x.png"/);
+  assert.match(svg, /<foreignObject[\s\S]*?<img src="x.png"/);
 });
 
 test('雲の吹き出し: もこもこの輪郭と、しっぽの先へ向かう小さな丸。先が中ならしっぽを描かない', () => {

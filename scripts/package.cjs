@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const app = path.join(root, 'app');
 const dist = path.join(root, 'dist');
+const releases = path.join(dist, 'releases');
 const marker = { product: 'OuiP', version: JSON.parse(fs.readFileSync(path.join(app, 'package.json'))).version, platform: 'win32', arch: 'x64' };
 function assert(ok, message) { if (!ok) throw new Error(message); }
 function files(dir, prefix = '') {
@@ -17,10 +18,10 @@ function files(dir, prefix = '') {
     return stat.isDirectory() ? files(abs, rel + '/') : [rel];
   });
 }
-function reset(target) {
-  assert(path.dirname(target) === dist, 'Only direct dist outputs may be replaced');
-  if (fs.existsSync(dist)) assert(!fs.lstatSync(dist).isSymbolicLink(), 'dist must not be a link');
-  fs.mkdirSync(dist, { recursive: true });
+function reset(target, base = dist) {
+  assert(path.dirname(target) === base, 'Only direct outputs of an allowed output folder may be replaced');
+  if (fs.existsSync(base)) assert(!fs.lstatSync(base).isSymbolicLink(), 'Output folder must not be a link');
+  fs.mkdirSync(base, { recursive: true });
   if (fs.existsSync(target)) { files(target); fs.rmSync(target, { recursive: true }); }
   fs.mkdirSync(target);
 }
@@ -47,8 +48,10 @@ async function build() {
   assert(lock.packages && lock.packages[''], 'Requires package-lock packages entries');
   const electron = path.join(app, 'node_modules', 'electron');
   assert(JSON.parse(fs.readFileSync(path.join(electron, 'package.json'))).version === '44.7.0', 'Requires installed Electron 44.7.0');
-  const runtime = path.join(dist, 'OuiP');
-  reset(runtime);
+  const release = path.join(releases, marker.version);
+  fs.mkdirSync(release, { recursive: true });
+  const runtime = path.join(release, 'OuiP');
+  reset(runtime, release);
   copyTree(path.join(electron, 'dist'), runtime);
   fs.renameSync(path.join(runtime, 'electron.exe'), path.join(runtime, 'OuiP.exe'));
   const defaultApp = path.join(runtime, 'resources', 'default_app.asar');
@@ -71,11 +74,11 @@ async function build() {
   assert(fs.existsSync(path.join(runtime, 'LICENSE')) && fs.existsSync(path.join(runtime, 'LICENSES.chromium.html')), 'Electron licenses missing');
   assert(files(path.join(target, 'node_modules', 'isomorphic-git')).some(f => /(^|\/)licen[sc]e/i.test(f)), 'isomorphic-git license missing');
   fs.writeFileSync(path.join(runtime, '.ouip-package.json'), JSON.stringify(marker, null, 2) + '\n');
-  const zip = path.join(dist, `ouip-win-x64-v${marker.version}.zip`);
+  const zip = path.join(release, `ouip-win-x64-v${marker.version}.zip`);
   for (const output of [zip, zip + '.sha256']) if (fs.existsSync(output)) {
     assert(fs.lstatSync(output).isFile() && !fs.lstatSync(output).isSymbolicLink(), 'Unsafe output'); fs.unlinkSync(output);
   }
-  runTar(['-a', '-cf', zip, '-C', dist, 'OuiP']);
+  runTar(['-a', '-cf', zip, '-C', release, 'OuiP']);
   const manifest = runTar(['-tf', zip]).split(/\r?\n/).filter(Boolean).map(f => f.replace(/\\/g, '/'));
   assert(manifest.every(f => f.startsWith('OuiP/') && !f.split('/').includes('..')), 'Unsafe archive path');
   const expected = files(runtime).map(f => 'OuiP/' + f).sort();
@@ -87,5 +90,5 @@ async function build() {
   assert(Date.now() - started < 600000, 'Build exceeded 10 minutes');
   console.log(JSON.stringify({ zip, bytes: fs.statSync(zip).size, sha256: digest, files: expected.length, productionPackages: production.length, seconds: (Date.now() - started) / 1000 }, null, 2));
 }
-module.exports = { root, app, dist, assert, files, reset, copyTree };
+module.exports = { root, app, dist, releases, assert, files, reset, copyTree };
 if (require.main === module) build().catch(error => { console.error(error.message); process.exitCode = 1; });

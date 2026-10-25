@@ -1,6 +1,6 @@
 {
   "name": "ouip",
-  "version": "0.3.0",
+  "version": "0.3.3",
   "private": true,
   "description": "未完成の創作を整理する手元のアプリ",
   "main": "main.js",
@@ -10,6 +10,7 @@
     "test": "node --test test/*.test.js",
     "test:archive": "node --test test/archive/*.test.js",
     "test:ui": "node test/ui-smoke.cjs",
+    "test:images": "node test/e2e-images.cjs",
     "package:portable": "node ../scripts/package.cjs",
     "prepare:public": "node ../scripts/prepare-public.cjs"
   },

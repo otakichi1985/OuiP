@@ -43,7 +43,7 @@ function canvasGuide(kind) {
       ['項目の右の丸をドラッグ', '矢印でつなぐ'],
       ['Ctrl+Z／Ctrl+Y', '元に戻す／やり直す'],
       ['Ctrl+C／V／D', '写す／貼る／複製'],
-      ['Delete', '消す'], ['矢印キー（Shiftで10ずつ）', '少しずつ動かす']]),
+      ['Delete', '削除'], ['矢印キー（Shiftで10ずつ）', '少しずつ動かす']]),
   ];
   return `<details class="menu menu-up canvas-guide" data-keep-menu><summary class="b quiet sm">操作のしかた</summary><div class="menu-pop" role="note" aria-label="操作のしかた"><dl>${rows.map(([k, v]) => `<dt>${v}</dt><dd>${k}</dd>`).join('')}</dl></div></details>`;
 }
@@ -88,7 +88,7 @@ function decorateDiagram(v) {
     if (type === "maps") {
       // 背景が無いうちは選ぶボタンだけ。あるときは替える・調整・解除をひとつの目印にまとめる。
       edit = d.image
-        ? `<details class="menu" data-menu><summary class="b sm">${Icons.icon("image")}背景の画像</summary><div class="menu-pop" role="group" aria-label="背景の画像"><button class="b quiet sm" type="button" data-mapimg>${Icons.icon("image")}画像を替える</button><button class="b quiet sm" data-adjust-map>${Icons.icon("rename")}画像を調整</button><hr><button class="b quiet sm" data-clear-map-image>${Icons.icon("remove")}背景を解除</button></div></details>`
+        ? `<details class="menu" data-menu><summary class="b sm">${Icons.icon("image")}背景の画像</summary><div class="menu-pop" role="group" aria-label="背景の画像"><button class="b quiet sm" type="button" data-mapimg>${Icons.icon("image")}画像を替える</button><hr><button class="b quiet sm" data-clear-map-image>${Icons.icon("remove")}背景を解除</button></div></details>`
         : `<button class="b sm primary" type="button" data-mapimg>${Icons.icon("image")}背景の画像を選ぶ</button>`;
       // 案内は場所をまだ1つも置いていないときだけ、地図を隠さない左下に小さく出す。
       if (!Object.keys(d.positions || {}).length) hint = d.image ? "下の「未配置」から場所を置きます。ピンはドラッグで動かし、押すと詳細を開きます。" : "背景の画像を選ぶか、そのまま下の「未配置」から場所を置けます。";
@@ -240,11 +240,7 @@ document.addEventListener("click", async (ev) => {
     }
   }
   else if ("boardReset" in d) { cameras.board = { x: 0, y: 0, z: 1 }; applyBoardCamera(); }
-  else if ("adjustMap" in d) {
-    // 地図は位置を丸ごと置き換えるので、画像だけを送る。古い位置でピンを戻さない。
-    const map = activeDiagram("maps");
-    editImage(map.image, async (image, adjust) => { await run(() => api.saveDiagram("maps", { id: map.id, image, imageAdjust: adjust })); }, null, map.imageAdjust);
-  } else if ("clearMapImage" in d) {
+  else if ("clearMapImage" in d) {
     const id = activeDiagram("maps").id;
     await run(() => api.saveDiagram("maps", { id, image: null }));
   }
@@ -527,35 +523,8 @@ document.addEventListener("click", async (ev) => {
   else if (d.imageMove) { const moves = {left:[-10,0],right:[10,0],up:[0,-10],down:[0,10]}, [x,y] = moves[d.imageMove]; imageEdit.x += x; imageEdit.y += y; drawImageEditor(); }
   else if ('imageReset' in d) { $('image-ratio').value = $('image-ratio').disabled ? '1' : 'original'; Object.assign($('image-canvas'), ImageAdjustment.frameSize($('image-ratio').disabled ? 1 : imageEdit.image.naturalWidth / imageEdit.image.naturalHeight)); imageDrag = null; fitImage(); }
   else if ("vclose" in d) { imageEdit = null; imageDrag = null; $('viewer').classList.remove('image-editor'); }
-  else if (!b && ev.target.closest("img")) {
-    const img = ev.target.closest("img"), control = img.closest("[data-image-control]");
-    if (control) {
-      const key = control.dataset.imageControl, rel = control.querySelector("input").value;
-      editImage(rel, async (image, adjust) => { control.outerHTML = imageControl(key,image,adjust); }, key === 'icon' ? 1 : null, readImageAdjust(control));
-    } else if (img.closest("#world-image")) editImage(S.world.image, async (image, adjust) => { await run(()=>api.updateWorld({image, imageAdjust:adjust})); }, null, S.world.imageAdjust);
-    else {
-      const e = byId(cur); if (!e) return;
-      const key = img.classList.contains("character-icon") && e.icon ? "icon" : "image";
-      if (e[key]) editImage(e[key], async (image, adjust) => { await run(()=>{const latest=byId(e.id);if(!latest)throw new Error("項目が見つかりません。開き直してください。");return api.saveEntry({id:latest.id,kind:latest.kind,name:latest.name,[key]:image,[key+'Adjust']:adjust});}); }, key === 'icon' ? 1 : null, e[key+'Adjust']);
-    }
-  }
 });
-// 編集欄の画像には、画像を押す以外にもキーボードで届く調整ボタンを置く。
-const imageButtons = new MutationObserver(() => {
-  document.querySelectorAll('[data-image-control]').forEach((control) => {
-    const value = control.querySelector('input').value;
-    if (value && !control.querySelector('[data-adjust-image]')) control.querySelector('.row').insertAdjacentHTML('beforeend','<button type="button" class="b quiet sm" data-adjust-image>調整</button>');
-  });
-  const box = $('world-image');
-  if (S.world.image && !box.querySelector('[data-adjust-world]')) box.querySelector('.row')?.insertAdjacentHTML('beforeend','<button type="button" class="b quiet sm" data-adjust-world>画像を調整</button>');
-  const detail=$('drawer').querySelector('.character-detail-image');
-  if(detail && !detail.nextElementSibling?.matches('[data-adjust-detail]')) detail.insertAdjacentHTML('afterend','<button type="button" class="b quiet sm" data-adjust-detail="image">画像を調整</button>');
-  const icon=$('drawer').querySelector('h3 .character-icon');
-  // 名前横の顔は画像があるなら画像そのもの（画像を調整で編める）。ボタンは旧アイコンだけを出している項目に限る。
-  const detailEntry=byId(cur);
-  if(icon && detailEntry && detailEntry.icon && !detailEntry.image && !$('drawer').querySelector('[data-adjust-detail="icon"]')) icon.closest('h3').insertAdjacentHTML('afterend','<button type="button" class="b quiet sm" data-adjust-detail="icon">アイコンを調整</button>');
-});
-imageButtons.observe(document.body,{childList:true,subtree:true});
+// 画像の調整ボタンは廃止した（見え方は編集欄の「表示を調整」で決める）。
 document.addEventListener('click',(ev)=>{
   const b=ev.target.closest('button'); if(!b) return;
   if('editorExpand' in b.dataset){
@@ -577,9 +546,6 @@ document.addEventListener('click',(ev)=>{
     return;
   }
   if('editPageTab' in b.dataset){ if (typeof selectEditPage === 'function') selectEditPage(b.dataset.editPageTab); return; }
-  if('adjustImage' in b.dataset){ const control=b.closest('[data-image-control]'),key=control.dataset.imageControl; editImage(control.querySelector('input').value,async(image,adjust)=>{control.outerHTML=imageControl(key,image,adjust);},key === 'icon' ? 1 : null,readImageAdjust(control)); }
-  else if('adjustWorld' in b.dataset) editImage(S.world.image,async(image,adjust)=>{await run(()=>api.updateWorld({image, imageAdjust:adjust}));},null,S.world.imageAdjust);
-  else if(b.dataset.adjustDetail){const e=byId(cur),key=b.dataset.adjustDetail;editImage(e[key],async(image,adjust)=>{await run(()=>{const latest=byId(e.id);if(!latest)throw new Error("項目が見つかりません。開き直してください。");return api.saveEntry({id:latest.id,kind:latest.kind,name:latest.name,[key]:image,[key+'Adjust']:adjust});});},key === 'icon' ? 1 : null,e[key+'Adjust']);}
 });
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && imageEdit) { imageEdit = null; imageDrag = null; $('viewer').classList.remove('image-editor'); }
@@ -621,3 +587,5 @@ document.addEventListener("keydown", (ev) => {
   const menu = ev.target.closest?.("details.menu[open]"); if (!menu) return;
   ev.stopPropagation(); menu.open = false; menu.querySelector("summary").focus();
 }, true);
+
+

@@ -54,6 +54,22 @@ test('設定シートに使う絵を複数画像から選べる', () => {
   assert.equal(fallback.image, 'assets/a.png', '知らない画像はサムネイルへ戻す');
 });
 
+test('使う絵がサムネイルなら小・中の見え方をシートに反映する', () => {
+  const cropped = { ...entry, image: 'assets/a.png', crops: { small: { x: 0, y: 100, zoom: 2 } } };
+  const local = { ...state, entries: [cropped] };
+  const m = Sheet.sheetModel(local, 'c-aa', { ...Sheet.defaultOptions(cropped, state.world), image: true });
+  assert.equal(m.cropStyle, 'object-fit:cover;object-position:0% 100%;transform:scale(2);transform-origin:0% 100%');
+  assert.match(Sheet.renderSheetHTML(m), /hero-image is-crop/);
+  assert.match(Sheet.renderSheetHTML(m), /object-fit:cover;object-position:0% 100%/);
+  const multi = { ...cropped, images: [{ image: 'assets/a.png' }, { image: 'assets/b.png' }] };
+  const other = Sheet.sheetModel({ ...state, entries: [multi] }, 'c-aa', { ...Sheet.defaultOptions(multi, state.world), image: true, imagePath: 'assets/b.png' });
+  assert.equal(other.cropStyle, '', 'サムネイル以外の絵には切り取りを付けない');
+  assert.doesNotMatch(Sheet.renderSheetHTML(other), /hero-image is-crop/);
+  const plain = { ...entry, image: 'assets/a.png' };
+  const centered = Sheet.sheetModel({ ...state, entries: [plain] }, 'c-aa', { ...Sheet.defaultOptions(plain, state.world), image: true });
+  assert.equal(centered.cropStyle, '', '既定（中央・100%）では切り取りを付けない');
+});
+
 test('不正な指定は拒否し、キャラ以外は書き出さない', () => {
   assert.throws(() => Sheet.sheetModel(state, 'c-aa', { size: 'poster' }), /大きさ/);
   assert.throws(() => Sheet.sheetModel(state, 'c-aa', { tags: ['無い'] }), /タグ/);

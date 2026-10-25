@@ -270,6 +270,11 @@
     const itemMarkup = graph.items.map((it) => {
       // 色を指定していないものは画面の配色に合わせる（閲覧用ファイルでは暗い配色の値になる）。
       const sel = selected.has(it.id), stroke = it.stroke || palette.stroke, fill = it.fill || palette.fill, tc = it.textColor || palette.text;
+      // 顔は foreignObject の中の HTML で描き、アイコンの見え方（object-position・拡大）をそのまま使う。
+      const faceObject = (ref, x, y, size, radius) => {
+        const s = Math.max(1, size);
+        return `<foreignObject x="${x}" y="${y}" width="${s}" height="${s}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${s}px;height:${s}px;border-radius:${radius}px;overflow:hidden"><img src="${esc(ref.image)}" alt="" draggable="false" style="display:block;width:100%;height:100%;${ref.crop || "object-fit:cover"}"></div></foreignObject>`;
+      };
       let shape = '', content = '';
       if (it.kind === 'ellipse') shape = `<ellipse cx="${round(it.x + it.w / 2)}" cy="${round(it.y + it.h / 2)}" rx="${it.w / 2}" ry="${it.h / 2}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
       else if (it.kind === 'cloud') { const p = cloudPath(it); shape = `<path d="${p.box}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>${p.dots.map(([x, y, r]) => `<circle cx="${round(x)}" cy="${round(y)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`).join('')}`; }
@@ -283,14 +288,14 @@
         else if (it.look === 'name') content = textBlock({ ...it, writing: 'horizontal' }, name, ref ? tc : palette.muted);
         else {
           const size = Math.max(16, Math.min(it.w, it.h - 22)), ix = it.x + (it.w - size) / 2, iy = it.y;
-          const face = ref?.image ? `<clipPath id="${idPrefix}-c-${esc(it.id)}"><rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10"/></clipPath><image href="${esc(ref.image)}" x="${ix}" y="${iy}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${idPrefix}-c-${esc(it.id)})"/><rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="none" stroke="${stroke}" stroke-width="2"/>` : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="${ref?.color || '#2e3441'}" stroke="${stroke}" stroke-width="2"/><text x="${ix + size / 2}" y="${iy + size / 2 + 8}" text-anchor="middle" style="font-size:${Math.round(size / 2.4)}px" fill="#12151c">${esc([...name][0] || '')}</text>`;
+          const face = ref?.image ? `${faceObject(ref, ix, iy, size, 10)}<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="none" stroke="${stroke}" stroke-width="2"/>` : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="${ref?.color || '#2e3441'}" stroke="${stroke}" stroke-width="2"/><text x="${ix + size / 2}" y="${iy + size / 2 + 8}" text-anchor="middle" style="font-size:${Math.round(size / 2.4)}px" fill="#12151c">${esc([...name][0] || '')}</text>`;
           const max = Math.max(2, Math.floor(it.w / (it.fontSize * 0.95)));
           content = `${face}<text x="${round(it.x + it.w / 2)}" y="${round(iy + size + it.fontSize + 2)}" text-anchor="middle" style="font-size:${it.fontSize}px" fill="${ref ? tc : palette.muted}" font-weight="700">${esc([...name].length > max ? [...name].slice(0, max - 1).join('') + '…' : name)}</text>`;
         }
       } else if (it.kind === 'entry') {
         const ref = resolveRef(it.ref), size = Math.min(it.h - 12, 40), ix = it.x + 8, iy = it.y + (it.h - size) / 2;
         const name = ref ? ref.name : '削除された項目', sub = ref ? ref.kind : '設定資料から消えています';
-        const face = ref?.image ? `<clipPath id="${idPrefix}-c-${esc(it.id)}"><rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="8"/></clipPath><image href="${esc(ref.image)}" x="${ix}" y="${iy}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${idPrefix}-c-${esc(it.id)})"/>` : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="8" fill="${ref?.color || '#2e3441'}"/><text x="${ix + size / 2}" y="${iy + size / 2 + 6}" text-anchor="middle" style="font-size:16px" fill="#12151c">${esc([...name][0] || '')}</text>`;
+        const face = ref?.image ? faceObject(ref, ix, iy, size, 8) : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="8" fill="${ref?.color || '#2e3441'}"/><text x="${ix + size / 2}" y="${iy + size / 2 + 6}" text-anchor="middle" style="font-size:16px" fill="#12151c">${esc([...name][0] || '')}</text>`;
         const tx = ix + size + 8, maxChars = Math.max(2, Math.floor((it.w - size - 20) / (it.fontSize * 0.95)));
         const shown = [...(it.text || name)].length > maxChars ? [...(it.text || name)].slice(0, maxChars - 1).join('') + '…' : (it.text || name);
         content = `${face}<text x="${tx}" y="${round(it.y + it.h / 2 - 2)}" style="font-size:${it.fontSize}px" fill="${ref ? tc : palette.muted}" font-weight="700">${esc(shown)}</text><text x="${tx}" y="${round(it.y + it.h / 2 + 14)}" style="font-size:11px" fill="${palette.muted}">${esc(sub)}</text>`;

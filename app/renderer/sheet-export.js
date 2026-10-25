@@ -53,7 +53,7 @@
               ${box('credit', '「OuiPで作成」を入れる', options.credit)}
             </fieldset>
           </div><div class="sheet-preview"><p class="small muted" id="sheet-status" role="status">仕上がりを作成しています…</p><div class="busy-bar" id="sheet-busy" hidden><span></span></div><div id="sheet-pages"></div></div></div>
-          <div class="modal-actions row"><button class="b quiet" type="button" data-vclose>取消</button><button class="b primary" type="submit">画像を書き出す</button></div></form>`;
+          <div class="modal-actions row"><p class="small muted sheet-notice">保存するとき、確認用のウィンドウが一瞬開きます。</p><button class="b quiet" type="button" data-vclose>取消</button><button class="b primary" type="submit">画像を書き出す</button></div></form>`;
         $('veil').hidden = false;
         viewer.querySelector('[name="sheet-size"]:checked')?.focus();
         preview();
@@ -72,8 +72,10 @@
             const result = await need('previewSheet')(current.id, options);
             if (mine !== serial || !$('sheet-pages')) return;
             const over = result.sizes.filter(size => size > X_LIMIT).length;
+            const skipped = result.skipped || [];
+            const skippedText = skipped.length ? ` 読めなかった絵${skipped.length}枚（${skipped.map(s => s.label).join('、')}）を除いています。` : '';
             $('sheet-pages').innerHTML = result.pages.map((src, i) => `<figure><img src="${esc(src)}" alt="${i + 1}枚目の仕上がり"><figcaption>${result.pages.length > 1 ? `${i + 1}/${result.pages.length}` : '1枚'} ・ ${Math.ceil(result.sizes[i] / 1024)}KB</figcaption></figure>`).join('');
-            $('sheet-status').textContent = `${result.pages.length}枚になります。入りきらない分は、文字を小さくせず次の画像へ続けます。` + (over ? ` Xには5MBまでの画像しか載せられません（${over}枚が超えています）。` : '') + (result.overflow ? ' ステータスなど1つの塊がページに入りきらず、端が切れています。' : '');
+            $('sheet-status').textContent = `${result.pages.length}枚になります。入りきらない分は、文字を小さくせず次の画像へ続けます。` + (over ? ` Xには5MBまでの画像しか載せられません（${over}枚が超えています）。` : '') + (result.overflow ? ' ステータスなど1つの塊がページに入りきらず、端が切れています。' : '') + skippedText;
             if ($('sheet-busy')) $('sheet-busy').hidden = true;
           } catch (error) {
             if (mine !== serial || !$('sheet-status')) return;
@@ -100,7 +102,8 @@
         const result = await need('exportSheet')(current.id, read());
         if (!result) { $('sheet-status').textContent = '書き出しをやめました。選んだ内容は残っています。'; return; }
         $('veil').hidden = true; $('viewer').classList.remove('sheet-export-viewer'); current = null;
-        toast(`${result.files.length}枚を書き出しました（${result.files.join('、')}）` + (result.overX ? `。うち${result.overX}枚は5MBを超えるので、Xには載せられません` : ''));
+        const skipped = result.skipped || [];
+        toast(`${result.files.length}枚を書き出しました（${result.files.join('、')}）` + (result.overX ? `。うち${result.overX}枚は5MBを超えるので、Xには載せられません` : '') + (skipped.length ? `。読めなかった絵${skipped.length}枚（${skipped.map(s => s.label).join('、')}）を除きました` : ''));
       } catch (error) {
         reportError(String(error.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') + '。選んだ内容は残っています。', form);
         $('sheet-status').textContent = '書き出せませんでした。';
