@@ -23,21 +23,39 @@
       let tools = row.querySelector('[data-editor-order-tools]');
       if (!tools) {
         tools = doc.createElement('span'); tools.className = 'editor-order-tools'; tools.dataset.editorOrderTools = '';
-        // 形（つまみと矢印）で操作を示し、文字は読み上げ名とツールチップだけに残す。
-        for (const [action, text, label] of [['handle', '', 'ドラッグで順序を変更'], ['up', '↑', '上へ移動'], ['down', '↓', '下へ移動']]) {
-          const button = doc.createElement('button'); button.type = 'button'; button.className = 'b quiet sm';
-          button.dataset.editorOrder = action; button.setAttribute('aria-label', label);
-          if (action === 'handle') { button.draggable = true; button.title = 'ドラッグで順序を変更（↑↓でも変更できます）'; button.innerHTML = '<span class="editor-order-grip" aria-hidden="true"></span>'; }
-          else { button.textContent = text; button.title = label; }
-          tools.appendChild(button);
+        if (kind(row) === 'section') {
+          // 見出しは縦一列に並ぶので、つまみと↑↓で動かす（UI_CONVENTIONS: 縦一列の編集フォームの↑↓は残す）。
+          for (const [action, text, label] of [['handle', '', 'ドラッグまたは矢印キーで順序を変更'], ['up', '↑', '上へ移動'], ['down', '↓', '下へ移動']]) {
+            const button = doc.createElement('button'); button.type = 'button'; button.className = 'b quiet sm';
+            button.dataset.editorOrder = action; button.setAttribute('aria-label', label);
+            if (action === 'handle') { button.draggable = true; button.title = 'ドラッグまたは矢印キーで順序を変更'; button.innerHTML = '<span class="editor-order-grip" aria-hidden="true"></span>'; }
+            else { button.textContent = text; button.title = label; }
+            tools.appendChild(button);
+          }
+        } else {
+          // タグと設定項目は段組み（横にも折り返す）なので、番号とつまみ（ドラッグまたは矢印キー）で並び替える。
+          const no = doc.createElement('span'); no.className = 'editor-order-no'; no.title = '並び順';
+          tools.appendChild(no);
+          const handle = doc.createElement('button'); handle.type = 'button'; handle.className = 'b quiet sm';
+          handle.dataset.editorOrder = 'handle'; handle.draggable = true;
+          handle.setAttribute('aria-label', 'ドラッグまたは矢印キーで順序を変更'); handle.title = 'ドラッグまたは矢印キーで順序を変更';
+          handle.innerHTML = '<span class="editor-order-grip" aria-hidden="true"></span>';
+          tools.appendChild(handle);
         }
         // 閉じた文章も操作可能。summaryを動かしたり再生成したりしない。
         if (kind(row) === 'section') row.querySelector('summary').appendChild(tools);
-        else row.insertBefore(tools, row.firstChild);
+        else (row.querySelector('.frow') || row).insertBefore(tools, (row.querySelector('.frow') || row).firstChild);
       }
       const list = rows(row), at = list.indexOf(row);
-      tools.querySelector('[data-editor-order="up"]').disabled = at === 0;
-      tools.querySelector('[data-editor-order="down"]').disabled = at === list.length - 1;
+      if (kind(row) === 'section') {
+        tools.querySelector('[data-editor-order="up"]').disabled = at === 0;
+        tools.querySelector('[data-editor-order="down"]').disabled = at === list.length - 1;
+      } else {
+        // 段組みの行は、今の並び順を番号で示す（共通タグと固有タグは、それぞれの層の中での順番）。
+        // 変わらないときは触らない（textContentは同じ値でもノードが作り直され、行補充の監視が無限に発火する）。
+        const no = tools.querySelector('.editor-order-no'), label = String(at + 1);
+        if (no && no.textContent !== label) no.textContent = label;
+      }
     }
   }
   function install(doc, win) {
@@ -69,23 +87,44 @@
       const target = rowOf(ev.target);
       return dragged?.isConnected && target && formOf(target) === formOf(dragged) && target.parentElement === dragged.parentElement && kind(target) === kind(dragged) ? target : null;
     };
+    const isAfterTarget = (ev, target) => {
+      const rect = target.getBoundingClientRect();
+      const siblings = rows(target);
+      const multiCol = rect.width > 0 && siblings.some((el) => {
+        if (el === target) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && Math.abs(r.top - rect.top) < rect.height * 0.5 && Math.abs(r.left - rect.left) > 1;
+      });
+      return multiCol ? ev.clientX >= rect.left + rect.width / 2 : ev.clientY >= rect.top + rect.height / 2;
+    };
     doc.addEventListener('dragover', ev => {
       if (!dragged) return;
       ev.stopImmediatePropagation();
       doc.querySelectorAll('.editor-order-before,.editor-order-after').forEach(el => el.classList.remove('editor-order-before', 'editor-order-after'));
       const target = targetOf(ev); if (!target || target === dragged) return;
       ev.preventDefault(); ev.dataTransfer.dropEffect = 'move';
-      const rect = target.getBoundingClientRect(); target.classList.add(ev.clientY >= rect.top + rect.height / 2 ? 'editor-order-after' : 'editor-order-before');
+      target.classList.add(isAfterTarget(ev, target) ? 'editor-order-after' : 'editor-order-before');
     }, true);
     doc.addEventListener('drop', ev => {
       if (!dragged) return;
       ev.preventDefault(); ev.stopImmediatePropagation();
       const target = targetOf(ev), row = dragged;
-      if (target) { const rect = target.getBoundingClientRect(); if (move(row, target, ev.clientY >= rect.top + rect.height / 2)) changed(row); }
+      if (target && move(row, target, isAfterTarget(ev, target))) changed(row);
       clear();
     }, true);
     doc.addEventListener('dragend', ev => { if (dragged) { ev.stopImmediatePropagation(); clear(); } }, true);
-    doc.addEventListener('keydown', ev => { if (ev.key === 'Escape' && dragged) { ev.preventDefault(); clear(); } });
+    doc.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape' && dragged) { ev.preventDefault(); clear(); return; }
+      const handle = ev.target.closest?.('[data-editor-order="handle"]');
+      if (!handle || !formOf(handle)) return;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key)) return;
+      ev.preventDefault();
+      const row = rowOf(handle);
+      if (step(row, (ev.key === 'ArrowUp' || ev.key === 'ArrowLeft') ? -1 : 1)) {
+        changed(row);
+        handle.focus();
+      }
+    });
     win.addEventListener('blur', clear);
     const observer = new win.MutationObserver(refresh);
     observer.observe(doc.getElementById('drawer') || doc.body, { childList: true, subtree: true });

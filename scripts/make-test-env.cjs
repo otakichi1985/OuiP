@@ -47,7 +47,7 @@ try {
     const file = path.join(dataSource, name);
     if (fs.existsSync(file)) fs.copyFileSync(file, path.join(data, name));
   }
-  for (const name of ['entries', 'assets']) {
+  for (const name of ['entries', 'assets', 'stories']) {
     const dir = path.join(dataSource, name);
     if (fs.existsSync(dir)) fs.cpSync(dir, path.join(data, name), { recursive: true });
   }

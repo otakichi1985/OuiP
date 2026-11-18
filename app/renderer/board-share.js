@@ -36,7 +36,7 @@
       if (el) { el.textContent = message; el.classList.toggle("bs-error", error); }
     }
     function apiMethod(name) {
-      if (typeof api[name] !== "function") throw new Error("この機能を使うには本体の更新が必要です。編集を確定して、閉じて開き直してください（" + name + "）");
+      if (typeof api[name] !== "function") throw new Error("この機能を使うには本体の更新が必要です。編集を OK で終えて、閉じて開き直してください（" + name + "）");
       return api[name];
     }
     async function action(fn) {
@@ -62,12 +62,14 @@
           const place = e.kind === "場所";
           const mode = place ? "card" : n.imageMode === "icon" ? "icon" : "card";
           const surface = place ? "place" : mode === "icon" ? "icon" : (e.kind === "人物" ? "small" : "card");
-          const src = surface === "icon" ? ImageSet.iconSource(e) : e.image;
+          const src = surface === "icon" ? ImageSet.iconSource(e) : ImageSet.chosen(e, n.imageId);
           const cropStyle = typeof ImageCrop !== "undefined" ? ImageCrop.style(ImageCrop.get(e, surface)) : "";
           const picture = src ? `<span class="bs-picture${place ? " is-wide" : mode === "icon" ? " is-icon" : ""}"><span class="bs-crop"><img class="bs-image" src="${esc(assetURL(src))}" alt="${esc(e.name)}の画像" draggable="false" style="${cropStyle}"></span></span>` : "";
           const iconSrc = ImageSet.iconSource(e);
           const iconStyle = iconSrc && typeof ImageCrop !== "undefined" ? ImageCrop.style(ImageCrop.get(e, "icon")) : "";
-          const titleIcon = iconSrc ? `<span class="bs-icon-frame"><img class="bs-icon" src="${esc(assetURL(iconSrc))}" alt="" draggable="false" style="${iconStyle}"></span>` : `<span class="bs-initial">${esc([...String(e.name || "")][0] || "")}</span>`;
+          // 絵がないときの頭文字は、アプリのカードと同じく人物の色を背景にする。
+          const initialStyle = e.kind === "人物" ? ` style="background:hsl(${Number(e.hue) || 0} 45% 62%);color:var(--on-color)"` : "";
+          const titleIcon = iconSrc ? `<span class="bs-icon-frame"><img class="bs-icon" src="${esc(assetURL(iconSrc))}" alt="" draggable="false" style="${iconStyle}"></span>` : `<span class="bs-initial"${initialStyle}>${esc([...String(e.name || "")][0] || "")}</span>`;
           const picker = readOnly() || place ? "" : `<label class="small board-image-pick">表示<select data-board-mode="${esc(n.id)}"><option value="card"${mode === "card" ? " selected" : ""}>カード</option><option value="icon"${mode === "icon" ? " selected" : ""}>アイコン</option></select></label>`;
           el.innerHTML = `<span class="k">${esc(e.kind)}</span>${picture}<div class="bs-title">${titleIcon}<b>${esc(e.name)}</b></div>${e.reading ? `<div class="bs-reading">${esc(e.reading)}</div>` : ""}${e.desc ? `<div class="bs-desc">${esc(e.desc)}</div>` : ""}${picker}`;
         } else if (n.type === "memo") el.innerHTML = `<span class="k">メモ</span><div class="bs-memo">${esc(n.text)}</div>`;
@@ -86,13 +88,13 @@
       const toggle = panel().querySelector('[data-bs-action="expand"]');
       if (toggle) { toggle.textContent = mode === "expanded" ? "元の表示" : "拡大表示"; toggle.setAttribute("aria-pressed", mode === "expanded"); }
       const present = panel().querySelector('[data-bs-action="present"]');
-      if (present) { present.textContent = mode === "presentation" ? "発表を終了" : "発表表示"; present.setAttribute("aria-pressed", mode === "presentation"); }
+      if (present) { present.textContent = mode === "presentation" ? "スライドショーを終了" : "スライドショー"; present.setAttribute("aria-pressed", mode === "presentation"); }
       panel().classList.toggle("bs-expanded", mode === "expanded");
       panel().classList.toggle("bs-present", mode === "presentation");
     }
     function canEnter() {
       if (isPointerBusy() || !$("veil").hidden || (!$("drawer").hidden && $("ef"))) {
-        status("編集中の内容を確定するか閉じてから、表示を切り替えてください。", true); return false;
+        status("編集を OK かキャンセルで終えてから、表示を切り替えてください。", true); return false;
       }
       return true;
     }
@@ -150,9 +152,9 @@
         apiMethod("exportBoardFile");
         const refs = new Set(S.board.items.filter(n => n.type === "entry").map(n => n.ref));
         const names = S.entries.filter(e => refs.has(e.id)).map(e => e.name || "名前なし");
-        if (!window.confirm(`ボード共有ファイルを書き出しますか？\n\n${names.length}件の設定カード: ${names.join("、") || "なし"}\n\n載せた設定カードの全内容（画像・アイコン・名前・読み・説明・見出しと文章・項目・タグ・詳細）を、非表示の内容も含めて書き出します。メモ・配置・ボードの線も含みます。\n世界の情報・履歴・ボード外への参照・相関図の関係・地図座標は含みません。\n本文の個人情報などは自動で除かれません。共有前に内容を確認してください。`)) { status("書き出しをやめました"); return; }
+        if (!window.confirm(`ボードのファイルを書き出しますか？\n\n${names.length}件の設定カード: ${names.join("、") || "なし"}\n\n載せた設定カードの全内容（画像・アイコン・名前・読み・説明・見出しと文章・項目・タグ・詳細）を、非表示の内容も含めて書き出します。メモ・配置・ボードの線も含みます。\n世界の情報・履歴・ボード外への参照・関係図の矢印・地図座標は含みません。\n本文の個人情報などは自動で除かれません。共有前に内容を確認してください。`)) { status("書き出しをやめました"); return; }
         const result = await api.exportBoardFile();
-        status(canceled(result) ? "書き出しをやめました" : "共有ファイルを書き出しました" + (result?.kept ? `。WebPの画像${result.kept}枚は小さくできず、元の大きさのまま入れました` : "")); return result;
+        status(canceled(result) ? "書き出しをやめました" : "ボードを書き出しました" + (result?.kept ? `。WebPの画像${result.kept}枚は小さくできず、元の大きさのまま入れました` : "")); return result;
       });
     }
     // 受け取ったボードは、まず見るだけで開く。取り込むものを選んでから、選んだ分だけを今のボードへ足す。
@@ -208,7 +210,7 @@
         <form id="bs-incoming-form"><div class="bs-choices">${incoming.entries.map(row).join("")}${memos.length ? `<fieldset class="bs-choice"><legend>メモ ${memos.length}件</legend>${
           memos.map(m => `<label><input type="checkbox" data-bs-memo="${esc(m.id)}" ${choice.memos[m.id] === false ? "" : "checked"}>${esc(String(m.text || "").split("\n")[0].slice(0, 60) || "（空のメモ）")}</label>`).join("")}</fieldset>` : ""}
         <p class="small muted">線は、両端を取り込んだものだけ追加します。今のボードの右側の空いた所に、受け取った並びのまま置きます。保存（履歴に残す）は、いつもどおり「保存」で行います。</p></div>
-        <div class="modal-actions row"><span class="small muted" id="bs-incoming-count" role="status"></span><button class="b quiet" type="button" data-bs-incoming-back>戻る</button><button class="b primary" type="submit">ボードに追加</button></div></form>`;
+        <div class="modal-actions row"><span class="small muted" id="bs-incoming-count" role="status"></span><button class="b quiet" type="button" data-bs-incoming-back>戻る</button><button class="b primary" type="submit">取り込む</button></div></form>`;
       updateIncomingCount();
       ($("viewer").querySelector("#bs-incoming-form input:checked") || $("viewer").querySelector("#bs-incoming-form input"))?.focus();
     }
@@ -237,7 +239,7 @@
           const c = camera("board"); c.z = 1; c.x = 40 - Math.min(...added.map(i => i.x)); c.y = 40 - Math.min(...added.map(i => i.y));
           writeSelection({ ...readSelection(), bsel: added[0].id }); renderBoard(); applyBoardCamera();
         }
-        status(`${result.addedItems}件をボードに追加しました。`);
+        status(`${result.addedItems}件を取り込みました。`);
       } catch (e) {
         // run()が画面に失敗を出す。選んだ内容は残して再試行できるようにする。
         controls.forEach(([el, disabled]) => { if (el.isConnected) el.disabled = disabled; });
@@ -274,28 +276,47 @@
         });
       }
       const cards = [];
+      const CARD_W = 240, PAD = 12, CONTENT_W = CARD_W - PAD * 2;
+      // 画面（.bs-crop）と同じ枠の形。アイコンだけは 64px の丸。
+      function frame(surface) {
+        if (surface === "icon") return { w: 64, h: 64, circle: true };
+        if (surface === "place") return { w: CONTENT_W, h: CONTENT_W * 9 / 16, circle: false };
+        return { w: CONTENT_W, h: CONTENT_W, circle: false };
+      }
       for (const n of board.items) {
         const e = n.type === "entry" ? entries.get(n.ref) : null;
         if (n.type === "entry" && !e) throw new Error("設定カードが見つかりません: " + n.ref);
         const x = Number(n.x), y = Number(n.y);
         if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("ボードの座標が不正です");
-        const card = { id: n.id, x, y, w: 240, color: e ? (e.kind === "人物" ? `hsl(${Number(e.hue) || 0} 45% 62%)` : "#6cc4b4") : "#f0b866", blocks: [] };
-        let cursor = 12;
-        const block = (text, size, color, width = 216, family = bodyFont, bold = false, left = 12) => {
+        const card = { id: n.id, x, y, w: CARD_W, color: e ? (e.kind === "人物" ? `hsl(${Number(e.hue) || 0} 45% 62%)` : "#6cc4b4") : "#f0b866", blocks: [] };
+        let cursor = PAD;
+        const block = (text, size, color, width = CONTENT_W, family = bodyFont, bold = false, left = PAD, top = cursor) => {
           if (!text) return;
           const row = lines(text, width, size, family, bold), step = size * 1.65;
-          card.blocks.push({ row, size, color, family, bold, x: left, y: cursor, step }); cursor += row.length * step + 5;
+          card.blocks.push({ row, size, color, family, bold, x: left, y: top, step }); cursor += row.length * step + 5;
         };
         block(e ? e.kind : "メモ", 11, "#a0a7b6");
         if (e) {
-          const picked = n.imageId && ImageSet.list(e).some((item) => item.image === n.imageId) ? n.imageId : e.image;
-          card.image = await image(picked); card.icon = await image(e.icon);
-          if (card.image) { card.imageY = cursor; cursor += 134; }
-          card.iconY = cursor;
-          block(e.name || "名前なし", 17, "#e4e6ec", 176, displayFont, true, 52);
-          cursor = Math.max(cursor, card.iconY + 37);
+          const place = e.kind === "場所";
+          const mode = place ? "card" : n.imageMode === "icon" ? "icon" : "card";
+          const surface = place ? "place" : mode === "icon" ? "icon" : (e.kind === "人物" ? "small" : "card");
+          // 画面と同じ画像を選ぶ。アイコン表示は名前横と同じ画像、それ以外はボード項目が選んだ画像。
+          const pictureSrc = mode === "icon" ? ImageSet.iconSource(e) : ImageSet.chosen(e, n.imageId);
+          const pictureImage = await image(pictureSrc);
+          if (pictureImage) {
+            const f = frame(surface);
+            card.picture = { image: pictureImage, crop: ImageCrop.get(e, surface), x: mode === "icon" ? (CARD_W - f.w) / 2 : PAD, y: cursor, ...f };
+            cursor += f.h + 6;
+          }
+          const iconSrc = ImageSet.iconSource(e);
+          card.icon = {
+            image: await image(iconSrc), crop: ImageCrop.get(e, "icon"), x: PAD, y: cursor, size: 32,
+            hue: e.kind === "人物" ? `hsl(${Number(e.hue) || 0} 45% 62%)` : null,
+            initial: [...String(e.name || "")][0] || "",
+          };
+          block(e.name || "名前なし", 17, "#e4e6ec", 176, displayFont, true, PAD + 40, cursor + 3);
+          cursor = Math.max(cursor, card.icon.y + 37);
           block(e.reading, 12, "#a0a7b6"); block(e.desc, 13, "#e4e6ec");
-          card.initial = [...String(e.name || "")][0] || "";
         } else block(n.text, 13, "#e4e6ec");
         card.h = cursor + 7; cards.push(card);
       }
@@ -314,22 +335,36 @@
         const a = byItem.get(link.from), b = byItem.get(link.to); if (!a || !b) continue;
         ctx.beginPath(); ctx.moveTo(a.x + a.w / 2, a.y + a.h / 2); ctx.lineTo(b.x + b.w / 2, b.y + b.h / 2); ctx.stroke();
       }
-      function fit(img, x, y, w, h) {
-        const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-        const iw = img.naturalWidth * s, ih = img.naturalHeight * s;
-        ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+      // 画面と同じく、枠いっぱいに切り抜いて描く（cover）。丸はアイコン枠だけ。
+      function drawCrop(image, crop, x, y, w, h, circle = false) {
+        const r = ImageCrop.rect(image.naturalWidth, image.naturalHeight, crop, w, h);
+        if (!r) return;
+        ctx.save();
+        ctx.beginPath();
+        if (circle) ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
+        else ctx.rect(x, y, w, h);
+        ctx.clip();
+        ctx.drawImage(image, r.x, r.y, r.w, r.h, x, y, w, h);
+        ctx.restore();
       }
       for (const card of cards) {
         ctx.save(); ctx.translate(card.x, card.y);
         ctx.fillStyle = "#222733"; ctx.fillRect(0, 0, card.w, card.h);
         ctx.strokeStyle = "#2e3441"; ctx.lineWidth = 1; ctx.strokeRect(0, 0, card.w, card.h);
         ctx.fillStyle = card.color; ctx.fillRect(0, 0, card.w, 3);
-        if (card.image) { ctx.fillStyle = "#12151c"; ctx.fillRect(12, card.imageY, 216, 128); fit(card.image, 12, card.imageY, 216, 128); }
-        if (card.icon) fit(card.icon, 12, card.iconY, 32, 32);
-        else if (card.initial !== undefined) {
-          ctx.fillStyle = "#1a1e27"; ctx.fillRect(12, card.iconY, 32, 32);
-          ctx.fillStyle = "#e4e6ec"; ctx.font = `16px ${bodyFont}`; ctx.textBaseline = "middle"; ctx.textAlign = "center";
-          ctx.fillText(card.initial, 28, card.iconY + 16);
+        if (card.picture) {
+          const p = card.picture;
+          ctx.fillStyle = "#12151c"; ctx.fillRect(p.x, p.y, p.w, p.h);
+          drawCrop(p.image, p.crop, p.x, p.y, p.w, p.h, p.circle);
+        }
+        const icon = card.icon;
+        if (icon?.image) drawCrop(icon.image, icon.crop, icon.x, icon.y, icon.size, icon.size, true);
+        else if (icon) {
+          ctx.save(); ctx.beginPath(); ctx.arc(icon.x + icon.size / 2, icon.y + icon.size / 2, icon.size / 2, 0, Math.PI * 2);
+          ctx.fillStyle = icon.hue || "#1a1e27"; ctx.fill(); ctx.restore();
+          ctx.fillStyle = icon.hue ? "#12151c" : "#e4e6ec";
+          ctx.font = `16px ${bodyFont}`; ctx.textBaseline = "middle"; ctx.textAlign = "center";
+          ctx.fillText(icon.initial, icon.x + icon.size / 2, icon.y + icon.size / 2);
         }
         ctx.textBaseline = "top"; ctx.textAlign = "left";
         for (const b of card.blocks) {
@@ -392,7 +427,7 @@
       installed = true;
       const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "board-share.css"; document.head.append(css);
       const tools = document.createElement("div"); tools.className = "bs-tools";
-      tools.innerHTML = [["expand", "拡大表示"], ["present", "発表表示"], ["png", "PNG 書き出し"], ["share", "共有を書き出す"], ["import", "共有を読み込む"]].map(([name, label]) => `<button class="b quiet sm" type="button" data-bs-action="${name}">${label}</button>`).join("");
+      tools.innerHTML = [["expand", "拡大表示"], ["present", "スライドショー"], ["png", "PNG 書き出し"], ["share", "ボードを書き出す"], ["import", "ボードを読み込む"]].map(([name, label]) => `<button class="b quiet sm" type="button" data-bs-action="${name}">${label}</button>`).join("");
       panel().querySelector(".wsh").insertBefore(tools, $("ws-close"));
       const note = document.createElement("div"); note.id = "bs-status"; note.className = "bs-status"; note.setAttribute("role", "status"); note.setAttribute("aria-live", "polite");
       panel().querySelector(".wsh").after(note);

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
 const { Store } = require("./lib/store");
 const { History } = require("./lib/history");
+const AppIcon = require("./lib/app-icon");
 
 // データの場所: 既定は「ドキュメント\OuiP」。--data=<フォルダー> で差し替え（試験用）
 const dataArg = process.argv.find((a) => a.startsWith("--data="));
@@ -58,8 +59,16 @@ if (!app.requestSingleInstanceLock()) {
     h("load", () => store.serial(async () => ({ ...(await store.load()), dataDir: dir, changes: (await hist.changes()).length })));
     h("updateWorld", (p) => store.updateWorld(p));
     h("saveEntry", (e) => store.saveEntry(e));
+h("saveAttribute", (a) => store.saveAttribute(a));
+h("saveAttributes", (l) => store.saveAttributes(l));
+h("deleteAttribute", (id) => store.deleteAttribute(id));
+h("mergeAttribute", (s, t) => store.mergeAttribute(s, t));
+h("saveAttributeViews", (l) => store.saveAttributeViews(l));
     h("moveEntry", (id, which, pos) => store.moveEntry(id, which, pos));
     h("deleteEntry", (id) => store.deleteEntry(id));
+    h("saveStory", (story) => store.saveStory(story));
+    h("deleteStory", (id) => store.deleteStory(id));
+    h("reorderStories", (order) => store.reorderStories(order));
     h("saveRelations", (l) => store.saveRelations(l));
     h("saveBoard", (b) => store.saveBoard(b));
     const { BoardShare, LIMITS } = require('./lib/board-share');
@@ -78,11 +87,11 @@ if (!app.requestSingleInstanceLock()) {
         });
         if (answer.response !== 0) return null;
       }
-      const r = await dialog.showSaveDialog(win, {title:'閲覧用ファイル（HTML）を書き出す', defaultPath:'OuiP-閲覧用.html', filters:[{name:'閲覧専用HTML',extensions:['html']}]});
+      const r = await dialog.showSaveDialog(win, {title:'閲覧用ページ（HTML）を書き出す', defaultPath:'OuiP-閲覧用.html', filters:[{name:'閲覧専用HTML',extensions:['html']}]});
       if(r.canceled || !r.filePath) return null;
       return { ...(await siteExport.write(r.filePath,html)), kept: info.kept || 0, skipped: info.skipped || [], bytes: info.bytes, warn: !!info.warn };
     });
-    // キャラの設定シート（SNS向けの画像）。画面からはキャラのIDと選んだ項目だけを受け取る。
+    // キャラの画像の書き出し（SNS向け）。画面からはキャラのIDと選んだ項目だけを受け取る。
     const { SheetExport } = require('./lib/sheet-export');
     const sheetExport = new SheetExport({ store, dir, electron: { BrowserWindow, nativeImage, screen: require('electron').screen } });
     h('sheetDefaults', (id) => sheetExport.defaults(id));
@@ -91,15 +100,15 @@ if (!app.requestSingleInstanceLock()) {
       return { pages: r.pngs.map(png => 'data:image/png;base64,' + png.toString('base64')), sizes: r.pngs.map(png => png.length), overflow: r.overflow, skipped: r.skipped || [] };
     });
     h('exportSheet', async (id, options) => {
-      const r = await sheetExport.render(id, options, { show: true });
+      const r = await sheetExport.render(id, options);
       const safe = r.model.name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 60) || 'キャラ';
-      const d = await dialog.showSaveDialog(win, { title: '設定シートを画像で保存', defaultPath: safe + '-設定シート.png', filters: [{ name: 'PNG画像', extensions: ['png'] }] });
+      const d = await dialog.showSaveDialog(win, { title: '画像を保存', defaultPath: safe + '-画像.png', filters: [{ name: 'PNG画像', extensions: ['png'] }] });
       if (d.canceled || !d.filePath) return null;
       return { ...(await sheetExport.save(d.filePath, r.pngs)), pages: r.pngs.length, overflow: r.overflow, skipped: r.skipped || [] };
     });
     h('exportBoardFile', async () => {
       const info = {}, payload = await boardShare.exportPayload(undefined, info);
-      const r = await dialog.showSaveDialog(win, { title: '共有ボードを書き出す', defaultPath: 'OuiP-board.ouip-board', filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
+      const r = await dialog.showSaveDialog(win, { title: 'ボードを書き出す', defaultPath: 'OuiP-board.ouip-board', filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
       if (r.canceled || !r.filePath) return null;
       if (path.resolve(r.filePath).startsWith(dir + path.sep)) throw Error('創作データのフォルダー外へ書き出してください');
       await fs.promises.writeFile(r.filePath, JSON.stringify(payload));
@@ -108,16 +117,16 @@ if (!app.requestSingleInstanceLock()) {
     // 受け取ったファイルは、まず見るだけで開く。選んだ分だけを後でimportBoardSelectionで書く。
     let pendingBoard = null;
     h('openBoardFile', async () => {
-      const r = await dialog.showOpenDialog(win, { title: '共有ボードを読み込む', properties: ['openFile'], filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
+      const r = await dialog.showOpenDialog(win, { title: 'ボードを読み込む', properties: ['openFile'], filters: [{ name: 'OuiP ボード', extensions: ['ouip-board'] }] });
       if (r.canceled || !r.filePaths[0]) return null;
       const handle = await fs.promises.open(r.filePaths[0], 'r');
       let bytes;
       try {
-        if ((await handle.stat()).size > LIMITS.json) throw Error('共有ファイルは30MB以下にしてください');
+        if ((await handle.stat()).size > LIMITS.json) throw Error('ボードのファイルは30MB以下にしてください');
         bytes = Buffer.alloc(LIMITS.json + 1);
         let used = 0, count;
         while (used < bytes.length && (count = (await handle.read(bytes, used, bytes.length-used)).bytesRead)) used += count;
-        if (used > LIMITS.json) throw Error('共有ファイルは30MB以下にしてください');
+        if (used > LIMITS.json) throw Error('ボードのファイルは30MB以下にしてください');
         bytes = bytes.subarray(0, used);
       } finally { await handle.close(); }
       const token = require('node:crypto').randomUUID();
@@ -126,7 +135,7 @@ if (!app.requestSingleInstanceLock()) {
       return { token, fileName: path.basename(r.filePaths[0]), ...preview };
     });
     h('importBoardSelection', async (token, choices) => {
-      if (!pendingBoard || pendingBoard.token !== token) throw Error('共有ファイルを開き直してください');
+      if (!pendingBoard || pendingBoard.token !== token) throw Error('ボードのファイルを開き直してください');
       const { bytes } = pendingBoard;
       const result = await boardShare.importPayload(bytes, { choices, place: 'right' });
       pendingBoard = null;
@@ -198,11 +207,11 @@ if (!app.requestSingleInstanceLock()) {
     h("pickCharacterImage", pickImage);
     h("pickImage", pickImage);
     h("devMode", () => dev);
-    // 移行の試し用データを最初の状態に戻す（試し用の印があるフォルダーだけ）。
+    // 検証用データを最初の状態に戻す（検証用の印があるフォルダーだけ）。
     h('devResetSample', async () => {
-      if (!dev || dataArg || selection !== 'migration') throw Error('移行の試し用データを開いているときだけ作り直せます');
+      if (!dev || dataArg || selection !== 'migration') throw Error('検証用データを開いているときだけ作り直せます');
       const rebuilt = await store.serial(() => ensureMigrationSample(dir, { reset: true }));
-      if (!rebuilt) throw Error('試し用の印がないフォルダーなので作り直しません');
+      if (!rebuilt) throw Error('検証用の印がないフォルダーなので作り直しません');
       return true; // 画面の読み直しは画面側で行う
     });
     h('devDataInfo', () => ({available:dev && !dataArg,current:dataArg?'explicit':selection}));
@@ -245,6 +254,7 @@ if (!app.requestSingleInstanceLock()) {
       height: 860,
       minWidth: 720,
       minHeight: 520,
+      icon: nativeImage.createFromBuffer(AppIcon.pngBuffer(256)),
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f6f8", // 描く前の地。外観が自動のときに合う色（端末ごとの選択はrendererが当てる）
       title: "OuiP",
       autoHideMenuBar: true,

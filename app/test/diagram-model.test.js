@@ -49,7 +49,7 @@ test('幾何: 外周の交点、曲線の制御点と文字の位置、吹き出
   assert.equal(D.balloonPath({ ...g.items[2], tail: { dx: 0, dy: 0 } }).tail, '', '先が箱の中ならしっぽを描かない');
 });
 
-test('編集の操作: 追加・移動（グリッド）・削除で矢印も消す・前面／背面・写して貼る', () => {
+test('編集の操作: 追加・移動（グリッド）・項目の削除で矢印も削除・前面／背面・写して貼る', () => {
   let g = base();
   const added = D.addItem(g, { kind: 'ellipse', text: '夜霧の秘密', x: 100, y: 200 });
   assert.match(added.id, /^di-/);
@@ -64,8 +64,12 @@ test('編集の操作: 追加・移動（グリッド）・削除で矢印も消
   assert.equal(pasted.graph.links.length, 2);
   assert.ok(pasted.ids.every((id) => !['di-a', 'di-b'].includes(id)), 'IDは振り直す');
   const removed = D.deleteItems(pasted.graph, ['di-a']);
-  assert.equal(removed.links.length, 1, '消した項目につながる矢印も消す');
+  assert.equal(removed.links.length, 1, '削除した項目につながる矢印も削除する');
   assert.deepEqual(D.within(g, { x0: -10, y0: -10, x1: 200, y1: 100 }), ['di-a']);
+  assert.equal(D.at(g, 60, 20), 'di-a', '点の下の項目を返す');
+  assert.equal(D.at(g, 425, 2), 'di-b', '端に近い点でも項目の内側なら返す');
+  assert.equal(D.at(g, 300, 20), null, '項目の外では何も返さない');
+  assert.equal(D.at({ items: [...g.items, { ...g.items[0], id: 'di-c' }] }, 60, 20), 'di-c', '重なっているときは前面を返す');
   assert.ok(Object.isFrozen(D.DEFAULT_TEMPLATES));
 });
 
@@ -98,7 +102,15 @@ test('テンプレートの文字: 当てると矢印の文字に入り、自分
   assert.equal(D.applyTemplate(D.updateLink(g, 'dl-1', { text: '' }), 'dl-1', 'lt-x', none).links[0].text, '');
 });
 
-test('見せ方と組織の枠: 枠は組織だけ、所属するキャラを中に並べ、枠を動かすと中も動く', () => {
+test('丸いアイコンと名前の表示を持ち、顔と枠を丸く描く', () => {
+  const g = D.normalize({ items: [{ id: 'di-a', kind: 'entry', ref: 'c-1a', look: 'iconRound', x: 0, y: 0, w: 96, h: 104 }] });
+  assert.equal(g.items[0].look, 'iconRound');
+  const svg = D.renderSVG(g, { resolveRef: () => ({ name: '灯', kind: 'キャラ', image: 'x.png' }) });
+  assert.match(svg, /border-radius:41px/);
+  assert.match(svg, /<circle cx="48" cy="41" r="41"/);
+});
+
+test('表示と組織の枠: 枠は組織だけ、所属するキャラを中に並べ、枠を動かすと中も動く', () => {
   const g0 = D.normalize({ items: [
     { id: 'di-org', kind: 'entry', ref: 'org-1a', look: 'frame', frameCols: 2, x: 0, y: 0, w: 100, h: 100 },
     { id: 'di-a', kind: 'entry', ref: 'c-1a', look: 'icon', x: 500, y: 500 },

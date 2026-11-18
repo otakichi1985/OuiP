@@ -8,6 +8,9 @@
 .organization-row button { white-space: nowrap; flex: none; }
 .organization-membership { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; padding: 8px 10px; min-width: 0; }
 .organization-membership legend { color: var(--fg); padding: 0 4px; font-size: 13px; }
+.organization-people { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0 0; padding: 8px 10px; min-width: 0; }
+.organization-people legend { color: var(--fg); padding: 0 4px; font-size: 13px; }
+.organization-people p { margin: 6px 0 0; }
 .organization-picker { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 4px 10px; max-height: 220px; overflow: auto; }
 .organization-picker label { display: flex; align-items: center; gap: 6px; padding: 5px 0; overflow-wrap: anywhere; }
 .organization-picker label button { margin-left: auto; white-space: nowrap; }

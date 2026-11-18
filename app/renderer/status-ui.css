@@ -48,7 +48,7 @@
 .status-set-viewer form{min-height:0;overflow:auto}
 @container (max-width:700px){.ss-head{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ss-head>label:first-child,.ss-actions{grid-column:1/-1}}
 
-/* 一覧の上の道具 */
+/* 一覧の上のツール */
 .status-sets-tools{gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .status-enabled{display:inline-flex;align-items:center;gap:6px;margin-left:auto;color:var(--muted)}
 
@@ -85,7 +85,7 @@
 .ss-preview-card{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);margin-bottom:8px}
 .ss-preview-face{display:block;width:120px;height:150px;border-radius:6px;background:linear-gradient(160deg,var(--accent-soft),var(--surface))}
 .ss-preview-card-body{display:flex;flex-direction:column;gap:4px;min-width:0}
-.ss-preview-kicker{color:var(--muted);font-size:11px}
+.ss-preview-kicker{color:var(--muted);font-size:12px}
 .ss-preview-reading{color:var(--muted);font-size:12px}
 .ss-preview-name{font-size:15px}
 .ss-preview-detail{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);margin-bottom:6px}
@@ -110,4 +110,33 @@
 .ss-row-preview>summary{cursor:pointer;color:var(--muted);min-height:28px;padding-block:4px}
 .ss-preview-inline{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:4px 14px;max-width:960px}
 .ss-preview-inline>.small.muted{grid-column:1/-1}
+/* 定義ごとの見本: 定義が決める「横長カードの欄」と「詳細」だけを並べる（2026-11-01）。 */
+.status-meta{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;margin-top:2px}
+/* 開閉で操作子の位置を動かさない。details自体は箱を作らず、操作子は行に残し、中身は操作子の行の下へ重ねる（2026-11-01）。
+   重ねる幅は狭い画面だけの仕様だったが、Chromiumではdetailsにdisplay:contentsを当てると開いた中身が操作子の前に回り、
+   操作子が動く（2026-11-17に実画面で確認）。どの幅でも同じ重ね方にそろえる。 */
+.status-meta{position:relative}
+.status-assignees{display:contents}
+.status-assignees>summary{cursor:pointer;min-height:24px}
+.status-assignees[open]>ul{position:absolute;z-index:6;top:100%;left:0;right:auto;min-width:14em;max-width:min(24em,calc(100vw - 40px));max-height:40vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--float);padding:6px 12px 6px 1.8em}
+.status-preview-note{margin:10px 0 0}
+.status-off-note{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px}
+.ss-preview-pair{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:10px;align-items:start}
+.ss-preview-pair>.ss-preview-card{margin-bottom:0;padding:8px 10px}
+.ss-preview-card-compact{grid-template-columns:minmax(0,1fr)}
+.ss-preview-card-compact .ss-preview-face{display:none}
+.ss-preview-pair .ss-preview-kicker{display:block;margin-bottom:4px}
+.ss-preview-pair .ss-preview-name{font-size:13px;margin:0 0 2px}
+.ss-preview-pair .cs-values{margin:0}
+.ss-preview-detail-note{border:0;background:none;padding:8px 0}
+.ss-preview-detail-note p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+/* 定義の行: 左に説明、中に見本、右に操作。見本を横に置き、縦に伸ばさない（2026-11-01）。 */
+.status-concept-list .status-row{display:grid;grid-template-columns:minmax(200px,300px) minmax(0,1fr) auto;gap:12px 18px;align-items:start}
+.status-row-text{min-width:0}
+.status-row-preview{min-width:0;container-type:inline-size}
+@container (max-width: 420px){.ss-preview-pair{grid-template-columns:minmax(0,1fr)}}
+.status-row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:1040px){.status-concept-list .status-row{grid-template-columns:minmax(0,1fr) auto}.status-row-preview{grid-column:1/-1}}
+/* 狭い画面では見本が説明の下の行へ回る。割り当ての一覧はどの幅でも重ねるので、幅ごとの規則は置かない（2026-11-17）。 */
+@media(max-width:760px){.status-concept-list .status-row{grid-template-columns:minmax(0,1fr)}.status-row-actions{justify-content:flex-start}}
 

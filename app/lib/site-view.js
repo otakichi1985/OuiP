@@ -10,27 +10,31 @@ const CharacterUnits = require('../renderer/character-units');
 const ImageSet = require('../renderer/image-set');
 const ImageCrop = require('../renderer/image-crop');
 const TimelineModel = require('../renderer/timeline-model');
+const EntryUnset = require('../renderer/entry-unset');
 const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
 // 閲覧用スクリプトは、数値の範囲で絞る部品（アプリと同じ）と、図の収め方、固定の閲覧コードをつないだもの。
-const script = (read('../renderer/facet-range.js') + '\n' + read('../renderer/diagram-fit.js') + '\n' + read('../share/site.js')).replace(/\r\n?/g, '\n');
+const script = (read('../renderer/facet-range.js') + '\n' + read('../renderer/search-query.js') + '\n' + read('../renderer/diagram-fit.js') + '\n' + read('../share/site.js')).replace(/\r\n?/g, '\n');
 const FacetRange = require('../renderer/facet-range');
 const Icons = require('../renderer/icons');
 // アイコンを入れた書き出しにはLucideのライセンス全文を添える（ISCとMITの表示義務）。
 const iconLicense = fs.readFileSync(path.join(__dirname, '../renderer/icons-LICENSE.txt'), 'utf8').replace(/--/g, '- -');
-const TAB_ICONS = {overview: 'home', characters: 'character', organizations: 'organization', graphs: 'graph', terms: 'term', places: 'place', timeline: 'timeline'};
+const TAB_ICONS = {overview: 'home', characters: 'character', organizations: 'organization', graphs: 'graph', terms: 'term', places: 'place', timeline: 'timeline', stories: 'story'};
 // 一覧の「表示」（カードの大きさ）。アプリと同じく、文字ではなく並びの形のアイコンで選ぶ。閲覧用では保存しない。
 const CARD_SIZE_OPTIONS = [
-  ['small', '小', 'cardSmall', '絵と名前'],
+  ['small', '小', 'cardSmall', '画像と名前'],
   ['medium', '中', 'cardMedium', 'タグと説明まで'],
   ['large', '大', 'cardLarge', '横長でステータスまで'],
 ];
 const cardSizeControl = () => `<span class="card-size" role="group" aria-label="表示" data-tools hidden><span class="card-size-label">表示</span>${CARD_SIZE_OPTIONS.map(([key, label, icon, hint], index) => `<button type="button" data-card-size="${key}" aria-pressed="${index === 0}" aria-label="表示：${label}（${hint}）" title="表示：${label}（${hint}）">${Icons.icon(icon)}</button>`).join('')}</span>`;
 const styles = read('../share/site.css') + '\n' + read('../renderer/character-stats.css');
+// 絵の枠の比率は image-crop.js の ASPECT から作る。閲覧用は静的な CSS を埋め込むので、先に :root の変数を置く。
+const cropAspectCSS = `:root{${Object.entries(ImageCrop.CSS_VARS).map(([name, value]) => `${name}:${value}`).join(';')}}`;
+const pageStyles = cropAspectCSS + '\n' + styles;
 // 書き出しの見た目。基本は暗い配色のままで、明るいテンプレートは色と書体の変数だけを差し替える。
 // 図（関係図・地図）は作品の一部として暗い配色のまま置く。
 const TEMPLATES = ['standard', 'light', 'paper'];
 const TEMPLATE_CSS = {
-  light: ':root[data-template="light"]{color-scheme:light;--bg:#f6f7f9;--surface:#ffffff;--raise:#eef1f5;--fg:#1b1f26;--muted:#565e6c;--accent:#0b7666;--line:#dfe3e9;--control-line:#8a93a3}',
+  light: ':root[data-template="light"]{color-scheme:light;--bg:#f5f6f8;--surface:#ffffff;--raise:#eceff3;--fg:#1b1f26;--muted:#565e6c;--accent:#006a62;--accent-ink:#ffffff;--line:#dfe3e9;--control-line:#7f8796}',
   paper: ':root[data-template="paper"]{color-scheme:light;--bg:#f6f2e8;--surface:#fffdf7;--raise:#efe9dc;--fg:#2a2620;--muted:#6a6256;--accent:#8a5a2b;--line:#e0d8c6;--control-line:#9a8f7b;--body:"Yu Mincho","Hiragino Mincho ProN","MS PMincho",serif}'
 };
 const scriptHash = crypto.createHash('sha256').update(script, 'utf8').digest('base64');
@@ -51,12 +55,28 @@ function image(uri, alt, className, style = '') {
 function tagEntries(entry) {
   return Object.entries(entry.tags || {}).map(([key, values]) => [key, list(values)]);
 }
-function unset(entry) {
-  return list(entry.fields).some(field => field.open) ||
-    tagEntries(entry).some(([, values]) => !values.length || values.some(v => !nonblank(v))) ||
-    list(CharacterStats.itemsOf(entry.stats)).some(item => item.value == null) ||
-    (entry.kind === '出来事' && TimelineModel.yearNumber(entry) == null);
+// アプリのカードと同じく、名前の上・下・カード下部にステータスのハイライトとタグを出す。
+// カードの一覧（年表以外）だけに置き、詳細ダイアログには出さない（詳細に全文がある）。
+function cardStatus(entry, position) {
+  if (entry.kind !== '人物') return '';
+  const marks = list(entry.highlights).filter(mark => mark.place === position);
+  if (!marks.length) return '';
+  return `<span class="card-tags card-status card-status-${position}">${marks.map(mark =>
+    position === 'above' && mark.mode === 'text'
+      ? `<span class="card-status-epithet" title="${esc(mark.name)}">${esc(mark.text)}</span>`
+      : `<span class="card-tag card-status-chip"><span class="card-tag-key">${esc(mark.name)}</span><span>${esc(mark.text)}</span></span>`
+  ).join('')}</span>`;
 }
+function cardTags(entry, position) {
+  if (entry.kind !== '人物') return '';
+  const tags = Object.entries(entry.tags || {})
+    .filter(([key, values]) => list(values).length && (entry.tagPositions?.[key] || 'below') === position);
+  if (!tags.length) return '';
+  return `<span class="card-tags card-tags-${position}">${tags.map(([key, values]) =>
+    `<span class="card-tag"><span class="card-tag-key">${esc(key)}</span><span>${esc(values.map(value => CharacterUnits.format(value, key, entry.tagUnits?.[key])).join('、'))}</span></span>`
+  ).join('')}</span>`;
+}
+const cardSlot = (entry, position) => cardStatus(entry, position) + cardTags(entry, position);
 function disclosure(title, content, open = false) {
   return content ? `<details class="detail-group"${open ? ' open' : ''}><summary>${esc(title)}</summary><div class="detail-content">${content}</div></details>` : '';
 }
@@ -74,7 +94,7 @@ function renderGallery(entry) {
   if (entry.kind !== '人物') return '';
   const images = (Array.isArray(entry.images) && entry.images.length ? entry.images : entry.image ? [{ image: entry.image }] : []).filter(item => item && item.image);
   if (images.length < 2) return '';
-  return `<section class="entry-gallery-block"><h4>絵のバリエーション</h4><div class="entry-gallery" data-entry-gallery>${images.map((item, index) => `<figure data-gallery-item data-caption="${esc(item.caption || '')}">${image(item.image, `${entry.name || '名称未定'}の絵${index + 1}`, 'gallery-image')}${item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : ''}</figure>`).join('')}</div></section>`;
+  return `<section class="entry-gallery-block"><h4>イラストのバリエーション</h4><div class="entry-gallery" data-entry-gallery>${images.map((item, index) => `<figure data-gallery-item data-caption="${esc(item.caption || '')}">${image(item.image, `${entry.name || '名称未定'}のイラスト${index + 1}`, 'gallery-image')}${item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : ''}</figure>`).join('')}</div></section>`;
 }
 function renderEntry(entry, context) {
   const organizations = list(entry.organizationIds).map(key => context.orgs.get(key)).filter(Boolean);
@@ -94,12 +114,15 @@ function renderEntry(entry, context) {
   const uniform = context.section !== 'timeline';
   const hue = entry.kind === '人物' && Number.isFinite(entry.hue) ? ` style="--hue:${Number(entry.hue)}"` : '';
   const placeholder = uniform && !picture ? `<span class="entry-image entry-placeholder${entry.kind === '人物' ? ' person' : ''}"${hue} aria-hidden="true">${placeholderIcon || esc([...text(entry.name)][0] || '？')}</span>` : '';
-  const isUnset = unset(entry);
-  const cardStats = uniform && entry.kind === '人物' ? CharacterStats.renderLines(entry.cardStats) : '';
+  const isUnset = EntryUnset.has(entry);
+  const unsetCount = EntryUnset.count(entry);
+  const slots = uniform ? Object.fromEntries(['above', 'below', 'bottom'].map(position => [position, cardSlot(entry, position)])) : { above: '', below: '', bottom: '' };
+  const cardStats = uniform && entry.kind === '人物' ? CharacterStats.renderCardColumn(entry.cardStats, entry.cardStatsView === 'graph' ? 'graph' : 'lines') : '';
   const thumbCaption = entry.kind === '人物' ? (Array.isArray(entry.images) ? entry.images.find(item => item.image === entry.image)?.caption : '') || '' : '';
+  const reading = entry.reading || uniform ? `<span class="reading${entry.readingPlace === 'above' ? ' reading-above' : ''}">${esc(entry.reading)}</span>` : '';
   return `<article class="entry-card${place ? ' place-card' : ''}" id="${esc(id('entry', entry.id))}" data-record data-unset="${isUnset}"${thumbCaption ? ` data-image-caption="${esc(thumbCaption)}"` : ''}>
     ${picture || placeholder ? `<a class="picture-link" href="#${esc(id('entry', entry.id))}" aria-label="${esc(entry.name)}の詳細">${picture || placeholder}</a>` : ''}
-    <div class="card-head"><h3>${icon}${anchor('entry', entry)}</h3>${entry.reading || uniform ? `<p class="reading">${esc(entry.reading)}</p>` : ''}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</p>` : isUnset ? '<span class="unset">未定の項目あり</span>' : ''}</div>
+    <div class="card-head">${slots.above}<h3 class="card-title">${icon}<span class="name-text">${entry.readingPlace === 'above' ? reading : ''}${anchor('entry', entry)}${entry.readingPlace === 'above' ? '' : reading}</span></h3>${slots.below}${year}${entry.desc || uniform ? `<p class="prose description">${esc(entry.desc)}</p>` : ''}${uniform ? `<p class="unset-slot">${isUnset ? `<span class="unset">未定 ${unsetCount}</span>` : ''}</p>` : isUnset ? `<span class="unset">未定 ${unsetCount}</span>` : ''}${slots.bottom}</div>
     ${cardStats ? `<div class="card-stats">${cardStats}</div>` : ''}
     <details class="entry-detail" data-entry-detail><summary>詳細を読む</summary><div class="entry-body">
       ${renderGallery(entry)}${renderTags(entry)}${sections}${renderFields(entry)}${stats ? `<div class="stats-wrap">${stats}</div>` : ''}
@@ -126,7 +149,7 @@ function renderFilters(entries, section, label) {
     <details class="tag-filter" open><summary>タグで絞り込み <span data-selected>選択 0</span></summary>
       <p class="filter-hint">同じ分類は「いずれか」、分類間と検索は「すべて」に一致。</p>
       <div class="facets">${[...facets].map(([key, values]) => facet(key, values)).join('')}
-      ${entries.some(unset) ? `<fieldset><legend>設定状況</legend><label class="filter-option"><input type="checkbox" data-unset-filter><span>未定の項目あり</span><span class="facet-count" data-facet-count></span></label></fieldset>` : ''}</div>
+      ${entries.some(entry => EntryUnset.has(entry)) ? `<fieldset><legend>設定状況</legend><label class="filter-option"><input type="checkbox" data-unset-filter><span>未定の項目あり</span><span class="facet-count" data-facet-count></span></label></fieldset>` : ''}</div>
     </details><p class="result-count" role="status" aria-live="polite" data-result></p>
   </div>`;
 }
@@ -172,11 +195,37 @@ function renderDiagrams(diagrams, type, label) {
   </figure>`).join('')}</div>`;
 }
 
+function renderStories(stories, context) {
+  return `<div class="story-export-list">${stories.map(st => {
+    const refLinks = list(st.refs).map(rid => {
+      const e = context.entries.get(rid);
+      if (e) return anchor('entry', e);
+      const o = context.orgs.get(rid);
+      return o ? anchor('org', o) : '';
+    }).filter(Boolean);
+    const beats = list(st.beats);
+    const scenes = list(st.scenes);
+    const beatsHtml = beats.length
+      ? disclosure(`構成・プロット（${beats.length}）`, `<ol class="story-export-beats">${beats.map(b => `<li>${b.act ? `<span class="story-export-act">${esc(b.act)}</span> ` : ''}<strong>${esc(b.title)}</strong>${b.body ? `<p class="prose">${esc(b.body)}</p>` : ''}</li>`).join('')}</ol>`, st.kind === 'プロット')
+      : '';
+    const scenesHtml = scenes.length
+      ? `<div class="story-export-scenes">${scenes.map(sc => `<section class="story-export-scene"><h4>${esc(sc.title)}</h4><div class="story-export-prose">${text(sc.body).split(/\r?\n/).map(line => line.trim() ? `<p>${esc(line)}</p>` : '<p class="story-export-gap"><br></p>').join('')}</div></section>`).join('')}</div>`
+      : '';
+    return `<article class="story-export-card" id="${esc(id('story', st.id))}">
+      <header class="story-export-head"><p class="muted story-export-meta">${esc(st.kind)} / ${esc(st.status)}</p><h3>${esc(st.title)}</h3></header>
+      ${st.summary ? `<p class="prose story-export-summary">${esc(st.summary)}</p>` : ''}
+      ${refLinks.length ? `<ul class="link-list story-export-refs">${refLinks.map(item => `<li>${item}</li>`).join('')}</ul>` : ''}
+      ${beatsHtml}${scenesHtml}
+    </article>`;
+  }).join('')}</div>`;
+}
+
 function renderSite(model = {}) {
   const entries = list(model.entries).filter(entry => ['人物', '用語', '場所', '出来事'].includes(entry.kind));
   const organizations = list(model.organizations);
   const graphs = list(model.graphs).filter(graph => nonblank(graph.svg));
   const maps = list(model.maps).filter(map => nonblank(map.svg));
+  const stories = list(model.stories);
   const context = {entries: new Map(entries.map(entry => [entry.id, entry])), orgs: new Map(organizations.map(org => [org.id, org])), calendar: model.calendar};
   const categories = [
     {id: 'characters', label: 'キャラ', kind: '人物'},
@@ -184,7 +233,8 @@ function renderSite(model = {}) {
     {id: 'graphs', label: '関係図', items: graphs},
     {id: 'terms', label: '用語', kind: '用語'},
     {id: 'places', label: '場所', kind: '場所'},
-    {id: 'timeline', label: '年表', kind: '出来事'}
+    {id: 'timeline', label: '年表', kind: '出来事'},
+    {id: 'stories', label: '小説・プロット', items: stories}
   ].map(category => ({...category, items: category.items || entries.filter(entry => entry.kind === category.kind)}))
     .filter(category => category.items.length || (category.id === 'places' && maps.length));
   const title = model.title || '無題の世界';
@@ -199,6 +249,7 @@ function renderSite(model = {}) {
       content += `<div class="catalog-body">${renderFilters(category.items, category.id, category.label)}<div class="catalog-list"><div class="empty-result" data-empty hidden><p>条件に一致する項目はありません。</p><button type="button" data-clear>条件を解除して全件を表示</button></div>${listing}</div></div>`;
     } else if (category.id === 'organizations') content = renderOrganizations(organizations, entries, context.orgs);
     else if (category.id === 'graphs') content = renderDiagrams(graphs, 'graph', '関係図');
+    else if (category.id === 'stories') content = renderStories(stories, local);
     if (category.id === 'places' && maps.length) content += `<div class="maps-section"><h3>地図</h3>${renderDiagrams(maps, 'map', '地図')}</div>`;
     const count = category.items.length ? `${category.items.length}件` : `地図 ${maps.length}件`;
     return `<section class="catalog-section" id="${category.id}" data-panel aria-labelledby="${category.id}-heading"${category.kind && category.items.length ? ' data-catalog' : ''}><div class="section-heading"><h2 id="${category.id}-heading">${category.label}</h2><span>${count}</span><a href="#overview">概要へ</a></div>${content}</section>`;
@@ -213,7 +264,7 @@ function renderSite(model = {}) {
     placed.add(n); return ` ${attr}="${imageTable[n]}" data-ouip-id="${n}"`;
   };
   return (`<!doctype html>
-<html lang="ja" data-template="${esc(template)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${styles}${templateStyles}</style></head>
+<html lang="ja" data-template="${esc(template)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${pageStyles}${templateStyles}</style></head>
 <body><a class="skip-link" href="#content">資料本文へ</a>
 <nav class="site-nav" aria-label="資料の分類"><span class="nav-title">${esc(title)}${model.author ? `<span class="nav-author"> ・ ${esc(model.author)}</span>` : ''}</span><a href="#overview" data-tab-link>${Icons.icon(TAB_ICONS.overview)}概要</a>${categories.map(category => `<a href="#${category.id}" data-tab-link>${Icons.icon(TAB_ICONS[category.id])}${category.label}<span class="count">${category.items.length || maps.length}</span></a>`).join('')}<label class="nav-search" data-tools hidden>検索<input type="search" data-nav-search placeholder="名前・読み・本文" autocomplete="off"></label>${cardSizeControl()}</nav>
 <main id="content"><header class="world-header" id="overview" data-panel><div class="world-heading"><p class="document-label">世界設定資料</p><h1>${esc(title)}</h1>${model.author ? `<p class="world-author">作者 ${esc(model.author)}</p>` : ''}${model.note ? `<p class="world-note prose">${esc(model.note)}</p>` : ''}</div><div class="world-aside">${image(model.image, `${title}の画像`, 'world-image')}${categories.length ? `<nav class="world-index" aria-label="資料の索引">${categories.map(category => `<a href="#${category.id}"><span>${category.label}</span><span>${category.items.length || maps.length}</span></a>`).join('')}</nav>` : ''}</div></header>${sectionHTML}</main>

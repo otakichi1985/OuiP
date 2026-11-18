@@ -1,15 +1,17 @@
 "use strict";
 // 渡された年表データと表示状態だけでHTMLを組み立てる。DOM・保存は扱わない。
 (function (root, factory) {
-  const model = typeof module === 'object' && module.exports ? require('./timeline-model') : root.TimelineModel;
-  const api = factory(model);
-  if (typeof module === 'object' && module.exports) module.exports = api;
+  const isNode = typeof module === 'object' && module.exports;
+  const api = factory(
+    isNode ? require('./timeline-model') : root.TimelineModel,
+    isNode ? require('./entry-unset') : root.EntryUnset
+  );
+  if (isNode) module.exports = api;
   else root.TimelineView = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, EntryUnset) {
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
   function render(list, { world, entries, references = [], settingsOpen = false }) {
     const byId = id => references.find(entry => entry.id === id);
-    const openCount = entry => (entry.fields || []).filter(field => field.open).length;
     const eras = world.eras || [];
     const settings = model.settings(world.timeline);
     const all = Array.isArray(entries) ? entries.filter(e => e.kind === '出来事') : list;
@@ -29,7 +31,7 @@
       const sharedLabel = settings.yearPosition === 'side' && first.year?.label && group.entries.every(e => e.year?.label === first.year.label) ? first.year.label : '';
       h += `<li class="year-group ${n == null ? 'noyear' : ''}" draggable="true" tabindex="0" data-timeline-year="${key}" aria-label="${esc(sharedLabel)}${name}の出来事" aria-describedby="timeline-drag-hint"><div class="yr year-head">${sharedLabel ? `<span class="year-label">${esc(sharedLabel)}</span>` : ''}<span class="year-number">${name}</span><div class="year-actions"><button class="b quiet sm" type="button" data-timeline-up="${key}" aria-label="${name}を上へ移動" title="上へ移動" ${gi === 0 ? 'disabled' : ''}>↑</button><button class="b quiet sm" type="button" data-timeline-down="${key}" aria-label="${name}を下へ移動" title="下へ移動" ${gi === groups.length - 1 ? 'disabled' : ''}>↓</button></div></div><ol class="year-events">`;
       for (const e of group.entries) {
-        const oc = openCount(e);
+        const oc = EntryUnset.count(e, world);
         h += `<li class="ev ${n == null ? 'noyear' : ''}"><div class="body" title="${esc(model.yearText(e, world.calendar))}">${e.year?.label && !sharedLabel ? `<span class="year-label">${esc(e.year.label)}${settings.yearPosition === 'side' ? ` ${name}` : ''}</span>` : ''}<button class="term t" type="button" data-entry="${esc(e.id)}">${esc(e.name)}</button> ${oc ? `<span class="pill open">未定 ${oc}</span>` : ''}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}
           <div class="chips" style="margin-top:4px">${(e.refs || []).filter(byId).map(r => `<button class="chipbtn" type="button" data-entry="${esc(r)}">${esc(byId(r).name)}</button>`).join('')}</div></div></li>`;
       }

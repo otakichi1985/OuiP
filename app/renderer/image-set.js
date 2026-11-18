@@ -40,5 +40,9 @@
     if (entry.kind === "人物" && entry.icon) return entry.icon;
     return entry.image || null;
   }
-  return Object.freeze({ list, thumbnail, paths, iconSource });
+  // ボードの項目が選んだ画像。受け取った共有ボードだけが持つ。消えた画像なら通常の画像へ戻す。
+  function chosen(entry, image) {
+    return image && list(entry).some(item => item.image === image) ? image : entry?.image || null;
+  }
+  return Object.freeze({ list, thumbnail, paths, iconSource, chosen });
 });

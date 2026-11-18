@@ -18,7 +18,7 @@ const DiagramModel = require('../renderer/diagram-model');
 const ExportImage = require('./export-image');
 // 40MB/64MBの固定上限は撤廃し、書き出し前の警告と、事故防止のための高い安全上限だけ残す。
 const LIMITS = Object.freeze({items:500, diagrams:30, images:512*1024*1024, html:512*1024*1024, warn:100*1024*1024});
-const fail = message => {throw Error('閲覧用ファイル: '+message);};
+const fail = message => {throw Error('閲覧用ページ: '+message);};
 const own = (value,key) => Object.prototype.hasOwnProperty.call(value,key);
 function object(value) {if(!value || typeof value !== 'object' || Array.isArray(value)) fail('入力の形式が不正です');return value;}
 function text(value,max=100000) {if(typeof value !== 'string' || value.length>max) fail('文字が不正、または長すぎます');return value;}
@@ -62,20 +62,31 @@ function entry(input,entryIds,organizationIds) {
 }
 function project(state,selection) {
   object(selection);
-  if(Object.keys(selection).some(key=>!['title','includeIntro','template','entryIds','organizationIds','graphIds','mapIds'].includes(key)))fail('未対応の共有条件です');
+  if(Object.keys(selection).some(key=>!['title','includeIntro','template','entryIds','organizationIds','graphIds','mapIds','storyIds'].includes(key)))fail('未対応の共有条件です');
   if(typeof selection.includeIntro!=='boolean')fail('概要の掲載条件が不正です');
   const template=selection.template===undefined?'standard':selection.template;
   if(!TEMPLATES.includes(template))fail('テンプレートが不正です');
-  const entryIds=ids(selection.entryIds),organizationIds=ids(selection.organizationIds),graphIds=ids(selection.graphIds,LIMITS.diagrams),mapIds=ids(selection.mapIds,LIMITS.diagrams);
-  if(entryIds.size+organizationIds.size>LIMITS.items||graphIds.size+mapIds.size>LIMITS.diagrams)fail('項目は合計500件、図は合計30件以下にしてください');
-  if(!entryIds.size&&!organizationIds.size&&!graphIds.size&&!mapIds.size&&!selection.includeIntro)fail('掲載する内容を選んでください');
+  const entryIds=ids(selection.entryIds),organizationIds=ids(selection.organizationIds),storyIds=selection.storyIds===undefined?new Set():ids(selection.storyIds,LIMITS.items),graphIds=ids(selection.graphIds,LIMITS.diagrams),mapIds=ids(selection.mapIds,LIMITS.diagrams);
+  if(entryIds.size+organizationIds.size+storyIds.size>LIMITS.items||graphIds.size+mapIds.size>LIMITS.diagrams)fail('項目は合計500件、図は合計30件以下にしてください');
+  if(!entryIds.size&&!organizationIds.size&&!storyIds.size&&!graphIds.size&&!mapIds.size&&!selection.includeIntro)fail('掲載する内容を選んでください');
   const world=state.world;
   const entries=selected(state.entries,entryIds).map(e=>{
     const out=entry(e.kind==='人物'?{...e,stats:StatusModel.resolve(e,state.world)}:e,entryIds,organizationIds);
     if(e.kind==='人物'){
+      const place=e.readingPlace||world.readingPlace||'below';
+      if(place==='above')out.readingPlace='above'; else delete out.readingPlace;
       // カードの右側には「ステータスの中」の項目だけを出す（名前の上・下などへ出した項目を二重に出さない）。
       const card=StatusModel.resolve(e,state.world,{surface:'card'});
       if(Stats.blockList(card).length) out.cardStats=Stats.validateBlocks(card);
+      if(e.statusCardView==='graph') out.cardStatsView='graph';
+      // 名前の上・下・カード下部に出す項目。閲覧用のカードでも同じ位置に出す。
+      const marks=StatusModel.highlights(e,state.world).map(m=>({
+        name:text(m.name,1000),
+        mode:['text','number','rough'].includes(m.mode)?m.mode:'text',
+        text:text(m.text,1000),
+        place:['above','below','bottom'].includes(m.place)?m.place:'below'
+      }));
+      if(marks.length) out.highlights=marks;
     }
     return out;
   });
@@ -97,9 +108,19 @@ function project(state,selection) {
     return {...base,members,organizationIds:orgs,positions:positions({...original,...groupPositions},allowed),groupDisplay:g.groupDisplay==='nodes'?'nodes':'frames',relations:array((g.relations||[]).filter(r=>allowed.has(r.a)&&allowed.has(r.b)),1000).map(r=>({a:r.a,b:r.b,label:text(r.label||'',1000),style:['family','friend','rival'].includes(r.style)?r.style:'friend'}))};
   });
   const maps=selected(world.maps||[],mapIds).map(m=>({id:id(m.id),name:text(m.name,1000),image:m.image?text(m.image,200):null,positions:positions(m.positions,places)}));
-  // 作者名は、概要の「設定シートや閲覧用ファイルに載せる名前」として入れたもの。
-  const model={title:text(selection.title,1000).trim(),author:text(world.author||'',200).trim(),template,entries,organizations,graphs,maps};
-  if(!model.title)fail('閲覧用ファイルの名前を入れてください');
+  const stories=selected(state.stories||[],storyIds).map(st=>({
+    id:id(st.id),
+    title:text(st.title,120).trim()||'無題',
+    kind:st.kind==='小説'?'小説':'プロット',
+    status:['構想','執筆中','完成'].includes(st.status)?st.status:'構想',
+    summary:text(st.summary||''),
+    refs:array(st.refs||[],200).filter(key=>entryIds.has(key)||organizationIds.has(key)),
+    beats:array(st.beats||[],200).map(b=>({id:id(b.id),act:text(b.act||'',40),title:text(b.title||'',120),body:text(b.body||'',8000),status:['構想','確定','未定'].includes(b.status)?b.status:'構想'})),
+    scenes:array(st.scenes||[],200).map(sc=>({id:id(sc.id),title:text(sc.title||'',120),body:text(sc.body||'',100000),refs:array(sc.refs||[],200).filter(key=>entryIds.has(key)||organizationIds.has(key))})),
+  }));
+  // 作者名は、概要の「画像や閲覧用ページに載せる名前」として入れたもの。
+  const model={title:text(selection.title,1000).trim(),author:text(world.author||'',200).trim(),template,entries,organizations,graphs,maps,...(stories.length?{stories}:{})};
+  if(!model.title)fail('閲覧用ページの名前を入れてください');
   if(selection.includeIntro) {model.note=text(world.note||'');if(world.image)model.image=text(world.image,200);}
   if(entries.some(e=>e.kind==='出来事')) {
     model.calendar=text(world.calendar||'',1000);
@@ -139,7 +160,7 @@ class SiteExport {
   }
   // 閲覧用HTML・共有ボード: 長辺1600px以内のJPEG（透過は白）。
   image(rel,label) {return this.convert(rel,label,ExportImage.toShareJPEG,'jpeg');}
-  // 設定シート: 撮影するので透過を残したまま縮める。
+  // 画像の書き出し: 撮影するので透過を残したまま縮める。
   sheetImage(rel,label) {return this.convert(rel,label,ExportImage.toSheetPNG,'png');}
   // info.kept: 変換できず元のまま入れた画像（WebP）の枚数。
   build(selection,info={},onProgress=()=>{}) {return this.store.serial(async()=>{

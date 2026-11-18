@@ -8,35 +8,41 @@
   else root.OuipTheme = api.create(root);
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const KEY = 'ouip.theme', ACCENT_KEY = 'ouip.accent', BASE_KEY = 'ouip.base', CHOICES = ['auto', 'light', 'dark'];
-  // ベース色。最初の墨紺はstyle.cssの既定と同じ値（試験で一致を確かめる）。どのベースでも、本文・補足・入力の境界・状態色・用意した差し色が基準を満たすよう手で合わせた。
+  // 高コントラストは外観モードではなく、同じモードの変種として別に覚える（auto は OS の設定に従う）。
+  const CONTRAST_KEY = 'ouip.contrast', CONTRAST = ['auto', 'normal', 'more'];
+  // ベース色。最初の「チャコール」はstyle.cssの既定と同じ値（試験で一致を確かめる。2026-11-17に既定をウォールナットからチャコールへ替えた）。どのベースでも、本文・補足・入力の境界・状態色・用意した差し色が基準を満たすよう手で合わせた。
+  // 名前は漢字の色名を避け、利用者が探せるカタカナの色名にする（2026-10-29、おたきちの指摘）。
   const BASES = [
-    { id: 'sumikon', name: '墨紺',
+    { id: 'charcoal', name: 'チャコール',
       dark: { bg: '#0f1115', surface: '#15181d', raise: '#1b1f26', line: '#232832', canvas: '#0c0e11', fg: '#e4e6ec', muted: '#a0a7b6', 'control-line': '#707c90' },
       light: { bg: '#f5f6f8', surface: '#ffffff', raise: '#eceff3', line: '#dfe3e9', canvas: '#fbfcfd', fg: '#1b1f26', muted: '#565e6c', 'control-line': '#7f8796' } },
-    { id: 'sumi', name: '墨',
+    { id: 'sumikon', name: 'ウォールナット',
+      dark: { bg: '#241c15', surface: '#2e261e', raise: '#393027', line: '#393129', canvas: '#1a1410', fg: '#c3bdb3', muted: '#a9a49b', 'control-line': '#857f79' },
+      light: { bg: '#f1ece4', surface: '#e9e4dc', raise: '#e1dbd3', line: '#dcd6cf', canvas: '#faf6f0', fg: '#3b3129', muted: '#615952', 'control-line': '#605a54' } },
+    { id: 'sumi', name: 'ブラック',
       dark: { bg: '#111111', surface: '#181818', raise: '#202020', line: '#2a2a2a', canvas: '#0c0c0c', fg: '#e8e8e8', muted: '#a8a8a8', 'control-line': '#7a7a7a' },
       light: { bg: '#f5f5f4', surface: '#ffffff', raise: '#ececeb', line: '#e0e0de', canvas: '#fbfbfa', fg: '#1c1c1c', muted: '#5c5c5a', 'control-line': '#83837f' } },
-    { id: 'kinari', name: '生成り',
+    { id: 'kinari', name: 'ベージュ',
       dark: { bg: '#14120f', surface: '#1b1814', raise: '#24201b', line: '#2f2a23', canvas: '#100e0b', fg: '#ede7dc', muted: '#ada597', 'control-line': '#80776a' },
       light: { bg: '#f6f2ea', surface: '#fffdf8', raise: '#f1ece3', line: '#e1d9cb', canvas: '#fbf8f2', fg: '#24201a', muted: '#5f584c', 'control-line': '#857c6d' } },
-    { id: 'fukamidori', name: '深緑',
+    { id: 'fukamidori', name: 'フォレスト',
       dark: { bg: '#0d1311', surface: '#131a17', raise: '#1a231f', line: '#22302a', canvas: '#0a0f0d', fg: '#e2ebe6', muted: '#9eaca5', 'control-line': '#6c7f76' },
       light: { bg: '#f1f6f3', surface: '#fcfefd', raise: '#e6eee9', line: '#d6e1da', canvas: '#f8fbf9', fg: '#1a221e', muted: '#53615a', 'control-line': '#7a8a82' } },
-    { id: 'shikon', name: '紫紺',
+    { id: 'shikon', name: 'パープル',
       dark: { bg: '#121019', surface: '#191622', raise: '#211d2c', line: '#2b2639', canvas: '#0e0c14', fg: '#e8e4f0', muted: '#a8a2b8', 'control-line': '#776f8c' },
       light: { bg: '#f5f3f9', surface: '#fefdff', raise: '#efebf5', line: '#dfd8ea', canvas: '#fbfafd', fg: '#1f1b28', muted: '#5c5669', 'control-line': '#857e94' } },
   ];
   const baseOf = id => BASES.find(b => b.id === id) || BASES[0];
-  // 差し色の字を確かめる地（そのベース・配色の地と面）。
-  const groundFor = (theme, base) => ({ bg: baseOf(base)[theme].bg, surface: baseOf(base)[theme].surface });
+  // 差し色の字を確かめる地（そのベース・配色の地と面）。補足の字が薄い面の上でも読めるように、補足の色も持つ。
+  const groundFor = (theme, base) => ({ bg: baseOf(base)[theme].bg, surface: baseOf(base)[theme].surface, muted: baseOf(base)[theme].muted });
   const GROUND = { dark: groundFor('dark'), light: groundFor('light') };
-  // 用意した差し色。配色ごとに手で合わせた値（青磁はstyle.cssの既定と同じ）。
+  // 用意した差し色。配色ごとに手で合わせた値（青緑はstyle.cssの既定と同じ。2026-11-17に既定をアンバーからグリーンへ替えた）。
   const PRESETS = [
-    { id: 'celadon', name: '青磁', dark: '#5fd0bb', light: '#0b7666' },
-    { id: 'indigo', name: '藍', dark: '#7fb2ff', light: '#1f5bd0' },
-    { id: 'violet', name: '菫', dark: '#b89dff', light: '#6a3fd0' },
-    { id: 'rose', name: '紅', dark: '#ff8fb1', light: '#c0245c' },
-    { id: 'slate', name: '銀鼠', dark: '#c3cad6', light: '#3e4552' },
+    { id: 'amber', name: 'アンバー', dark: '#e4ad44', light: '#8c5008' },
+    { id: 'celadon', name: 'グリーン', dark: '#5fd0bb', light: '#006a62' },
+    { id: 'indigo', name: 'ブルー', dark: '#7fb2ff', light: '#315bae' },
+    { id: 'violet', name: 'パープル', dark: '#b89dff', light: '#6250ab' },
+    { id: 'rose', name: 'ピンク', dark: '#ff8fb1', light: '#a13b5f' },
   ];
   const resolve = (choice, prefersLight) => choice === 'light' || choice === 'dark' ? choice : prefersLight ? 'light' : 'dark';
 
@@ -82,7 +88,9 @@
     const C = Math.min(base.C, dark ? 0.14 : 0.16);
     let out = fit({ L, C, H: base.H });
     for (let i = 0; i < 60; i++) {
-      const ok = dark ? contrast(out, g.surface) >= NEED && contrast(out, g.bg) >= NEED : contrast(out, g.bg) >= NEED && contrast(out, '#ffffff') >= NEED;
+      // 薄い面（soft）の上でも読める明るさまで寄せる。ライトの地は少し暗いので、ここが一番きつい条件になる。
+      const soft = mix(out, g.surface, theme === 'dark' ? 0.2 : 0.02);
+      const ok = dark ? contrast(out, g.surface) >= NEED && contrast(out, g.bg) >= NEED : contrast(out, g.bg) >= NEED && contrast(out, '#ffffff') >= NEED && contrast(out, soft) >= NEED;
       if (ok) break;
       L += dark ? 0.01 : -0.01; out = fit({ L, C, H: base.H });
     }
@@ -92,19 +100,20 @@
   function accentSet(accent, theme, baseId) {
     const g = groundFor(theme, baseId), ink = theme === 'dark' ? fit({ ...toOklch(accent), L: 0.2, C: 0.03 }) : '#ffffff';
     let t = theme === 'dark' ? 0.2 : 0.16, soft = mix(accent, theme === 'dark' ? g.bg : g.surface, t);
-    while (contrast(accent, soft) < NEED && t > 0.02) { t -= 0.02; soft = mix(accent, theme === 'dark' ? g.bg : g.surface, t); }
+    // 差し色と補足の字の両方が薄い面の上で基準を満たすまで、薄い面を地へ寄せる。
+    while ((contrast(accent, soft) < NEED || (g.muted && contrast(g.muted, soft) < NEED)) && t > 0.02) { t -= 0.02; soft = mix(accent, theme === 'dark' ? g.bg : g.surface, t); }
     return { accent, ink, soft };
   }
-  // 選択（用意した色のid、または#rrggbb）から、その配色で使う値を決める。既定の青磁はnull（CSSの値を使う）。
-  // ベースが既定でないときは、青磁でも薄い面をそのベースから作り直す。
-  function accentFor(choice, theme, baseId = 'sumikon') {
+  // 選択（用意した色のid、または#rrggbb）から、その配色で使う値を決める。既定の青緑はnull（CSSの値を使う）。
+  // ベースが既定でないときは、既定の差し色でも薄い面をそのベースから作り直す。
+  function accentFor(choice, theme, baseId = BASES[0].id) {
     const plain = baseOf(baseId).id === BASES[0].id;
     if ((!choice || choice === 'celadon') && plain) return null;
     const preset = PRESETS.find(p => p.id === (choice || 'celadon'));
     if (preset) return accentSet(preset[theme], theme, baseId);
     return hex(choice) ? accentSet(derive(choice, theme, baseId), theme, baseId) : accentFor('celadon', theme, baseId);
   }
-  // ベースの値をCSSのトークンにする。浮く面（ヘッダー・重ねた操作）は地と一段上の色を半透明にして作る。既定の墨紺はnull（CSSの値を使う）。
+  // ベースの値をCSSのトークンにする。浮く面（ヘッダー・重ねた操作）は地と一段上の色を半透明にして作る。既定のベースはnull（CSSの値を使う）。
   function baseVars(baseId, theme) {
     const b = baseOf(baseId);
     if (b.id === BASES[0].id) return null;
@@ -116,16 +125,20 @@
 
   function create(win) {
     const media = win.matchMedia ? win.matchMedia('(prefers-color-scheme: light)') : { matches: false, addEventListener() {} };
+    const contrastMedia = win.matchMedia ? win.matchMedia('(prefers-contrast: more)') : { matches: false, addEventListener() {} };
     const memory = {}; // 保存できない環境でも、開いている間は選んだものを保つ。
     const load = (key, ok, fallback) => { if (key in memory) return memory[key]; try { const v = win.localStorage.getItem(key); if (ok(v)) return v; } catch (_) { /* 下へ */ } return fallback; };
     const save = (key, value) => { memory[key] = value; try { win.localStorage.setItem(key, value); } catch (_) { /* 覚えられなくても今回は切り替える */ } };
     const read = () => load(KEY, v => CHOICES.includes(v), 'auto');
     const readAccent = () => load(ACCENT_KEY, v => PRESETS.some(p => p.id === v) || !!hex(v), 'celadon');
     const readBase = () => load(BASE_KEY, v => BASES.some(b => b.id === v), BASES[0].id);
+    const readContrast = () => load(CONTRAST_KEY, v => CONTRAST.includes(v), 'auto');
+    const contrastMode = () => { const c = readContrast(); return c === 'auto' ? (contrastMedia.matches ? 'more' : 'normal') : c; };
     function apply() {
       const choice = read(), el = win.document.documentElement;
       el.dataset.themeMode = choice; // ボタンのdata-theme-choiceと名前を分ける（htmlが押したボタン扱いにならないように）
       el.dataset.theme = resolve(choice, media.matches);
+      el.dataset.contrast = contrastMode();
       const base = readBase(), set = accentFor(readAccent(), el.dataset.theme, base), vars = baseVars(base, el.dataset.theme) || {}, style = el.style;
       el.dataset.base = base;
       if (style) {
@@ -137,9 +150,11 @@
     function set(choice) { if (CHOICES.includes(choice)) save(KEY, choice); return apply(); }
     function setBase(id) { if (BASES.some(b => b.id === id)) save(BASE_KEY, id); return apply(); }
     function setAccent(choice) { if (PRESETS.some(p => p.id === choice) || hex(choice)) save(ACCENT_KEY, hex(choice) || choice); return apply(); }
+    function setContrast(v) { if (CONTRAST.includes(v)) save(CONTRAST_KEY, v); return apply(); }
     media.addEventListener('change', apply);
+    contrastMedia.addEventListener('change', () => { if (readContrast() === 'auto') apply(); });
     apply();
-    return { read, set, readAccent, setAccent, readBase, setBase, apply, accentFor, derive, contrast, baseOf, CHOICES, PRESETS, BASES };
+    return { read, set, readAccent, setAccent, readBase, setBase, readContrast, setContrast, contrast, contrastMode, apply, accentFor, derive, baseOf, CHOICES, CONTRAST, PRESETS, BASES };
   }
-  return { resolve, create, derive, accentSet, accentFor, baseVars, baseOf, groundFor, contrast, CHOICES, PRESETS, BASES, GROUND, KEY, ACCENT_KEY, BASE_KEY };
+  return { resolve, create, derive, accentSet, accentFor, baseVars, baseOf, groundFor, contrast, CHOICES, CONTRAST, PRESETS, BASES, GROUND, KEY, ACCENT_KEY, BASE_KEY, CONTRAST_KEY };
 });

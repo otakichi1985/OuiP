@@ -9,6 +9,8 @@ const app = fs.readFileSync(path.join(__dirname, '../renderer/app.js'), 'utf8');
 class Element {
   constructor(tag='div', dataset={}) { this.tag=tag; this.dataset=dataset; this.children=[]; this.parentElement=null; this.classes=new Set(); this.value=''; this.attrs={}; this.events=[];
     this.classList={add:(...a)=>a.forEach(x=>this.classes.add(x)),remove:(...a)=>a.forEach(x=>this.classes.delete(x))}; }
+  get className(){ return [...this.classes].join(' '); }
+  set className(v){ this.classes=new Set(String(v).split(/\s+/).filter(Boolean)); }
   get isConnected(){ return !!this.closest('#ef'); }
   get firstChild(){return this.children[0]||null;}
   get nextSibling(){if(!this.parentElement)return null;const a=this.parentElement.children;return a[a.indexOf(this)+1]||null;}
@@ -47,20 +49,37 @@ function harness(type='trow') {
   return {form,list,a,b,c,doc,win,emit,makeRow,observe:()=>observer(),installation};
 }
 
-for(const type of ['trow','section','frow'])test(`${type}: 上下/DNDで現DOMだけ移動し入力・選択・未定・文章開閉を保持`,()=>{
+for(const type of ['trow','section','frow'])test(`${type}: 並べ替えで現DOMだけ移動し入力・選択・未定・文章開閉を保持`,()=>{
   const h=harness(type), inputs=h.b.querySelectorAll('input');if(type==='section')h.b.open=false;
   const snapshot=inputs.map(x=>[x.value,x.checked,x.disabled]);
-  h.emit('click',h.b.querySelector('[data-editor-order="up"]'));
-  assert.deepEqual(h.list.children.map(r=>r.name),['b','a','c']);
-  assert.equal(h.b.querySelector('[data-editor-order="up"]').disabled,true);
-  assert.equal(h.b.querySelector('[data-editor-order="handle"]').focused,true);
+  if(type==='section'){
+    // 見出しは縦一列なので、↑↓でも動く。
+    h.emit('click',h.b.querySelector('[data-editor-order="up"]'));
+    assert.deepEqual(h.list.children.map(r=>r.name),['b','a','c']);
+    assert.equal(h.b.querySelector('[data-editor-order="up"]').disabled,true);
+    assert.equal(h.b.querySelector('[data-editor-order="handle"]').focused,true);
+  } else {
+    // 段組み（横に折り返す）の行は↑↓を持たず、番号とつまみで示す。
+    assert.equal(h.b.querySelector('[data-editor-order="up"]'),null);
+    assert.equal(h.b.querySelector('[data-editor-order="down"]'),null);
+    assert.equal(h.b.querySelector('.editor-order-no').textContent,'2');
+    h.emit('dragstart',h.b.querySelector('[data-editor-order="handle"]'));
+    const over=h.emit('dragover',h.a,{clientY:10});assert.equal(over.prevented,true);
+    h.emit('drop',h.a,{clientY:10});
+    assert.deepEqual(h.list.children.map(r=>r.name),['b','a','c']);
+    assert.equal(h.b.querySelector('.editor-order-no').textContent,'1');
+    h.form.events.length=0;
+  }
+  assert.deepEqual(h.b.querySelectorAll('input'),inputs);assert.deepEqual(inputs.map(x=>[x.value,x.checked,x.disabled]),snapshot);
+  if(type==='section')assert.equal(h.b.open,false);
   const start=h.emit('dragstart',h.b.querySelector('[data-editor-order="handle"]'));assert.equal(start.stopped,true);
   assert.deepEqual(start.dataTransfer.data,['text/x-ouip-editor-order',type]);
   const drop=h.emit('drop',h.c,{clientY:80});assert.equal(drop.stopped,true);
   assert.deepEqual(h.list.children.map(r=>r.name),['a','c','b']);
   assert.deepEqual(h.b.querySelectorAll('input'),inputs);assert.deepEqual(inputs.map(x=>[x.value,x.checked,x.disabled]),snapshot);
   if(type==='section')assert.equal(h.b.open,false);
-  assert.equal(h.form.events.length,2);assert.equal(h.form.events[0].type,'change');
+  if(type!=='section')assert.equal(h.b.querySelector('.editor-order-no').textContent,'3');
+  assert.equal(h.form.events.length,type==='section'?2:1);assert.equal(h.form.events[0].type,'change');
 });
 test('MutationObserverで新規行を補充、削除後の上下状態と冪等性',()=>{
   const h=harness('section');const d=h.makeRow('d');h.observe();h.observe();

@@ -110,6 +110,15 @@ function electronHarness(c) {
       } catch (error) { finish({ error: error.stack }, 1); }
     });
   });
+  // メインのウィンドウを作るときから隠す（作った直後に隠すと、主モニターに一瞬出る）。OUIP_UI_AT=x,y があればそこに置く。
+  // electron の部品は書き換えられないので、本体が require('electron') で読むときだけ、差し替えた写しを渡す。
+  const Module = require('node:module'), electron = require('electron'), Window = electron.BrowserWindow;
+  const at = (process.env.OUIP_UI_AT || '').split(',').map(Number), place = at.length === 2 && at.every(Number.isFinite);
+  class HiddenWindow extends Window { constructor(options = {}) { super({ ...options, show: false, ...(place ? { x: at[0], y: at[1] } : {}) }); } }
+  const patched = { BrowserWindow: HiddenWindow };
+  for (const key of Object.keys(electron)) if (key !== 'BrowserWindow') Object.defineProperty(patched, key, { enumerable: true, get: () => electron[key] });
+  const load = Module._load;
+  Module._load = function (request, ...rest) { return request === 'electron' ? patched : load.call(this, request, ...rest); };
   require(c.main);
 }
 
@@ -281,12 +290,12 @@ test('実mainの移行の試し用データ: 選択→起動で旧形式を作�
       outcome.reset = await window.ouip.devResetSample();
       outcome.log = (await window.ouip.log()).map(c => c.message || c.commit?.message);`);
     assert.equal(result.before.info.current, 'migration');
-    assert.equal(result.before.data.world.title, 'ステータス移行の試し');
+    assert.equal(result.before.data.world.title, '旧形式からの移行の確認');
     assert.ok(result.before.data.entries.filter(e => e.stats).every(e => Array.isArray(e.stats.items) && !e.stats.blocks), 'v0.2.2の保存形');
     assert.ok(result.before.data.entries.every(e => !e.statusSets));
     assert.equal(result.outcome.changed, '試しに変えた');
     assert.equal(result.outcome.reset, true);
-    assert.equal(result.after.data.world.title, 'ステータス移行の試し', '作り直すと最初に戻る');
+    assert.equal(result.after.data.world.title, '旧形式からの移行の確認', '作り直すと最初に戻る');
     assert.equal(result.outcome.log.length, 1, '履歴も作り直す');
   });
   await t.test('印のないフォルダーは作り直さない', { timeout: 10000 }, async () => {

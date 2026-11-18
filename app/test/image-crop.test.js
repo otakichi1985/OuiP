@@ -1,8 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const ImageCrop = require('../renderer/image-crop');
+const CropEditor = require('../renderer/crop-editor');
 
 const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 0.01, `${message}: ${actual} != ${expected}`);
+const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
+const cssRatio = value => {
+  const parts = String(value).trim().split('/').map(Number);
+  assert.ok(parts.length >= 1 && parts.length <= 2 && parts.every(Number.isFinite), `比率の書き方が不正: ${value}`);
+  return parts.length === 1 ? parts[0] : parts[0] / parts[1];
+};
 
 test('拡大の基準は枠の中心ではなく、選んだ位置（x% y%）にする', () => {
   assert.equal(ImageCrop.style({ x: 0, y: 0, zoom: 2 }),
@@ -57,4 +66,19 @@ test('draw は rect と同じ範囲を枠いっぱいに描く', () => {
   assert.deepEqual([dx, dy, dw, dh], [0, 0, 100, 100], '枠いっぱいに描く');
   ImageCrop.draw(ctx, null, null, 100, 100);
   assert.equal(calls.length, 1, '画像がなければ描かない');
+});
+
+test('枠の比率は image-crop.js の ASPECT を正本にし、画面と書き出しの CSS 変数へ配る', () => {
+  near(cssRatio(ImageCrop.CSS_VARS['--crop-aspect-large']), ImageCrop.ASPECT.large, '大カードの比率');
+  near(cssRatio(ImageCrop.CSS_VARS['--crop-aspect-card']), ImageCrop.ASPECT.card, 'カードの比率');
+  near(cssRatio(ImageCrop.CSS_VARS['--crop-aspect-place']), ImageCrop.ASPECT.place, '場所の比率');
+  const applied = {};
+  const ok = ImageCrop.applyAspectVars({ documentElement: { style: { setProperty: (name, value) => { applied[name] = value; } } } });
+  assert.equal(ok, true, '画面の :root へ当てられる');
+  assert.deepEqual(applied, ImageCrop.CSS_VARS, 'ASPECT から作った値をそのまま配る');
+  assert.equal(ImageCrop.applyAspectVars(null), false, '画面がなければ何もしない');
+  assert.equal(CropEditor.open instanceof Function, true, '調整画面は image-crop.js を読み込める');
+  for (const file of ['../renderer/style.css', '../renderer/board-share.css', '../share/site.css']) {
+    assert.doesNotMatch(read(file), /aspect-ratio:\s*[0-9]/, `${file} は比率を直書きしない`);
+  }
 });

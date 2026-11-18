@@ -30,7 +30,7 @@
 #bookbody .tl.timeline-layout .year-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #bookbody .timeline-track{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;align-items:stretch}
 #bookbody .timeline-flow{display:flex;flex-direction:column;align-items:center;color:var(--muted);padding:4px 0 12px;pointer-events:none}
-#bookbody .timeline-flow span{writing-mode:vertical-rl;font-size:11px;white-space:nowrap;letter-spacing:.1em;margin-bottom:6px}
+#bookbody .timeline-flow span{writing-mode:vertical-rl;font-size:12px;white-space:nowrap;letter-spacing:.1em;margin-bottom:6px}
 #bookbody .timeline-flow::before{content:"";order:1;flex:1;min-height:44px;border-left:1.5px solid currentColor}
 #bookbody .timeline-flow svg{order:2;width:20px;height:20px;flex:none;overflow:visible}
 #bookbody .timeline-flow path{fill:none;stroke:currentColor;stroke-width:1.5;vector-effect:non-scaling-stroke}

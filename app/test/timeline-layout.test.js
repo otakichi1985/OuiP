@@ -25,7 +25,7 @@ test('横表示は年号→年数→出来事の順で、上表示と異なる�
   assert.match(mixed,/class="year-label">別暦 14年/);
 });
 function context(entries = [], world = {}) {
-  const ctx = vm.createContext({ S:{ entries, world }, esc, openCount:()=>0, byId:()=>null });
+  const ctx = vm.createContext({ S:{ entries, world }, esc, byId:()=>null });
   Object.assign(ctx, {
     timelineYearNumber: TimelineModel.yearNumber, timelineYearKey: TimelineModel.yearKey,
     timelineSettings: TimelineModel.settings, timelineYearOrder: TimelineModel.yearOrder,
@@ -350,7 +350,7 @@ test('イベント登録は重複せず解除/再登録でき、状態の差し�
 
 test('Nodeとブラウザは同じ年表APIを読み込み、読込だけでは操作を登録しない', () => {
   const browser = vm.createContext({});
-  for (const name of ['timeline-model.js','timeline-view.js','timeline-tools.js']) {
+  for (const name of ['character-stats.js','status-model.js','timeline-model.js','entry-unset.js','timeline-view.js','timeline-tools.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../renderer',name),'utf8'), browser);
   }
   const entries = [eventEntry(-2),eventEntry(9),eventEntry(null)];

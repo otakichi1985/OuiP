@@ -34,8 +34,8 @@ function samplePNG(width, height) {
 async function seedFixture(dir) {
   const s = new Store(dir), h = new History(dir); await s.init(); await h.init();
   const header=await s.importEditedImage(samplePNG(900,300)), portrait=await s.importEditedImage(samplePNG(300,400)), icon=await s.importEditedImage(samplePNG(120,120));
-  const longParagraph = '長文デバッグ用の段落です。表示の折り返し・スクロール・ページ分割・設定シートの長文出力を確認するために、同じ文を何度も繰り返しています。'.repeat(40);
-  await s.updateWorld({title:'灯台守の街［検証用］',note:'自動試験と共用する架空のデータです。自由に編集できます。\n画像・長文・未定・単位・所属・関係図・地図・年表・ボードの確認に使ってください。入力済みの世界とは保存場所が別です。\n\n' + longParagraph,image:header,calendar:'街暦',eras:[{from:0,label:'灯台まで'},{from:112,label:'灯台の時代'},{from:391,label:'物語の年'}]});
+  const longParagraph = '長文デバッグ用の段落です。表示の折り返し・スクロール・ページ分割・画像の書き出しの長文出力を確認するために、同じ文を何度も繰り返しています。'.repeat(40);
+  await s.updateWorld({title:'灯台守の街［検証用］',note:'自動試験と共用する架空のデータです。自由に編集できます。\n画像・長文・未定・単位・所属・関係図・地図・年表・ボードの確認に使ってください。入力済みの世界とは保存場所が別です。\n\n【表示の確認】ふりがな=上の位置／下の位置／長い読み／読みなし。絵=灯に3枚（拡大表示）。未定=各人。組織=灯台守4人。\n【関係図の確認】「灯と潮の想い」に丸いアイコンと、線種・太さ・色を変えた矢印。\n【検索の確認】所属=灯台 4人／郵便局 4人。状態=故人 1人／行方不明 1人。含む「灯台」＋含まない「故人」は3人。「灯台の鍵」「郵便の印」などは各1人。\n\n' + longParagraph,image:header,calendar:'街暦',eras:[{from:0,label:'灯台まで'},{from:112,label:'灯台の時代'},{from:391,label:'物語の年'}]});
   const orgDesc = '西の岬の灯台を守る人々。' + '組織の説明が長くなったときの表示を確認するためのデバッグ用の文章です。'.repeat(30);
   const world=await s.updateWorld({organization:{name:'灯台守',desc:orgDesc}}), org=world.organizations[0];
   // ステータス: 世界観で共通の定義（数値・文字の段階・自由な文字）。キャラ0〜5は割り当て、6・7は旧形式のまま（移行の案内と旧形式の編集を確かめる）。
@@ -56,15 +56,40 @@ async function seedFixture(dir) {
   const assigned = (i) => [{ set: rpg.id, values: { [rpg.items[0].id]: i * 12, [rpg.items[1].id]: i % 6, ...(i === 3 ? {} : { [rpg.items[2].id]: i * 2 }), [rpg.items[3].id]: i % 3, ...(i < 2 ? { [rpg.items[4].id]: ['霧読み', '手紙の道を覚える'][i] } : {}) }, hidden: [] },
     ...(i === 0 ? [{ set: romance.id, values: { [romance.items[0].id]: 70, [romance.items[1].id]: 2 }, hidden: [] }] : [])];
   const people=[];
+  // 検索・表示の確認用に、名前・読み・タグ・文章の手がかりを人ごとに散らす。
+  // 所属は偶数=灯台／奇数=郵便局、状態は故人1人・行方不明1人にして、含む／含まないの確認に使う。
+  const readings = ['あかり', 'うしお', 'せんだいのとうだいもり', 'みなとちょう', 'きりよみのたびびと', 'きたのみさきのみならいとうだいもり', '', 'ひるのゆうびんきょくいん'];
+  const searchWords = ['灯台の鍵', '郵便の印', '古い航海図', '港の鐘', '霧の地図', '北の岬の記録', '名前の下書き', '昼の配達路'];
+  const species = ['人間', '人間', '灯守', '人間', '旅人', '人間', '人間', '人間'];
+  const jobs = ['見習い', '郵便局員', '灯台守', '港長', '旅人', '見習い', '未定', '郵便局員'];
+  const homes = ['岬の町', '港', '北の村', '岬の町', '北の村', '北の村', '港', '岬の町'];
+  const tempers = ['慎重', '好奇心', 'おおらか', '慎重', '好奇心', 'おおらか', '慎重', '好奇心'];
+  const skills = [['霧読み'], ['手紙'], ['航海'], ['鐘'], ['霧読み', '地図'], ['航海'], ['なし'], ['手紙']];
+  const likes = ['灯', '手紙', '海', '港', '霧', '北の海', '名前', '昼'];
+  const dislikes = ['夜', '人混み', '霧', '朝', '灯', '人混み', '決めること', '夜'];
+  const birthdays = ['3/3', '5/5', '1/1', '7/7', '11/11', '2/2', '?', '9/9'];
   for (const [i,name] of ['灯','潮','先代の灯台守','港長','霧読みの旅人','北の岬の見習い灯台守','名前がまだ決まっていない人物','昼の郵便局員'].entries()) {
-    const longDesc = i===0 ? '夜しか外に出られない灯台守の見習い。昼の町を手紙で知っている。' + '人物の説明が長くなったときのカード・詳細・閲覧用ファイル・設定シートの表示を確認するためのデバッグ用の文章です。'.repeat(40) : '霧に包まれた港町で暮らす人物。まだ決まっていない設定を含む。';
+    const longDesc = i===0 ? '夜しか外に出られない灯台守の見習い。昼の町を手紙で知っている。' + '人物の説明が長くなったときのカード・詳細・閲覧用ページ・画像の書き出しの表示を確認するためのデバッグ用の文章です。'.repeat(40) : '霧に包まれた港町で暮らす人物。まだ決まっていない設定を含む。';
     const longSection = i===0 ? '港と灯台の間で育った。' + '長い文章での表示と折り返しを確認するための設定。'.repeat(200) : (i===5 ? '長い文章での表示と折り返しを確認するための設定。'.repeat(20) : '霧が晴れる日を待っている。');
-    people.push(await s.saveEntry({kind:'人物',name,reading:i===0?'あかり':i===1?'うしお':'',desc:longDesc,image:i%2===0?portrait:null,icon:i<3?icon:null,...(i===0?{images:[{image:portrait,caption:'制服・正面'},{image:header,caption:'灯台の風景'},{image:icon,caption:'表情'}]}:{}),tags:{年齢:[String(16+i)],身長:[String(155+i*3)],体重:[String(45+i*2)],性別:[i%2?'男性':'女性'],所属:[i%2?'郵便局':'灯台'],状態:[i===2?'故人':'存命']},tagUnits:{年齢:'歳',身長:'cm',体重:'kg'},organizationIds:i%2?[]:[org.id],...(i >= 6 ? { stats: sampleStats(i) } : { statusSets: assigned(i) }),fields:[{key:'本名',open:true},{key:'物語での役割',value:i===0?'主人公':'未整理'},{key:'長文メモ',value:'デバッグ用の長い値です。'.repeat(80)}],sections:[{title:'生い立ち',text:'港と灯台の間で育った。\n'+longSection},{title:'長文テスト',text:'設定シートのページ分割を確認するための長い文章です。\n'+'一行が長く続いたときの折り返しと、ページをまたぐときの分割位置を確認します。'.repeat(120)}]}));
+    people.push(await s.saveEntry({kind:'人物',name,reading:readings[i],...(i===0?{readingPlace:'above'}:{}),desc:longDesc,image:i%2===0?portrait:null,icon:i<3?icon:null,...(i===0?{images:[{image:portrait,caption:'制服・正面'},{image:header,caption:'灯台の風景'},{image:icon,caption:'表情'}]}:{}),tags:{年齢:[String(16+i)],身長:[String(155+i*3)],体重:[String(45+i*2)],性別:[i%2?'男性':'女性'],所属:[i%2?'郵便局':'灯台'],状態:[i===2?'故人':i===4?'行方不明':'存命'],種族:[species[i]],職業:[jobs[i]],出身:[homes[i]],性格:[tempers[i]],特技:skills[i],好きなもの:[likes[i]],苦手なもの:[dislikes[i]],誕生日:[birthdays[i]]},tagUnits:{年齢:'歳',身長:'cm',体重:'kg'},organizationIds:i%2?[]:[org.id],...(i >= 6 ? { stats: sampleStats(i) } : { statusSets: assigned(i) }),fields:[{key:'本名',open:true},{key:'物語での役割',value:i===0?'主人公':'未整理'},{key:'長文メモ',value:'デバッグ用の長い値です。'.repeat(80)},{key:'検索の言葉',value:searchWords[i]}],sections:[{title:'生い立ち',text:'港と灯台の間で育った。\n'+longSection},{title:'長文テスト',text:'画像の書き出しのページ分割を確認するための長い文章です。\n'+'一行が長く続いたときの折り返しと、ページをまたぐときの分割位置を確認します。'.repeat(120)}]}));
   }
-  const kiri=await s.saveEntry({kind:'用語',name:'夜霧',desc:'夜に海から上がる霧。中にいると記憶が薄れる。'+'用語の説明が長くなったときの表示を確認するためのデバッグ用の文章です。'.repeat(60),image:header,tags:{種類:['現象']},fields:[{key:'霧の向こう',open:true},{key:'長文メモ',value:'デバッグ用の長い値です。'.repeat(100)}]});
-  await s.saveEntry({kind:'用語',name:'霧読み',desc:'霧の濃さと流れから夜の長さを読む技。',tags:{種類:['技']}});
-  const lighthouse=await s.saveEntry({kind:'場所',name:'灯台',desc:'西の岬の石造りの灯台。',tags:{種類:['建物'],地域:['西の岬']}});
-  const harbor=await s.saveEntry({kind:'場所',name:'港',desc:'町の南の入り江。',tags:{種類:['港'],地域:['岬の町']}});
+  // 属性: 一部のタグだけ型を決め、残りは自由タグとして両方の層を見せる。
+  await s.saveAttributes([
+    { id: '年齢', type: 'number', unit: '歳' },
+    { id: '身長', type: 'number', unit: 'cm' },
+    { id: '体重', type: 'number', unit: 'kg' },
+    { id: '所属', type: 'select', options: ['灯台', '郵便局'] },
+    { id: '状態', type: 'select', options: ['存命', '故人', '行方不明'] },
+    { id: '特技', type: 'multi', options: ['霧読み', '航海', '手紙', '鐘', '地図', 'なし'] },
+  ]);
+  await s.saveAttributeViews([
+    { id: 'view-basic', name: '基本', card: ['年齢', '所属', '状態', '特技', '体重'], detail: ['年齢', '身長', '体重', '所属', '状態', '特技'], filter: ['年齢', '所属', '状態', '特技'], filterPlace: 'left' },
+    { id: 'view-lighthouse', name: '灯台守', card: ['年齢', '状態', '特技'], detail: ['年齢', '状態', '特技'], filter: ['状態', '特技'], filterPlace: 'top' },
+  ]);
+  const kiri=await s.saveEntry({kind:'用語',name:'夜霧',desc:'夜に海から上がる霧。中にいると記憶が薄れる。'+'用語の説明が長くなったときの表示を確認するためのデバッグ用の文章です。'.repeat(60),image:header,tags:{種類:['現象'],地域:['西の岬'],関連:['灯台','霧']},fields:[{key:'霧の向こう',open:true},{key:'長文メモ',value:'デバッグ用の長い値です。'.repeat(100)},{key:'検索の言葉',value:'夜霧の正体'}]});
+  await s.saveEntry({kind:'用語',name:'霧読み',desc:'霧の濃さと流れから夜の長さを読む技。',tags:{種類:['技'],使い手:['旅人'],関連:['霧']},fields:[{key:'検索の言葉',value:'霧を読む技'}]});
+  const lighthouse=await s.saveEntry({kind:'場所',name:'灯台',desc:'西の岬の石造りの灯台。',tags:{種類:['建物'],地域:['西の岬']},fields:[{key:'検索の言葉',value:'西の岬の灯台'}]});
+  const harbor=await s.saveEntry({kind:'場所',name:'港',desc:'町の南の入り江。',tags:{種類:['港'],地域:['岬の町']},fields:[{key:'検索の言葉',value:'港の入り江'}]});
   for(const [n,name,label] of [[0,'町ができる','はじまり'],[112,'最初の灯台が建つ',''],[389,'先代が亡くなる',''],[391,'灯が見習いになる','物語の年'],[391,'潮が手紙を届ける','物語の年'],[null,'霧の大潮','いつか']]) await s.saveEntry({kind:'出来事',name,year:{n,label},refs:[people[0].id,lighthouse.id,kiri.id],fields:n===null?[{key:'時期',open:true}]:[]});
   await s.saveDiagram('maps',{name:'岬の町',image:header,positions:{[lighthouse.id]:[260,180],[harbor.id]:[550,310]}});
   await s.saveDiagram('graphs',{name:'灯台守と港の人々',members:people.slice(0,5).map(e=>e.id),organizationIds:[org.id],relations:[{a:people[0].id,b:people[1].id,label:'幼なじみ',style:'friend'},{a:people[0].id,b:people[2].id,label:'祖母・師',style:'family'},{a:people[3].id,b:people[0].id,label:'灯台を疎む',style:'rival'}]});
@@ -73,6 +98,7 @@ async function seedFixture(dir) {
     {id:'di-akari',kind:'entry',ref:people[0].id,x:60,y:200,w:160,h:60},
     {id:'di-ushio',kind:'entry',ref:people[1].id,x:520,y:200,w:160,h:60},
     {id:'di-teacher',kind:'entry',ref:people[2].id,x:60,y:420,w:160,h:60},
+    {id:'di-mayor',kind:'entry',ref:people[3].id,look:'iconRound',x:760,y:200,w:120,h:110},
     {id:'di-fog',kind:'entry',ref:kiri.id,x:300,y:400,w:150,h:56},
     {id:'di-say',kind:'balloon',text:'昼の町を、いつか自分の目で見たい',x:20,y:40,w:220,h:70,tail:{dx:-10,dy:120}},
     {id:'di-secret',kind:'ellipse',text:'夜霧の秘密（未定）',x:520,y:400,w:170,h:70,stroke:'#e6b450'},
@@ -81,6 +107,7 @@ async function seedFixture(dir) {
     {id:'dl-trust',a:'di-ushio',b:'di-akari',text:'頼りにしている',template:'lt-trust',bend:-50},
     {id:'dl-teach',a:'di-teacher',b:'di-akari',text:'教えを残す',template:'lt-family'},
     {id:'dl-fog',a:'di-akari',b:'di-fog',text:'霧を読める',template:'lt-neutral'},
+    {id:'dl-mayor',a:'di-mayor',b:'di-akari',text:'港長が見守る',template:'lt-neutral',color:'#e6b450',dash:'dashed',width:3},
     {id:'dl-hide',a:'di-fog',b:'di-secret',direction:'none',template:'lt-neutral'},
   ]});
   // 組織の枠: 所属するキャラを中に並べた見本（自由配置）。
@@ -103,10 +130,39 @@ async function seedFixture(dir) {
   ]});
   const board=await s.saveBoard({items:[{type:'memo',text:'灯が手紙を読むのは何話？\n未定のまま共有して意見をもらいたい。\n\n'+ 'ボードのメモが長くなったときの表示を確認するためのデバッグ用の文章です。'.repeat(60),x:20,y:20},{type:'entry',ref:people[0].id,imageId:header,x:280,y:20},{type:'entry',ref:people[2].id,x:560,y:160},{type:'entry',ref:kiri.id,x:20,y:300}],links:[]});
   await s.saveBoard({...board,links:[{from:board.items[0].id,to:board.items[1].id,label:'手紙の場面'}]});
+  await s.saveStory({
+    kind:'プロット',
+    status:'構想',
+    title:'第一話プロット：手紙と夜霧',
+    summary:'昼の郵便局員と夜の灯台守が、すれ違いながら町を覆う夜霧の謎へ近づく第一話の構成メモ。',
+    refs:[people[0].id,people[1].id,kiri.id],
+    beats:[
+      {act:'起',title:'夜明けのポスト',body:'灯台に届く昼の町からの手紙を灯が受け取る。',status:'確定'},
+      {act:'承',title:'霧の濃い夜',body:'潮が届けた小包から先代の残した記録が見つかる。',status:'構想'},
+      {act:'転',title:'消えた灯火',body:'大潮の夜霧で灯台の光が一時途絶え、ふたりが初めて顔を合わせる。',status:'構想'},
+      {act:'結',title:'次の便りへ',body:'霧の正体を追う約束を交わす。',status:'未定'},
+    ],
+    scenes:[],
+  });
+  await s.saveStory({
+    kind:'小説',
+    status:'執筆中',
+    title:'夜明け前の郵便船',
+    summary:'昼と夜の境目に交わされる短い書簡から始まる本編の書き出し。',
+    refs:[people[0].id,people[1].id,lighthouse.id],
+    beats:[
+      {act:'導入',title:'石段の足音',body:'霧の薄れる時刻に合わせて郵便船が着く。',status:'確定'},
+      {act:'展開',title:'ランプの油と手紙',body:'[[灯]]が[[潮]]のメモを読む場面。',status:'構想'},
+    ],
+    scenes:[
+      {title:'第一章　白い息と封蝋',body:'西の岬の[[灯台]]に朝が近づくころ、青い封筒が一つだけ残されていた。\n[[灯]]は冷えた指先で封蝋を確かめ、差出人欄に書かれた[[潮]]の文字を静かになぞった。',refs:[people[0].id,people[1].id,lighthouse.id]},
+      {title:'第二章　昼の町の音',body:'港の鐘が二度鳴ると、霧はまだ足元に絡みついていた。\n手紙の余白には、次の満潮までに返事を寄せてほしいと短く添えられていた。',refs:[people[1].id]},
+    ],
+  });
   await fs.writeFile(path.join(dir, '.fixture-version'), FIXTURE_VERSION, 'utf8');
   await h.save('検証用データ');
 }
-const FIXTURE_VERSION = '2026-10-21-diagram2';
+const FIXTURE_VERSION = '2026-11-18-stories1';
 async function exists(dir) {
   // accessは切れたリンクを不存在とみなす。利用者のリンクも既存として保持する。
   try { await fs.lstat(dir); return true; }
@@ -165,7 +221,7 @@ const MIGRATION_PEOPLE = [
 ];
 async function seedMigrationSample(dir) {
   const s = new Store(dir), h = new History(dir); await s.init(); await h.init();
-  await s.updateWorld({ title: 'ステータス移行の試し', note: 'v0.2.2までの形（キャラごとのステータス）を再現した試し用の世界です。人物タブの案内から移行を試せます。開発データの「作り直す」で何度でも最初に戻せます。' });
+  await s.updateWorld({ title: '旧形式からの移行の確認', note: 'v0.2.2までの形（キャラごとのステータス）を再現した検証用の世界です。人物タブの案内から移行を試せます。開発データの「検証用データを作り直す」で何度でも最初に戻せます。' });
   for (const [name, desc] of MIGRATION_PEOPLE) await s.saveEntry({ kind: '人物', name, desc });
   const { entries } = await s.load();
   for (const [name, , stats] of MIGRATION_PEOPLE) {
@@ -178,10 +234,10 @@ async function seedMigrationSample(dir) {
   const world = JSON.parse(await fs.readFile(path.join(dir, 'world.json'), 'utf8'));
   delete world.statusConcepts; delete world.statusEnabled;
   await fs.writeFile(path.join(dir, 'world.json'), JSON.stringify(world, null, 2));
-  await fs.writeFile(path.join(dir, MIGRATION_MARK), 'ステータス移行の試し用。消してよい。', 'utf8');
-  await h.save('移行の試し用データ');
+  await fs.writeFile(path.join(dir, MIGRATION_MARK), '旧形式からの移行の確認用。消してよい。', 'utf8');
+  await h.save('検証用データ');
 }
-// 試し用の印があるフォルダーだけを作り直す（印がないフォルダーは触らない）。
+// 検証用の印があるフォルダーだけを作り直す（印がないフォルダーは触らない）。
 async function ensureMigrationSample(dir, { reset = false } = {}) {
   dir = path.resolve(dir);
   if (await exists(dir)) {

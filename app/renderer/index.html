@@ -2,9 +2,21 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" type="image/svg+xml" href="app-icon.svg">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' ouip-data: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>OuiP</title>
 <script src="theme.js"></script>
+<!-- 見た目の方向「画廊の壁」の書体（OFL）。同梱の2族をここで読み込む（オフラインで動くように node_modules から）。 -->
+<link rel="stylesheet" href="../node_modules/@fontsource/shippori-mincho/600.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/shippori-mincho/700.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans/400.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans/600.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans/700.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans-jp/400.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans-jp/300.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans-jp/500.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/ibm-plex-sans-jp/700.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="organizations.css">
 <link rel="stylesheet" href="character-stats.css">
@@ -14,22 +26,28 @@
 <link rel="stylesheet" href="sheet-export.css">
 <link rel="stylesheet" href="free-graph.css">
 <link rel="stylesheet" href="diagram-editor.css">
+<link rel="stylesheet" href="attributes.css">
+<link rel="stylesheet" href="story-ui.css">
 </head>
 <body>
-<header class="top">
-  <h1 class="logo">OuiP</h1>
+<header class="top" data-sep>
+  <!-- 左の開閉子。この位置は列の幅が変わっても動かさない（殻の原型どおり、2026-11-16）。 -->
+  <button type="button" id="facets-toggle" class="b sm quiet" data-icon="panel-left" aria-controls="facets" aria-expanded="false" hidden aria-label="絞り込みの開閉" title="絞り込みを開く"></button>
+  <h1 class="logo"><img class="logo-mark" src="app-icon.svg" alt="" width="22" height="22" draggable="false">OuiP</h1>
   <span id="dev-badge" class="dev-badge" hidden title="UIの変更を自動反映する開発版。データは通常版と別です">開発版</span>
-  <details id="dev-dataset" hidden><summary>開発データ</summary><p class="small muted" id="dev-dataset-current"></p><label class="small">次回起動 <select id="dev-dataset-select"><option value="fixture">検証用の世界</option><option value="personal">入力済みの世界</option><option value="migration">移行の試し（旧形式）</option></select></label><button class="b quiet sm" type="button" id="dev-reset-sample" hidden title="移行の試し用データを最初の状態に戻す">試し用を作り直す</button><p class="small muted" id="dev-dataset-status" role="status">切替は入力を確定して開発版を開き直すと反映されます。元のデータは消しません。</p></details>
+  <details id="dev-dataset" hidden><summary>開発データ</summary><p class="small muted" id="dev-dataset-current"></p><label class="small">次回起動 <select id="dev-dataset-select"><option value="fixture">検証用の世界</option><option value="personal">入力済みの世界</option><option value="migration">旧形式のデータ（移行の確認用）</option></select></label><button class="b quiet sm" type="button" id="dev-reset-sample" hidden title="検証用データを最初の状態に戻す">検証用データを作り直す</button><p class="small muted" id="dev-dataset-status" role="status">切替は入力を確定して開発版を開き直すと反映されます。元のデータは消しません。</p></details>
   <nav class="nav" aria-label="場所">
     <button type="button" data-page="world" aria-current="page" data-icon="home">概要</button>
     <button type="button" data-page="book" data-icon="book">設定資料</button>
-    <button type="button" id="ws-toggle" aria-pressed="false" aria-controls="wspanel" data-icon="board">ボード</button>
+    <button type="button" data-page="story" data-icon="story">小説・プロット</button>
+    <button type="button" id="ws-toggle" aria-pressed="false" aria-controls="wspanel" data-icon="board" data-sep>ボード</button>
   </nav>
-  <!-- 結果の重さで分ける: 書き出し（外へ出す）・データ（保存と履歴）・アプリ（更新）を、表示の切替から離して別のまとまりにする。 -->
+  <!-- 結果の重さで分ける: 保存と履歴は残し、共有は設定と同じアプリのまとまりへ移す（外へ出す操作なので、表示の切替からは離す）。 -->
   <div class="tools">
-    <div class="tool-group" role="group" aria-label="書き出し"><button class="b sm quiet" type="button" id="site-export-btn" data-icon="export">閲覧用ファイル</button></div>
     <div class="tool-group tool-data" role="group" aria-label="データ"><span class="small muted" id="dirty" role="status" aria-live="polite" aria-atomic="true"></span><button class="b sm primary" type="button" id="save-btn" title="Ctrl+S" data-icon="save">保存</button><button class="b sm quiet" type="button" id="hist-btn" data-icon="history">履歴</button></div>
-    <div class="tool-group tool-app" role="group" aria-label="アプリ"><details class="menu theme-menu" id="theme-menu"><summary class="b sm quiet" data-icon="theme">外観</summary><div class="menu-pop" role="group" aria-label="外観"><button class="b quiet sm" type="button" data-theme-choice="auto" data-icon="auto">自動（OSに合わせる）</button><button class="b quiet sm" type="button" data-theme-choice="light" data-icon="light">ライト</button><button class="b quiet sm" type="button" data-theme-choice="dark" data-icon="dark">ダーク</button><hr><p class="menu-label" id="base-label">ベース色</p><div class="accent-swatches base-swatches" id="base-swatches" role="group" aria-labelledby="base-label" data-keep-menu></div><p class="menu-label" id="accent-label">差し色</p><div class="accent-swatches" id="accent-swatches" role="group" aria-labelledby="accent-label" data-keep-menu></div></div></details><button class="b sm quiet" type="button" id="update-btn" data-icon="update"><span class="label">アプリの更新</span></button></div>
+    <div class="tool-group tool-app" role="group" aria-label="共有とアプリ" data-sep><details class="menu share-menu" id="share-menu"><summary class="b sm quiet" data-icon="share">共有</summary><div class="menu-pop" role="group" aria-label="共有"><button class="b quiet sm" type="button" id="site-export-btn" data-icon="export"><span class="share-item-label">閲覧用ページを書き出す</span><span class="share-item-note">アプリを持たない人に見せるHTML</span></button><button class="b quiet sm" type="button" id="image-export-btn" data-icon="image"><span class="share-item-label">画像を書き出す</span><span class="share-item-note">SNSに貼る画像。人物を選びます</span></button><hr><button class="b quiet sm" type="button" id="board-export-btn" data-icon="export"><span class="share-item-label">ボードを書き出す</span><span class="share-item-note">他の人へ渡すボードファイル</span></button><button class="b quiet sm" type="button" id="board-import-btn" data-icon="import"><span class="share-item-label">ボードを読み込む</span><span class="share-item-note">受け取ったボードを見る</span></button><p class="share-note small muted" id="share-note" hidden></p></div></details><span class="tool-sep" aria-hidden="true" data-sep></span><button class="b sm quiet" type="button" id="settings-btn" data-icon="settings"><span class="label">設定</span></button><details class="menu theme-menu" id="theme-menu"><summary class="b sm quiet" data-icon="theme">外観</summary><div class="menu-pop" role="group" aria-label="外観"><button class="b quiet sm" type="button" data-theme-choice="auto" data-icon="auto">自動（OSに合わせる）</button><button class="b quiet sm" type="button" data-theme-choice="light" data-icon="light">ライト</button><button class="b quiet sm" type="button" data-theme-choice="dark" data-icon="dark">ダーク</button><hr><label class="menu-check" data-keep-menu><input type="checkbox" id="contrast-toggle">高コントラスト</label><hr><p class="menu-label" id="base-label">ベースカラー</p><div class="accent-swatches base-swatches" id="base-swatches" role="group" aria-labelledby="base-label" data-keep-menu></div><p class="menu-label" id="accent-label">アクセントカラー</p><div class="accent-swatches" id="accent-swatches" role="group" aria-labelledby="accent-label" data-keep-menu></div></div></details><button class="b sm quiet" type="button" id="update-btn" data-icon="update"><span class="label">アプリの更新</span></button></div>
+    <!-- 右の開閉子。右端の定位置に固定 -->
+    <button type="button" id="detail-toggle" class="b sm quiet" data-icon="panel-right" aria-controls="drawer" aria-expanded="false" hidden aria-label="詳細の開閉" title="詳細を開く"></button>
   </div>
 </header>
 
@@ -51,33 +69,38 @@
     <div class="world-main">
     <div class="world-image" id="world-image"></div>
     <label for="w-author" class="small muted">作者名</label>
-    <input class="inp" id="w-author" autocomplete="off" maxlength="200" placeholder="設定シートや閲覧用ファイルに載せる名前">
-    <label for="w-note" class="small muted">作者のことば</label>
+    <input class="inp" id="w-author" autocomplete="off" maxlength="200" placeholder="画像や閲覧用ページに載せる名前">
+    <label for="w-note" class="small muted">作者コメント</label>
     <textarea id="w-note" rows="4" placeholder="この世界のこと、まだ決めていないこと"></textarea>
     </div>
   </section>
 
   <section class="page" id="p-book" hidden>
     <!-- 種類のタブ・検索・表示（カードの大きさ）・追加は、一覧をスクロールしても上に残す。 -->
-    <div class="book-toolbar">
-    <div class="subtabs" id="booktabs" role="tablist" aria-label="設定の種類"></div>
-    <div class="bookbar">
+    <div class="book-toolbar" data-sep>
+    <div class="subtabs" id="booktabs" role="tablist" aria-label="設定の種類" data-sep></div>
+    <div class="bookbar" data-sep>
       <label for="q" class="sr">探す</label><input id="q" type="search" placeholder="探す" autocomplete="off">
-      <div class="seg" id="bookview" role="group" aria-label="見せ方"></div>
-      <div class="seg card-size" id="card-size" role="group" aria-label="表示"></div>
+      <div class="seg" id="bookview" role="group" aria-label="一覧の表示"></div>
+      <div class="seg card-size" id="card-size" role="group" aria-label="カードの大きさ"></div>
+      <label class="attr-view-label" id="attr-view-label" for="attr-view" hidden>ビュー</label>
+      <select class="inp attr-view" id="attr-view" aria-label="ビュー" hidden></select>
       <select class="inp sort-by" id="sort-by" aria-label="並び" hidden></select>
       <button class="b sm quiet" type="button" id="reorder-btn" aria-pressed="false" hidden></button>
+      <button class="b sm quiet" type="button" id="attributes-btn" data-icon="term" hidden>共通タグ</button>
       <button class="b sm primary" type="button" id="addentry" style="margin-left:auto"></button>
     </div>
     </div>
     <div id="book-panel" role="tabpanel" tabindex="0">
     <!-- 広い画面では絞り込みを左の列に固定し、一覧だけをスクロールさせる。 -->
     <div class="book-layout">
-    <div class="facets" id="facets"></div>
+    <div class="facets" id="facets" data-sep></div>
+    <div class="facets-resize" id="facets-resize" data-facets-resize role="separator" aria-orientation="vertical" aria-label="絞り込みの幅" aria-valuemin="210" aria-valuemax="420" aria-valuenow="250" tabindex="0"></div>
     <div id="bookbody"></div>
     </div>
     </div>
   </section>
+  <section class="page" id="p-story" hidden></section>
 </main>
 
 <aside class="wspanel" id="wspanel" hidden aria-label="ボード">
@@ -97,6 +120,8 @@
 <aside class="drawer" id="drawer" hidden aria-label="詳細"></aside>
 <div class="veil" id="veil" hidden><div class="viewer" role="dialog" aria-modal="true" aria-labelledby="vt" id="viewer" tabindex="-1"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="search-query.js"></script>
+<script src="organization-tags.js"></script>
 <script src="graph-layout.js"></script>
 <script src="free-graph.js"></script>
 <script src="diagram-model.js"></script>
@@ -109,6 +134,7 @@
 <script src="status-ui.js"></script>
 <script src="character-units.js"></script>
 <script src="timeline-model.js"></script>
+<script src="entry-unset.js"></script>
 <script src="timeline-view.js"></script>
 <script src="write-queue.js"></script>
 <script src="view-state.js"></script>
@@ -116,8 +142,11 @@
 <script src="ui-accessibility.js"></script>
 <script src="image-adjustment.js"></script>
 <script src="facet-range.js"></script>
+<script src="attributes.js"></script>
 <script src="entry-order.js"></script>
 <script src="icons.js"></script>
+<script src="story-model.js"></script>
+<script src="story-ui.js"></script>
 <script src="app.js"></script>
 <script src="canvas-tools.js"></script>
 <script src="organizations.js"></script>

@@ -73,6 +73,10 @@ async function build() {
   }
   assert(fs.existsSync(path.join(runtime, 'LICENSE')) && fs.existsSync(path.join(runtime, 'LICENSES.chromium.html')), 'Electron licenses missing');
   assert(files(path.join(target, 'node_modules', 'isomorphic-git')).some(f => /(^|\/)licen[sc]e/i.test(f)), 'isomorphic-git license missing');
+  const AppIcon = require(path.join(app, 'lib', 'app-icon'));
+  fs.writeFileSync(path.join(runtime, 'OuiP.ico'), AppIcon.icoBuffer(256));
+  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(runtime, 'LICENSE.OuiP.txt'));
+  fs.copyFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(runtime, 'THIRD_PARTY_NOTICES.md'));
   fs.writeFileSync(path.join(runtime, '.ouip-package.json'), JSON.stringify(marker, null, 2) + '\n');
   const zip = path.join(release, `ouip-win-x64-v${marker.version}.zip`);
   for (const output of [zip, zip + '.sha256']) if (fs.existsSync(output)) {

@@ -77,9 +77,11 @@ test('通常・開発fixture・開発個人・明示--dataの保存先は分離�
 test('新規fixtureは8人物/2用語/2場所/6出来事と画像・組織・図・ボード・履歴が整合する', async t => {
   const root = await temporary(t), dir = path.join(root,'world');
   assert.equal(await ensureFixture(dir),true);
-  const s = new Store(dir), h = new History(dir), {world,entries,board,relations} = await s.load();
+  const s = new Store(dir), h = new History(dir), {world,entries,board,relations,stories} = await s.load();
   const of = kind => entries.filter(e => e.kind === kind);
   assert.deepEqual(['人物','用語','場所','出来事'].map(k => of(k).length),[8,2,2,6]);
+  assert.equal(stories.length, 2, '検証用の小説・プロットを含む');
+  assert.deepEqual(stories.map(x => x.kind).sort(), ['プロット', '小説']);
   const ids = new Set(entries.map(e=>e.id)), orgs = new Set(world.organizations.map(o=>o.id));
   assert.equal(ids.size,18); assert.equal(orgs.size,1);
   assert.deepEqual(new Set(world.order),ids); assert.equal(world.order.length,18);
@@ -94,6 +96,38 @@ test('新規fixtureは8人物/2用語/2場所/6出来事と画像・組織・図
   assert.ok(open.every(f=>Number.isInteger(f.no)&&f.no>0&&f.no<world.nextOpenNo));
   assert.ok(of('人物').some(e=>e.sections.some(s=>s.text.length>400)));
   assert.equal(of('人物')[0].reading,'あかり');
+  assert.equal(of('人物')[0].readingPlace,'above', '読みの位置の見本');
+  const readings = of('人物').map(e => e.reading);
+  assert.ok(readings.includes('') && readings.some(r => r.length > 10), '読みなしと長い読みを含む');
+  for (const e of of('人物')) {
+    assert.ok(e.tags.種族?.length && e.tags.職業?.length && e.tags.特技?.length, '検索用のタグを持つ');
+    assert.ok(e.fields.some(f => f.key === '検索の言葉' && f.value), '検索用の言葉を持つ');
+  }
+  const searchWords = of('人物').map(e => e.fields.find(f => f.key === '検索の言葉')?.value).filter(Boolean);
+  assert.equal(new Set(searchWords).size, 8, '人物ごとに別の検索語');
+  assert.deepEqual(world.attributes.map(a => a.id), ['年齢', '身長', '体重', '所属', '状態', '特技'], '共通タグと固有タグの両方を持つ');
+  assert.equal(world.attributeViews.length, 2);
+  assert.deepEqual(world.attributeViews[0].card, ['年齢', '所属', '状態', '特技', '体重']);
+  assert.equal(world.attributeViews[1].filterPlace, 'top');
+  for (const e of of('人物')) {
+    assert.deepEqual(e.tags.年齢.length, 1);
+    assert.ok(e.tags.種族?.length, '共通タグにしていない固有タグも残る');
+  }
+  assert.ok(world.note.includes('【検索の確認】'), '検索の確認手順を概要に書く');
+  const canvas = world.graphs.find(g => g.name.includes('想い'));
+  assert.ok(canvas.items.some(it => it.look === 'iconRound'), '丸いアイコンの見本');
+  assert.ok(canvas.links.some(l => l.color === '#e6b450' && l.dash === 'dashed' && l.width === 3), '矢印だけの線種・太さ・色の見本');
+  // 検索の条件を人手で確かめられる件数にしておく（含む・含まない・言葉）。
+  const people = of('人物');
+  const tagged = (key, value) => people.filter(e => (e.tags[key] || []).includes(value)).length;
+  assert.equal(tagged('所属', '灯台'), 4);
+  assert.equal(tagged('所属', '郵便局'), 4);
+  assert.equal(tagged('状態', '故人'), 1);
+  assert.equal(tagged('状態', '行方不明'), 1);
+  assert.equal(people.filter(e => (e.tags.所属 || []).includes('灯台') && !(e.tags.状態 || []).includes('故人')).length, 3);
+  const SearchQuery = require('../renderer/search-query');
+  const searchable = (e) => [e.name, e.reading, e.desc, ...(e.sections || []).map(s => s.title + ' ' + s.text), ...(e.fields || []).map(f => f.key + ' ' + (f.value ?? '')), ...Object.values(e.tags || {}).flat()];
+  for (const word of searchWords) assert.equal(people.filter(e => SearchQuery.matches(searchable(e), word)).length, 1, `${word}は1人だけ`);
   for (const e of of('人物')) {
     for (const id of e.organizationIds) assert.ok(orgs.has(id));
     assert.deepEqual(e.tagUnits,{年齢:'歳',身長:'cm',体重:'kg'});
@@ -163,6 +197,7 @@ test('新規fixtureは8人物/2用語/2場所/6出来事と画像・組織・図
   const files = new Set(await h.filesAt(log[0].oid));
   for (const image of images) assert.ok(files.has(image));
   for (const e of entries) assert.ok(files.has(`entries/${e.id}.json`));
+  for (const st of stories) assert.ok(files.has(`stories/${st.id}.json`));
   assert.deepEqual(await fs.readdir(root),['world']);
 });
 
@@ -269,4 +304,3 @@ test('生成中に出現した既存フォルダーは空でも編集済みで�
   }
   assert.deepEqual((await fs.readdir(root)).sort(),['edited','empty']);
 });
-

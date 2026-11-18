@@ -13,7 +13,7 @@ async function openGraphArrange() {
   const graph = S.world.graphs.find((g) => g.id === id);
   if (!graph?.members.length) { toast("整列する人物がいません。編集で人物を追加してください。"); return; }
   const label = { rows: "段組み", circle: "円形", horizontal: "横並び", vertical: "縦並び" }[mode];
-  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">一括整列の確認</h3><button class="b quiet sm" data-vclose>閉じる</button></div><p>「${esc(graph.name)}」の全${graph.members.length}人を${label}に配置します。非表示の人物も対象になり、現在の配置を置き換えます。</p><p class="small muted">人物の重なりを避けるため、横並び・縦並びは枠内で折り返します。人数やグリッド間隔が大きいときは枠の下へ広がります。</p><form id="graph-arrange-form" data-id="${esc(id)}" data-mode="${mode}"><div class="modal-actions row"><button type="button" class="b quiet" data-vclose>取消</button><button type="submit" class="b primary">整列を決定</button></div></form>`;
+  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">一括整列の確認</h3><button class="b quiet sm" data-vclose>閉じる</button></div><p>「${esc(graph.name)}」の全${graph.members.length}人を${label}に配置します。非表示の人物も対象になり、現在の配置を置き換えます。</p><p class="small muted">人物の重なりを避けるため、横並び・縦並びは枠内で折り返します。人数やグリッド間隔が大きいときは枠の下へ広がります。</p><form id="graph-arrange-form" data-id="${esc(id)}" data-mode="${mode}"><div class="modal-actions row"><button type="button" class="b quiet" data-vclose>キャンセル</button><button type="submit" class="b primary">整列する</button></div></form>`;
   $("veil").hidden = false;
   $("graph-arrange-form").querySelector('[type="submit"]').focus();
 }
@@ -28,7 +28,8 @@ function diagramToolbar(type) {
   const label = type === "maps" ? "地図" : "関係図";
   const clone = type === "graphs" ? `<button class="b quiet sm" data-free-clone>${Icons.icon("copy")}${["free", "canvas"].includes(current?.format) ? "この図を複製" : "ノードで作る図として複製"}</button>` : "";
   const menu = current ? `<details class="menu" data-menu><summary class="b sm quiet">${Icons.icon("more")}${label}の変更・削除</summary><div class="menu-pop" role="group" aria-label="この${label}の操作"><button class="b quiet sm" data-edit-diagram="${type}">${Icons.icon("rename")}名前を変更</button>${clone}<hr><button class="b quiet sm danger" data-delete-diagram="${type}" data-keep-menu>${Icons.icon("remove")}<span class="label">削除</span></button></div></details>` : "";
-  return `<label class="small diagram-label" for="diagram-select">${Icons.icon(type === "maps" ? "map" : "graph")}${label}</label><select id="diagram-select" data-diagram-select="${type}">${(S.world[type] || []).map((d) => `<option value="${esc(d.id)}" ${d.id === current?.id ? "selected" : ""}>${esc(d.name)}${type === 'graphs' && !['free', 'canvas'].includes(d.format) ? '（旧図）' : ''}</option>`).join("")}</select><button class="b sm" data-new-diagram="${type}">${Icons.icon("add")}新しい${label}</button>${menu}`;
+  const exportSite = current ? `<button class="b quiet sm" type="button" data-site-export="${esc(JSON.stringify({ [type === "maps" ? "mapIds" : "graphIds"]: [current.id] }))}">${Icons.icon("export")}閲覧用ページを書き出す</button>` : "";
+  return `<label class="small diagram-label" for="diagram-select">${Icons.icon(type === "maps" ? "map" : "graph")}${label}</label><select id="diagram-select" data-diagram-select="${type}">${(S.world[type] || []).map((d) => `<option value="${esc(d.id)}" ${d.id === current?.id ? "selected" : ""}>${esc(d.name)}${type === 'graphs' && !['free', 'canvas'].includes(d.format) ? '（旧図）' : ''}</option>`).join("")}</select><button class="b sm" data-new-diagram="${type}">${Icons.icon("add")}新しい${label}</button>${menu}${exportSite}`;
 }
 // 図の上の操作のしかた（関係図と地図で同じ操作・同じ言葉）。kind: 'diagram' | 'map'
 function canvasGuide(kind) {
@@ -103,7 +104,7 @@ function diagramForm(type, existing = null, adding = '') {
   const people = S.entries.filter((e) => e.kind === "人物");
   const organizations = [...new Set(people.flatMap((e) => e.tags?.所属 || []))];
   const tagOptions = [...new Map(people.flatMap(e => Object.entries(e.tags || {}).flatMap(([k, vs]) => vs.map(v => [JSON.stringify([k,v]), `${k}: ${v}`])))).entries()];
-  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${adding ? (adding === 'characters' ? '図にキャラを追加' : '図に組織を追加') : type === "maps" ? "地図の名前" : "関係図の名前・キャラ・組織"}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="diagram-form" data-type="${type}" data-id="${existing?.id || ""}" data-adding="${adding}"><div ${adding ? 'hidden' : ''}><label class="l" for="diagram-name">${type === "maps" ? "国・大陸などの名前" : "関係図の名前"}</label><input id="diagram-name" type="text" value="${esc(existing?.name || "")}" placeholder="${type === "maps" ? "空欄なら名称未設定の地図" : "空欄なら名称未設定の関係図"}"></div>${type === "graphs" ? `<div class="diagram-picker-tools row"><label for="diagram-search">候補を検索</label><input id="diagram-search" type="search" autocomplete="off" placeholder="名前・説明"><details ${adding === 'organizations' ? 'hidden' : ''}><summary>タグで絞り込む</summary><select id="diagram-tag" aria-label="候補のタグ"><option value="">すべて</option>${tagOptions.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select></details></div><section ${adding === 'organizations' ? 'hidden' : ''}><details><summary>旧「所属」タグからまとめて選択</summary><div class="chips">${organizations.map((o) => `<button type="button" class="chipbtn" data-organization="${esc(o)}">${esc(o)}</button>`).join("")}</div></details><div class="chips"><button type="button" class="chipbtn" data-all-members>候補を全員選択</button><button type="button" class="chipbtn" data-no-members>選択を外す</button></div><div class="member-picker">${people.map((e) => `<label><input type="checkbox" data-member value="${e.id}" ${existing?.members.includes(e.id) ? "checked" : ""}>${characterIcon(e)}<span>${esc(e.name)}<small class="muted">${esc(Object.values(e.tags || {}).flat().join(' ・ '))}</small></span></label>`).join("") || '<p class="small muted">キャラタブでキャラを登録してください。</p>'}</div></section><section ${adding === 'characters' ? 'hidden' : ''}>${typeof organizationDiagramControl === "function" ? organizationDiagramControl(existing || {}) : ""}</section><p class="small muted" id="diagram-picker-empty" hidden>候補がありません。検索・タグの条件を変更してください。</p>` : ""}<div class="modal-actions row"><button class="b quiet" type="button" data-vclose>取消</button><button class="b primary" type="submit">${adding ? '図に追加' : existing ? "決定" : "追加"}</button></div></form>`;
+  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${adding ? (adding === 'characters' ? '図にキャラを追加' : '図に組織を追加') : type === "maps" ? "地図の名前" : "関係図の名前・キャラ・組織"}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="diagram-form" data-type="${type}" data-id="${existing?.id || ""}" data-adding="${adding}"><div ${adding ? 'hidden' : ''}><label class="l" for="diagram-name">${type === "maps" ? "国・大陸などの名前" : "関係図の名前"}</label><input id="diagram-name" type="text" value="${esc(existing?.name || "")}" placeholder="${type === "maps" ? "空欄なら名称未設定の地図" : "空欄なら名称未設定の関係図"}"></div>${type === "graphs" ? `<div class="diagram-picker-tools row"><label for="diagram-search">候補を検索</label><input id="diagram-search" type="search" autocomplete="off" placeholder="名前・説明"><details ${adding === 'organizations' ? 'hidden' : ''}><summary>タグで絞り込む</summary><select id="diagram-tag" aria-label="候補のタグ"><option value="">すべて</option>${tagOptions.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select></details></div><section ${adding === 'organizations' ? 'hidden' : ''}><details><summary>旧「所属」タグからまとめて選択</summary><div class="chips">${organizations.map((o) => `<button type="button" class="chipbtn" data-organization="${esc(o)}">${esc(o)}</button>`).join("")}</div></details><div class="chips"><button type="button" class="chipbtn" data-all-members>候補を全員選択</button><button type="button" class="chipbtn" data-no-members>選択を外す</button></div><div class="member-picker">${people.map((e) => `<label><input type="checkbox" data-member value="${e.id}" ${existing?.members.includes(e.id) ? "checked" : ""}>${characterIcon(e)}<span>${esc(e.name)}<small class="muted">${esc(Object.values(e.tags || {}).flat().join(' ・ '))}</small></span></label>`).join("") || '<p class="small muted">キャラタブでキャラを登録してください。</p>'}</div></section><section ${adding === 'characters' ? 'hidden' : ''}>${typeof organizationDiagramControl === "function" ? organizationDiagramControl(existing || {}) : ""}</section><p class="small muted" id="diagram-picker-empty" hidden>候補がありません。検索・タグの条件を変更してください。</p>` : ""}<div class="modal-actions row"><button class="b quiet" type="button" data-vclose>キャンセル</button><button class="b primary" type="submit">${adding ? '図に追加' : existing ? "OK" : "追加"}</button></div></form>`;
   $("veil").hidden = false;
   (adding ? $('diagram-search') : $("diagram-name")).focus();
 }
@@ -115,7 +116,7 @@ function filterDiagramCandidates() {
   form.querySelectorAll('[data-member],[data-diagram-organization]').forEach(input => {
     const e = byId(input.value);
     const row = input.closest('label');
-    row.hidden = !e || (query && ![e.name, e.desc, ...Object.values(e.tags || {}).flat()].some(v => String(v || '').includes(query))) || (input.matches('[data-member]') && tag && !e.tags?.[tag[0]]?.includes(tag[1]));
+    row.hidden = !e || !SearchQuery.allWords([e.name, e.desc, ...Object.values(e.tags || {}).flat()], query) || (input.matches('[data-member]') && tag && !e.tags?.[tag[0]]?.includes(tag[1]));
     if (!row.hidden && !row.closest('section[hidden]')) count++;
   });
   $('diagram-picker-empty').hidden = count > 0;
@@ -249,7 +250,7 @@ document.addEventListener("click", async (ev) => {
 // ペン: pointer capture中の相手判定は座標から行う。
 let penStart = null;
 function openPenRelation(a, b) {
-  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${esc(byId(a).name)} → ${esc(byId(b).name)}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="pen-form" data-a="${a}" data-b="${b}"><label for="pen-label">関係の名前</label><input id="pen-label" type="text" placeholder="例: 幼なじみ" required><label for="pen-style">線の種類</label><select id="pen-style">${Object.entries(STYLE).map(([key, label]) => `<option value="${key}" ${key === "friend" ? "selected" : ""}>${label}</option>`).join("")}</select><div class="modal-actions row"><button class="b quiet" type="button" data-vclose>取消</button><button class="b primary" type="submit">関係を追加</button></div></form>`;
+  $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${esc(byId(a).name)} → ${esc(byId(b).name)}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="pen-form" data-a="${a}" data-b="${b}"><label for="pen-label">関係の名前</label><input id="pen-label" type="text" placeholder="例: 幼なじみ" required><label for="pen-style">線の種類</label><select id="pen-style">${Object.entries(STYLE).map(([key, label]) => `<option value="${key}" ${key === "friend" ? "selected" : ""}>${label}</option>`).join("")}</select><div class="modal-actions row"><button class="b quiet" type="button" data-vclose>キャンセル</button><button class="b primary" type="submit">関係を追加</button></div></form>`;
   $("veil").hidden = false; $("pen-label").focus();
 }
 document.addEventListener("pointerdown", (ev) => {
@@ -393,7 +394,7 @@ async function editImage(rel, accept, ratio = null, restore = null) {
       <div class="image-tools"><span>位置・大きさ</span><div class="image-tool-group"><button type="button" class="b sm" data-image-fit>全体を収める</button><button type="button" class="b sm" data-image-fill>余白なく収める</button></div><div class="image-tool-group"><button type="button" class="b sm" data-image-zoom="out" aria-label="画像を縮小">−</button><label class="sr" for="image-scale">画像の倍率</label><input id="image-scale" type="range" min="5" max="2000" step="1" value="100"><output id="image-scale-value" for="image-scale">100%</output><button type="button" class="b sm" data-image-zoom="in" aria-label="画像を拡大">＋</button></div><div class="image-tool-group" role="group" aria-label="画像の位置"><button type="button" class="b sm" data-image-move="left" aria-label="画像を左へ">←</button><button type="button" class="b sm" data-image-move="up" aria-label="画像を上へ">↑</button><button type="button" class="b sm" data-image-move="down" aria-label="画像を下へ">↓</button><button type="button" class="b sm" data-image-move="right" aria-label="画像を右へ">→</button></div></div>
       </div><div class="image-stage"><span class="image-frame-label">仕上がり範囲</span><div class="image-frame"><canvas id="image-canvas" tabindex="0" aria-label="仕上がり画像。ドラッグか矢印キーで移動、Ctrl＋ホイールか＋−キーで拡大縮小" aria-describedby="image-help"></canvas></div></div>
       <p class="small muted" id="image-help">枠の中が保存されます。ドラッグで位置調整・Ctrl＋ホイールで拡大縮小。市松模様は透明な余白です。</p>
-      <form id="image-editor-form" class="modal-actions row"><span class="image-result" id="image-result" role="status" aria-live="polite"></span><button class="b quiet" type="button" data-image-reset>調整をリセット</button><button class="b primary" type="submit" id="image-apply">適用</button></form>`;
+      <form id="image-editor-form" class="modal-actions row"><span class="image-result" id="image-result" role="status" aria-live="polite"></span><button class="b quiet" type="button" data-image-reset>調整をリセット</button><button class="b primary" type="submit" id="image-apply">OK</button></form>`;
     $('viewer').classList.add('image-editor');
     if (saved) {
       Object.assign($('image-canvas'), { width: Math.round(saved.w), height: Math.round(saved.h) });
@@ -561,7 +562,7 @@ document.addEventListener("submit", async (ev) => {
   e.status = 'saving'; imageDrag = null;
   const controls = [...$('viewer').querySelectorAll('button,input,select')].map(el => [el, el.disabled]);
   controls.forEach(([el]) => { el.disabled = true; });
-  $('image-editor-form').setAttribute('aria-busy', 'true'); $('image-apply').textContent = '適用中…';
+  $('image-editor-form').setAttribute('aria-busy', 'true'); $('image-apply').textContent = '処理中…';
   try {
     const blob = await new Promise((r) => out.toBlob(r,"image/png"));
     if (!blob) throw Error('画像を生成できませんでした');
@@ -569,9 +570,9 @@ document.addEventListener("submit", async (ev) => {
     await e.accept(image, { source: e.source, w: Math.round(c.width), h: Math.round(c.height), base: e.base, scale: e.scale, x: e.x, y: e.y });
     $("veil").hidden = true; imageEdit = null; $('viewer').classList.remove('image-editor');
   } catch (error) {
-    UIAccess.reportError('画像の調整を適用できませんでした: ' + String(error.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') + '。調整内容を保持しています。もう一度「適用」を押してください。'); e.status = 'editing';
+    UIAccess.reportError('画像の調整を反映できませんでした: ' + String(error.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') + '。調整内容を保持しています。もう一度「OK」を押してください。'); e.status = 'editing';
     controls.forEach(([el, disabled]) => { el.disabled = disabled; });
-    $('image-editor-form').removeAttribute('aria-busy'); $('image-apply').textContent = '適用';
+    $('image-editor-form').removeAttribute('aria-busy'); $('image-apply').textContent = 'OK';
   }
 });
 // 重ねたメニュー: 中の操作を押す・外を押す・Escapeで閉じる。表示の設定のように続けて触るものは data-keep-menu の付いた要素の中に置く。

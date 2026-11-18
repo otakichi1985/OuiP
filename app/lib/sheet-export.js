@@ -1,5 +1,5 @@
 'use strict';
-// 設定シートの書き出し（本体側）。保存データから選んだ項目だけを読み、専用の画面で撮ってPNGにする。
+// 画像の書き出し（本体側）。保存データから選んだ項目だけを読み、専用の画面で撮ってPNGにする。
 // 撮影は画面の拡大率に左右されないよう、1/拡大率で表示してページ全体を1回で撮る。
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -9,73 +9,71 @@ const Sheet = require('./sheet');
 const { SiteExport } = require('./site-export');
 
 const X_LIMIT = 5 * 1024 * 1024; // Xの写真は5MBまで（KNOWLEDGE、2026-10-17確認）
-const fail = message => { throw new Error('設定シート: ' + message); };
+const fail = message => { throw new Error('画像の書き出し: ' + message); };
 
-// show が true のときだけ、撮影用の画面を画面内に開いて予告する（保存時）。
-// プレビューは今までどおり画面外に開き、作業の邪魔をしない。
-async function capture({ BrowserWindow, nativeImage, screen }, html, { width: W, height: H }, { show = false } = {}) {
-  const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+// プレビューも保存も、どのモニターにもウィンドウを出さずに撮る（オフスクリーン描画、2026-10-27）。
+// 画面の外に置いたウィンドウは描画されず UnknownVizError になり、「主モニターの真下」は
+// 別のモニター（液タブなど）がある環境では画面内になる。表示して撮る方法は長いシートも撮れなかった。
+// capturePage はオフスクリーンでは使えないので、開発者ツールの撮影命令で撮る。
+async function capture({ BrowserWindow, nativeImage }, html, { width: W, height: H }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ouip-sheet-'));
-  let win = null;
+  let win = null, dbg = null;
   try {
     const file = path.join(dir, 'sheet.html');
     await fs.writeFile(file, html, 'utf8');
-    // 1ページ分の大きさで開いて段落を組み、そのあと全ページの高さへ広げて1回で撮る。
-    // 短冊に分けると、スクロールの反映が1フレーム遅れて、上の余白や1枚ずつのずれが出る。
-    win = new BrowserWindow({ show: false, frame: show, skipTaskbar: !show, useContentSize: true, autoHideMenuBar: true,
-      resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
-      title: show ? '設定シートを保存しています（確認用）' : '設定シート',
-      width: Math.max(1, Math.round(W / scale)), height: Math.max(1, Math.round(H / scale)),
-      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false, devTools: false } });
+    win = new BrowserWindow({ show: false, skipTaskbar: true, width: W, height: H,
+      webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false } });
     win.webContents.on('will-navigate', event => event.preventDefault());
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     await win.loadFile(file);
-    win.webContents.setZoomFactor(1 / scale);
+    dbg = win.webContents.debugger;
+    dbg.attach('1.3');
+    // 指定した大きさとページの CSS の大きさの比は、起動のしかたで変わった（125%の環境で、試験の
+    // スクリプトでは1.25倍、アプリの中では1倍）。決め打ちせず、一度測って合わせる。
+    let ratio = 1;
+    const view = h => dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: Math.round(W / ratio), height: Math.max(1, Math.round(h / ratio)), deviceScaleFactor: 1, mobile: false });
+    await view(H);
+    ratio = (await win.webContents.executeJavaScript('document.documentElement.clientWidth')) / W || 1;
+    await view(H);
     await win.webContents.executeJavaScript('document.fonts.ready.then(() => Promise.all([...document.querySelectorAll("template")].flatMap(t => [...t.content.querySelectorAll("img")]).map(img => img.decode().catch(() => {}))))');
     const info = await win.webContents.executeJavaScript(Sheet.PAGINATE);
-    const totalH = info.pages * H;
-    win.setContentSize(Math.max(1, Math.round(W / scale)), Math.max(1, Math.round(totalH / scale)));
-    // 隠したままのウィンドウは環境によって描画されず、capturePage が
-    // UnknownVizError になる。表示して描かせてから撮る。
-    // 別ディスプレイへ出すと拡大率が変わるので、必ず主ディスプレイに置く。
-    const display = screen.getPrimaryDisplay();
-    if (show) {
-      // 保存時は画面内に開き、何が起きているか見えるようにする。フォーカスは奪わない。
-      const area = display.workArea, bounds = win.getBounds();
-      const x = Math.round(area.x + Math.max(0, (area.width - bounds.width) / 2));
-      const y = Math.round(area.y + Math.max(24, (area.height - bounds.height) / 2));
-      win.setPosition(x, y);
-      win.setAlwaysOnTop(true, 'floating');
-    } else {
-      // プレビューは主ディスプレイの真下（画面外）に出す。作業の邪魔をしない。
-      win.setPosition(display.bounds.x, display.bounds.y + display.bounds.height + 100);
-    }
-    win.showInactive();
-    await new Promise(resolve => setTimeout(resolve, 200));
-    // 表示の幅・高さが指定の画素数と合わなければ、切れた画像になるので撮らない。
-    // 画面外に表示すると、環境によって数pxだけ広い表示になることがある（ページは1080pxのまま）。
-    const layout = await win.webContents.executeJavaScript('({w:document.documentElement.clientWidth,h:document.documentElement.clientHeight})');
-    if (layout.w < W || layout.w - W > 4) fail(`表示の幅が合いません（${layout.w}px）。画面の拡大率を変えた直後なら、もう一度お試しください`);
-    if (layout.h < totalH || layout.h - totalH > 4) fail(`表示の高さが合いません（${layout.h}px / ${totalH}px）。画面の拡大率を変えた直後なら、もう一度お試しください`);
-    // 最初の撮影は描く前の空のフレームになることがある。数回捨ててから本番を撮る。
-    for (let i = 0; i < 3; i++) { await win.webContents.capturePage(); await new Promise(resolve => setTimeout(resolve, 120)); }
-    const image = await win.webContents.capturePage();
-    const size = image.getSize();
-    const imageScale = size.width / layout.w;
-    if (!(imageScale > 0) || size.height < totalH * imageScale - 1) fail('画面の撮影の大きさが足りません。もう一度お試しください');
-    // ページは左上にあり、右・下の数pxは窓の余白。ページの範囲だけを切り出す。
-    const page = image.crop({ x: 0, y: 0, width: Math.round(W * imageScale), height: Math.round(totalH * imageScale) });
-    const pngs = [];
-    for (let i = 0; i < info.pages; i++) {
-      const part = page.crop({ x: 0, y: Math.round(i * H * imageScale), width: Math.round(W * imageScale), height: Math.round(H * imageScale) });
-      const fixed = part.getSize().width === W && part.getSize().height === H ? part : part.resize({ width: W, height: H, quality: 'best' });
-      pngs.push(fixed.toPNG());
+    // 中身のないシート（項目を何も選ばない）は0ページ。撮る物がないので、空のまま返す。
+    if (!info.pages) return { pngs: [], overflow: info.overflow };
+    // 1回に撮る高さには上限がある（2万px超を1回で撮ると、途中から上の画像が繰り返された）。
+    // 数ページずつスクロールして撮る。
+    const per = Math.max(1, Math.floor(8192 / H)), pngs = [];
+    let scaleShot = 1;
+    for (let start = 0; start < info.pages; start += per) {
+      const n = Math.min(per, info.pages - start);
+      await view(n * H);
+      const layout = await win.webContents.executeJavaScript(`(window.scrollTo(0, ${start * H}), new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r({ w: document.documentElement.clientWidth, h: document.documentElement.clientHeight, y: scrollY })))))`);
+      if (layout.w !== W) fail(`表示の幅が合いません（${layout.w}px）。画面の拡大率を変えた直後なら、もう一度お試しください`);
+      if (layout.h < n * H || layout.h - n * H > 4 || layout.y !== start * H) fail(`表示の高さが合いません（${layout.h}px / ${n * H}px）。画面の拡大率を変えた直後なら、もう一度お試しください`);
+      // 撮影の倍率も同じく、一度撮って画像の幅から合わせる。合わなければ split が縮める。
+      const shoot = async () => nativeImage.createFromBuffer(Buffer.from((await dbg.sendCommand('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: start * H, width: W, height: n * H, scale: scaleShot } })).data, 'base64'));
+      let image = await shoot();
+      if (image.getSize().width !== W) { scaleShot *= W / image.getSize().width; image = await shoot(); }
+      pngs.push(...split(image, W, H, n));
     }
     return { pngs, overflow: info.overflow };
   } finally {
+    if (dbg?.isAttached()) dbg.detach();
     if (win && !win.isDestroyed()) win.destroy();
     await fs.rm(dir, { recursive: true, force: true });
   }
+}
+
+// 縦に並んだページの画像を、1枚ずつ W×H の PNG に切り分ける。
+function split(image, W, H, pages) {
+  const size = image.getSize(), imageScale = size.width / W;
+  if (!(imageScale > 0) || size.height < pages * H * imageScale - 1) fail('画面の撮影の大きさが足りません。もう一度お試しください');
+  const pngs = [];
+  for (let i = 0; i < pages; i++) {
+    const part = image.crop({ x: 0, y: Math.round(i * H * imageScale), width: Math.round(W * imageScale), height: Math.round(H * imageScale) });
+    const fixed = part.getSize().width === W && part.getSize().height === H ? part : part.resize({ width: W, height: H, quality: 'best' });
+    pngs.push(fixed.toPNG());
+  }
+  return pngs;
 }
 
 class SheetExport {
@@ -98,18 +96,18 @@ class SheetExport {
       for (const key of ['image', 'icon']) {
         if (!model[key]) continue;
         try { model[key] = (await this.images.sheetImage(model[key], model.name)).uri; }
-        catch (e) { skipped.push({ label: model.name + (key === 'icon' ? 'のアイコン' : 'の絵'), reason: String(e.message || e) }); model[key] = null; }
+        catch (e) { skipped.push({ label: model.name + (key === 'icon' ? 'のアイコン' : 'の画像'), reason: String(e.message || e) }); model[key] = null; }
       }
       return { model, skipped };
     });
   }
   // 同時に1つだけ作る。作るたびに保存データを読み直し、選んだ項目だけで組み立てる。
-  async render(entryId, options, { show = false } = {}) {
+  async render(entryId, options) {
     if (this.busy) fail('作成中です。終わってからもう一度操作してください');
     this.busy = true;
     try {
       const { model, skipped } = await this.model(entryId, options);
-      return { model, skipped, ...(await capture(this.electron, Sheet.renderSheetHTML(model), model, { show })) };
+      return { model, skipped, ...(await capture(this.electron, Sheet.renderSheetHTML(model), model)) };
     } finally { this.busy = false; }
   }
   // 複数ページは「名前-1.png」「名前-2.png」で保存する。ダイアログが上書きを確かめたのは選んだ名前だけなので、既にあれば止める。

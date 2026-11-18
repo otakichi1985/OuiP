@@ -9,7 +9,7 @@
     let updateBusy = false;
     const updateMessage = info => ({ available: `v${info.version} に更新できます。`, ready: "検証済みです。更新して再起動できます。", current: "最新の正式版です。", unpublished: "配布リリースはまだ公開されていません。", unsupported: "開発版・ソース起動では更新を適用しません。配布版で利用できます。" }[info.kind] || "GitHubの正式リリースを確認します。");
     const editorBusy = () => !!document.querySelector?.("#drawer:not([hidden]) #ef, #veil:not([hidden]) #memo-ed");
-    const EDITOR_OPEN = "編集中の内容を確定するか、編集画面を閉じてください。";
+    const EDITOR_OPEN = "編集を OK かキャンセルで終えてください。";
     function setStatus(text) {
       const status = $("update-status");
       if (status) status.textContent = text;

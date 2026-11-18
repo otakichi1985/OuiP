@@ -37,7 +37,7 @@
       return {node, tags, search: normalize(node.textContent), unset: node.dataset.unset === 'true'};
     });
     function matches(record, selected, ignoreKey) {
-      if (!normalize(search.value).trim().split(/\s+/u).every(word => record.search.includes(word))) return false;
+      if (!SearchQuery.allWords(record.search, search.value)) return false;
       if (!rangeKeys.every(key => key === ignoreKey || FacetRange.matches([...(record.tags.get(key) || [])], rangeOf(key)))) return false;
       const groups = new Map();
       for (const checkbox of selected) {
@@ -104,7 +104,7 @@
     }).filter((item) => item.src);
     if (items.length < 2) return;
     const viewer = document.createElement('div'); viewer.className = 'entry-gallery-viewer';
-    viewer.innerHTML = '<div class="entry-gallery-stage"><button type="button" class="arrow" data-gallery-prev aria-label="前の絵">‹</button><div class="entry-gallery-frame"><img class="entry-gallery-image" alt=""></div><button type="button" class="arrow" data-gallery-next aria-label="次の絵">›</button></div><p class="entry-gallery-caption"></p><p class="entry-gallery-counter"></p><div class="entry-gallery-toolbar"><button type="button" data-gallery-list>一覧</button></div>';
+    viewer.innerHTML = '<div class="entry-gallery-stage"><button type="button" class="arrow" data-gallery-prev aria-label="前のイラスト">‹</button><div class="entry-gallery-frame"><img class="entry-gallery-image" alt=""></div><button type="button" class="arrow" data-gallery-next aria-label="次のイラスト">›</button></div><p class="entry-gallery-caption"></p><p class="entry-gallery-counter"></p><div class="entry-gallery-toolbar"><button type="button" data-gallery-list>一覧</button></div>';
     gallery.hidden = true;
     gallery.parentNode.insertBefore(viewer, gallery);
     const stage = viewer.querySelector('.entry-gallery-stage'), image = viewer.querySelector('.entry-gallery-image'), caption = viewer.querySelector('.entry-gallery-caption'), counter = viewer.querySelector('.entry-gallery-counter'), list = viewer.querySelector('[data-gallery-list]');

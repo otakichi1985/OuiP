@@ -118,13 +118,13 @@ test('HTML/属性/SVGエスケープと極端なfinite範囲も安全',()=>{
   const editor=Stats.renderEditor(Stats.createDraft(data));assert.match(editor,/<label>/);assert.match(editor,/role="alert"/);assert.match(editor,/Alt＋↑/);
   assert.doesNotMatch(editor,/cs-graph/,'無段階のドラッグでは値を決めない（値は欄と段階で決める）');
 });
-test('項目ごとの見せ方を保存・検証し、表示に反映する',()=>{
+test('項目ごとの表示形式を保存・検証し、表示に反映する',()=>{
   const data=Stats.normalize({card:'bars',detail:'bars',items:[
     {...number('体力'),show:'dots'},{...number('速さ'),show:'hidden'},
     {...number('魔力'),show:'radar'},{...number('運'),show:'radar'},{...number('守り'),show:'radar'},number('攻撃')]});
   assert.equal(data.items[0].show,'dots');
   assert.deepEqual(Stats.validate(data),data);
-  assert.throws(()=>Stats.normalize({items:[{...number(),show:'unknown'}]}),/見せ方/);
+  assert.throws(()=>Stats.normalize({items:[{...number(),show:'unknown'}]}),/表示形式/);
   const round=Stats.createDraft(data);round.items[0].show='text';assert.equal(Stats.fromDraft(round).items[0].show,'text');
   const html=Stats.renderDetail(data);
   assert.match(html,/cs-dots/,'ドットで出す項目');

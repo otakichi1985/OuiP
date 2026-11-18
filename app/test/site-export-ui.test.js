@@ -28,7 +28,7 @@ test('編集中は報告だけして開かない', () => {
   viewer.innerHTML = '元の表示';
   h.ctx.open();
   assert.equal(h.errors.length, 1);
-  assert.match(h.errors[0].message, /閲覧用ファイル/);
+  assert.match(h.errors[0].message, /閲覧用ページ/);
   assert.equal(viewer.innerHTML, '元の表示');
 });
 

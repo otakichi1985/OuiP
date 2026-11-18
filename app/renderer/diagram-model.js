@@ -15,8 +15,8 @@
   const DASHES = Object.freeze(['solid', 'dashed', 'dotted']);
   const DIRECTIONS = Object.freeze(['forward', 'both', 'none']);
   const WRITING = Object.freeze(['horizontal', 'vertical']);
-  // 設定資料の項目の見せ方: カード（顔・名前・種類）／アイコンと名前／名前だけ／枠（組織だけ。所属するキャラを中に並べる）。
-  const LOOKS = Object.freeze(['card', 'icon', 'name', 'frame']);
+  // 設定資料の項目の表示: カード（顔・名前・種類）／アイコンと名前／名前だけ／枠（組織だけ。所属するキャラを中に並べる）。
+  const LOOKS = Object.freeze(['card', 'icon', 'iconRound', 'name', 'frame']);
   // 枠の中に並べる順: 名前順／読み順／設定資料の一覧の並び。
   const FRAME_ORDERS = Object.freeze(['list', 'name', 'reading']);
   const NEUTRAL = Object.freeze({ color: '#a0a7b6', dash: 'solid', width: 2 });
@@ -52,7 +52,7 @@
     if (kind === 'entry') {
       if (typeof input.ref !== 'string' || !REF.test(input.ref)) fail('設定資料の項目の指定が不正です');
       out.ref = input.ref;
-      const look = opt(input.look, LOOKS, 'card', '見せ方');
+      const look = opt(input.look, LOOKS, 'card', '項目の表示');
       // 枠は組織だけ。キャラなどに枠が指定されていたらカードに戻す。
       out.look = look === 'frame' && !input.ref.startsWith('org-') ? 'card' : look;
       if (out.look === 'frame') { out.frameOrder = opt(input.frameOrder, FRAME_ORDERS, 'list', '並べる順'); out.frameCols = num(input.frameCols ?? 3, 1, 12, '列の数'); }
@@ -217,7 +217,7 @@
   function arrangeFrame(graph, frameId, members, { look = 'icon' } = {}) {
     let g = clone(graph);
     const f = g.items.find((it) => it.id === frameId); if (!f || f.look !== 'frame') fail('組織の枠を選んでください');
-    const cols = f.frameCols || 3, size = look === 'icon' ? [96, 104] : look === 'name' ? [130, 40] : [160, 56], gap = 12;
+    const cols = f.frameCols || 3, size = look === 'icon' || look === 'iconRound' ? [96, 104] : look === 'name' ? [130, 40] : [160, 56], gap = 12;
     const taken = takenIds(g), ids = [];
     members.forEach((m, i) => {
       const x = f.x + FRAME_PAD + (i % cols) * (size[0] + gap), y = f.y + FRAME_TITLE + FRAME_PAD + Math.floor(i / cols) * (size[1] + gap);
@@ -237,6 +237,15 @@
   function within(graph, r) {
     const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1), y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1);
     return graph.items.filter((it) => it.x >= x0 && it.y >= y0 && it.x + it.w <= x1 && it.y + it.h <= y1).map((it) => it.id);
+  }
+  // 点の下にある項目。重なっているときは前面（後に並ぶもの）を返す。
+  // 画面の当たり判定（elementFromPoint）は、窓の外や重ねた操作の下では当たらないので、図の座標で決める。
+  function at(graph, x, y) {
+    for (let i = graph.items.length - 1; i >= 0; i--) {
+      const it = graph.items[i];
+      if (x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) return it.id;
+    }
+    return null;
   }
 
   // ---- 描画（アプリと閲覧用ファイルで共用） ----
@@ -280,15 +289,16 @@
       else if (it.kind === 'cloud') { const p = cloudPath(it); shape = `<path d="${p.box}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>${p.dots.map(([x, y, r]) => `<circle cx="${round(x)}" cy="${round(y)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`).join('')}`; }
       else if (it.kind === 'balloon') { const p = balloonPath(it); shape = `<path d="${p.box}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>`; }
       else if (it.kind === 'entry' && it.look === 'frame') shape = `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" rx="12" fill="${fill}" fill-opacity=".35" stroke="${stroke}" stroke-width="2"/><rect x="${it.x}" y="${it.y}" width="${it.w}" height="${FRAME_TITLE - 6}" rx="12" fill="${stroke}" fill-opacity=".18"/>`;
-      else if (it.kind === 'entry' && it.look === 'icon') shape = `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" rx="10" fill="transparent" stroke="none"/>`;
+      else if (it.kind === 'entry' && (it.look === 'icon' || it.look === 'iconRound')) shape = `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" rx="10" fill="transparent" stroke="none"/>`;
       else shape = `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" rx="${it.kind === 'entry' ? 10 : 6}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
       if (it.kind === 'entry' && it.look !== 'card') {
         const ref = resolveRef(it.ref), name = it.text || (ref ? ref.name : '削除された項目');
         if (it.look === 'frame') content = `<text x="${it.x + 12}" y="${it.y + 20}" style="font-size:${it.fontSize}px" fill="${tc}" font-weight="700">${esc(name)}</text>`;
         else if (it.look === 'name') content = textBlock({ ...it, writing: 'horizontal' }, name, ref ? tc : palette.muted);
         else {
+          const roundIcon = it.look === 'iconRound';
           const size = Math.max(16, Math.min(it.w, it.h - 22)), ix = it.x + (it.w - size) / 2, iy = it.y;
-          const face = ref?.image ? `${faceObject(ref, ix, iy, size, 10)}<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="none" stroke="${stroke}" stroke-width="2"/>` : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="${ref?.color || '#2e3441'}" stroke="${stroke}" stroke-width="2"/><text x="${ix + size / 2}" y="${iy + size / 2 + 8}" text-anchor="middle" style="font-size:${Math.round(size / 2.4)}px" fill="#12151c">${esc([...name][0] || '')}</text>`;
+          const face = ref?.image ? `${faceObject(ref, ix, iy, size, roundIcon ? size / 2 : 10)}${roundIcon ? `<circle cx="${ix + size / 2}" cy="${iy + size / 2}" r="${size / 2}" fill="none" stroke="${stroke}" stroke-width="2"/>` : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="none" stroke="${stroke}" stroke-width="2"/>`}` : `${roundIcon ? `<circle cx="${ix + size / 2}" cy="${iy + size / 2}" r="${size / 2}" fill="${ref?.color || '#2e3441'}" stroke="${stroke}" stroke-width="2"/>` : `<rect x="${ix}" y="${iy}" width="${size}" height="${size}" rx="10" fill="${ref?.color || '#2e3441'}" stroke="${stroke}" stroke-width="2"/>`}<text x="${ix + size / 2}" y="${iy + size / 2 + 8}" text-anchor="middle" style="font-size:${Math.round(size / 2.4)}px" fill="#12151c">${esc([...name][0] || '')}</text>`;
           const max = Math.max(2, Math.floor(it.w / (it.fontSize * 0.95)));
           content = `${face}<text x="${round(it.x + it.w / 2)}" y="${round(iy + size + it.fontSize + 2)}" text-anchor="middle" style="font-size:${it.fontSize}px" fill="${ref ? tc : palette.muted}" font-weight="700">${esc([...name].length > max ? [...name].slice(0, max - 1).join('') + '…' : name)}</text>`;
         }
@@ -308,5 +318,5 @@
   }
 
   return Object.freeze({ LIMITS, KINDS, LOOKS, FRAME_ORDERS, DASHES, DIRECTIONS, DEFAULT_TEMPLATES, NEUTRAL, PALETTE, THEME_PALETTE, normalize, normalizeTemplates, linkStyle, applyTemplate, contained, arrangeFrame, center, border, linkGeometry, balloonPath, cloudPath, bounds,
-    newId, addItem, updateItem, moveItems, deleteItems, addLink, updateLink, reorder, copy, paste, within, renderSVG });
+    newId, addItem, updateItem, moveItems, deleteItems, addLink, updateLink, reorder, copy, paste, within, at, renderSVG });
 });

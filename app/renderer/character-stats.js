@@ -29,7 +29,7 @@
   // 項目ごとの見せ方（show）。省略なら枠（カード/詳細）の既定を使う。
   function showOf(input, name) {
     if (input.show === undefined || input.show === null) return {};
-    if (!FORMATS.includes(input.show)) fail(name + 'の見せ方が不正です');
+    if (!FORMATS.includes(input.show)) fail(name + 'の表示形式が不正です');
     return {show: input.show};
   }
   function item(input) {
@@ -60,7 +60,7 @@
     if (input === undefined) return previous === undefined ? undefined : normalize(previous);
     if (input === null) input = {items:[]};
     object(input, ['version','card','detail','items'], '枠');
-    if (input.version !== undefined && input.version !== 1) fail('未対応の版です');
+    if (input.version !== undefined && input.version !== 1) fail('未対応のバージョンです');
     const old = previous == null ? undefined : normalize(previous);
     const card = own(input,'card') ? input.card : old?.card ?? 'bars';
     const detail = own(input,'detail') ? input.detail : old?.detail ?? 'bars';
@@ -82,7 +82,7 @@
       const keys = s?.mode === 'number' ? ['name','mode','min','max','unit','value'] : s?.mode === 'text' ? ['name','mode','value'] : ['name','mode','levels','value'];
       object(s, [...keys, 'show'], '項目');
       for (const k of keys) if (!own(s,k)) fail(k + 'がありません');
-      if (own(s,'show') && s.show !== null && s.show !== '' && !FORMATS.includes(s.show)) fail('見せ方が不正です');
+      if (own(s,'show') && s.show !== null && s.show !== '' && !FORMATS.includes(s.show)) fail('表示形式が不正です');
       if (s.mode === 'rough' && (!Array.isArray(s.levels) || s.levels.length < 2 || s.levels.length > LIMITS.levels)) fail('段階は2〜' + LIMITS.levels + '個にしてください');
       if (s.mode === 'text' ? s.value !== null && typeof s.value !== 'string' : s.value !== null && (typeof s.value !== 'number' || !Number.isFinite(s.value))) fail('値の形式が不正です');
     }
@@ -96,7 +96,7 @@
     // 旧単体（card/detail/items）は1ブロックとして受け付ける。
     else if (input && typeof input === 'object' && !own(input, 'blocks') && (own(input, 'card') || own(input, 'detail') || own(input, 'items'))) input = {blocks: [input]};
     object(input, ['version','blocks'], 'ステータス枠');
-    if (input.version !== undefined && input.version !== 1) fail('未対応の版です');
+    if (input.version !== undefined && input.version !== 1) fail('未対応のバージョンです');
     const blocks = own(input, 'blocks') ? input.blocks : [];
     if (!Array.isArray(blocks) || blocks.length > LIMITS.blocks) fail('ステータスは' + LIMITS.blocks + 'ブロック以内にしてください');
     return {version: 1, blocks: Array.from(blocks, block => normalize(block ?? null))};
@@ -299,9 +299,9 @@
   }
   function renderEditor(draft, config = {}) {
     const field=(key,label,value,extra='')=>`<label>${label}<input type="text" data-cs-field="${key}" value="${escape(value)}" maxlength="1000" ${extra}></label>`;
-    const rows=draft.items.map((s,i)=>`<fieldset class="cs-editor-row" data-cs-row="${i}"><legend>項目 ${i+1}</legend><div class="cs-edit-head">${field('name','項目名',s.name)}<label>設定方法<select data-cs-field="mode">${options(['number','rough'],s.mode,v=>v==='number'?'数値':'大まか')}</select></label><label>見せ方<select data-cs-field="show">${options(['',...FORMATS],s.show,v=>v===''?'枠の既定':TITLES[v])}</select></label><div class="cs-row-actions"><button type="button" data-cs-action="up" ${i===0?'disabled':''} aria-label="${escape(s.name)}を上へ移動" title="上へ移動">↑</button><button type="button" data-cs-action="down" ${i===draft.items.length-1?'disabled':''} aria-label="${escape(s.name)}を下へ移動" title="下へ移動">↓</button><button type="button" data-cs-action="remove">削除</button></div></div><details class="cs-more"><summary>範囲・段階・値</summary><div class="cs-number-fields" data-cs-mode="number" ${s.mode!=='number'?'hidden':''}>${field('min','最小値',s.min,'inputmode="decimal"')}${field('max','最大値',s.max,'inputmode="decimal"')}${field('unit','単位',s.unit)}${field('numberValue','値（数値で指定・空欄は未設定）',s.numberValue,'inputmode="decimal"')}<p class="cs-note">数値は範囲内で入力してください。</p></div><div class="cs-rough-fields" data-cs-mode="rough" ${s.mode!=='rough'?'hidden':''}><div class="cs-step-count" data-cs-step-row="${i}">${[2,3,4,5,6,7,8,9].map(n=>`<button type="button" class="cs-step-btn" data-cs-step="${n}" data-cs-step-row="${i}">${n}</button>`).join('')}</div><label>段階名（低い順に1行ずつ、2〜9段階）<textarea data-cs-field="levels" maxlength="9008" rows="3">${escape(s.levels)}</textarea></label><label>大まかな段階<select data-cs-field="roughValue">${roughOptions(s)}</select></label><p class="cs-note">段階数ボタンで行数を調整できます。実数は表示しません。段階は目安です。</p></div></details></fieldset>`).join('');
+    const rows=draft.items.map((s,i)=>`<fieldset class="cs-editor-row" data-cs-row="${i}"><legend>項目 ${i+1}</legend><div class="cs-edit-head">${field('name','項目名',s.name)}<label>設定方法<select data-cs-field="mode">${options(['number','rough'],s.mode,v=>v==='number'?'数値':'大まか')}</select></label><label>表示形式<select data-cs-field="show">${options(['',...FORMATS],s.show,v=>v===''?'枠の既定':TITLES[v])}</select></label><div class="cs-row-actions"><button type="button" data-cs-action="up" ${i===0?'disabled':''} aria-label="${escape(s.name)}を上へ移動" title="上へ移動">↑</button><button type="button" data-cs-action="down" ${i===draft.items.length-1?'disabled':''} aria-label="${escape(s.name)}を下へ移動" title="下へ移動">↓</button><button type="button" data-cs-action="remove">削除</button></div></div><details class="cs-more"><summary>範囲・段階・値</summary><div class="cs-number-fields" data-cs-mode="number" ${s.mode!=='number'?'hidden':''}>${field('min','最小値',s.min,'inputmode="decimal"')}${field('max','最大値',s.max,'inputmode="decimal"')}${field('unit','単位',s.unit)}${field('numberValue','値（数値で指定・空欄は未設定）',s.numberValue,'inputmode="decimal"')}<p class="cs-note">数値は範囲内で入力してください。</p></div><div class="cs-rough-fields" data-cs-mode="rough" ${s.mode!=='rough'?'hidden':''}><div class="cs-step-count" data-cs-step-row="${i}">${[2,3,4,5,6,7,8,9].map(n=>`<button type="button" class="cs-step-btn" data-cs-step="${n}" data-cs-step-row="${i}">${n}</button>`).join('')}</div><label>段階名（低い順に1行ずつ、2〜9段階）<textarea data-cs-field="levels" maxlength="9008" rows="3">${escape(s.levels)}</textarea></label><label>大まかな段階<select data-cs-field="roughValue">${roughOptions(s)}</select></label><p class="cs-note">段階数ボタンで行数を調整できます。実数は表示しません。段階は目安です。</p></div></details></fieldset>`).join('');
     const choices=(config.candidates ?? []).slice(0,LIMITS.items);
-    return `<section class="character-stats cs-editor" aria-label="ステータス編集"><h3>ステータス</h3><div class="cs-display-options">${['card','detail'].map(k=>`<label>${k==='card'?'カードの既定':'詳細の既定'}<select data-cs-setting="${k}">${options(FORMATS,draft[k],v=>TITLES[v])}</select></label>`).join('')}</div><p class="cs-note">項目ごとに「見せ方」を選べます。既定はカード／詳細の枠に従います。レーダーは選んだ項目どうし（3〜12）を1つにまとめます。項目内で Alt＋↑ / ↓ を押すと並べ替え。</p><div class="cs-editor-rows">${rows}</div><div class="cs-add"><label>項目名<input type="text" data-cs-add-name maxlength="1000" value="${escape(config.addName ?? draft.addName ?? '')}"></label><button type="button" data-cs-action="add">項目追加</button>${choices.length ? `<label>既存の項目候補<select data-cs-candidate><option value="">選択してください</option>${choices.map((s,i)=>`<option value="${i}"${String(i)===draft.candidate?' selected':''}>${escape(s.name)} / ${s.mode==='number'?'数値':'大まか'}</option>`).join('')}</select></label><button type="button" data-cs-action="reuse">候補を追加</button>` : ''}</div><details class="cs-preview-more"><summary>カード・詳細の見本</summary><div class="cs-preview" data-cs-preview aria-label="ステータスの見本" aria-live="polite"></div></details><p class="cs-error" data-cs-error role="alert"></p><p class="cs-note" data-cs-status role="status" aria-live="polite"></p></section>`;
+    return `<section class="character-stats cs-editor" aria-label="ステータス編集"><h3>ステータス</h3><div class="cs-display-options">${['card','detail'].map(k=>`<label>${k==='card'?'カードの既定':'詳細の既定'}<select data-cs-setting="${k}">${options(FORMATS,draft[k],v=>TITLES[v])}</select></label>`).join('')}</div><p class="cs-note">項目ごとに「表示形式」を選べます。既定はカード／詳細の枠に従います。レーダーは選んだ項目どうし（3〜12）を1つにまとめます。項目内で Alt＋↑ / ↓ を押すと並べ替え。</p><div class="cs-editor-rows">${rows}</div><div class="cs-add"><label>項目名<input type="text" data-cs-add-name maxlength="1000" value="${escape(config.addName ?? draft.addName ?? '')}"></label><button type="button" data-cs-action="add">項目追加</button>${choices.length ? `<label>既存の項目候補<select data-cs-candidate><option value="">選択してください</option>${choices.map((s,i)=>`<option value="${i}"${String(i)===draft.candidate?' selected':''}>${escape(s.name)} / ${s.mode==='number'?'数値':'大まか'}</option>`).join('')}</select></label><button type="button" data-cs-action="reuse">候補を追加</button>` : ''}</div><details class="cs-preview-more"><summary>カード・詳細の見本</summary><div class="cs-preview" data-cs-preview aria-label="ステータスの見本" aria-live="polite"></div></details><p class="cs-error" data-cs-error role="alert"></p><p class="cs-note" data-cs-status role="status" aria-live="polite"></p></section>`;
   }
   function readDraft(root) {
     const read=(node,selector)=>node.querySelector(selector)?.value ?? '';

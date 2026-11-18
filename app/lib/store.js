@@ -15,6 +15,8 @@ const { normalizeOrganizations, membershipIds } = require("./organizations");
 const { normalizeStatusConcepts, needsItemIds } = require("./status-concepts");
 const StatusModel = require("../renderer/status-model");
 const DiagramModel = require("../renderer/diagram-model");
+const Attributes = require("../renderer/attributes");
+const StoryModel = require("../renderer/story-model");
 
 const SCHEMA = 1;
 const KINDS = ["人物", "用語", "場所", "出来事"];
@@ -55,6 +57,9 @@ function defaultWorld() {
     organizations: [],
     statusConcepts: [],
     statusEnabled: true,
+    // 属性はタグの分類に付ける型・単位・選択肢。値は entries の tags にそのまま置く。
+    attributes: [],
+    attributeViews: [],
   };
 }
 
@@ -125,6 +130,8 @@ class Store {
 
   async load() {
     const world = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+    world.attributes = Attributes.normalizeDefinitions(world.attributes);
+    world.attributeViews = Attributes.normalizeViews(world.attributeViews, world.attributes);
     const names = (await fsp.readdir(this.p("entries")).catch(() => [])).filter((n) => n.endsWith(".json"));
     const entries = [];
     for (const n of names) entries.push(await readJson(this.p("entries", n)));
@@ -132,16 +139,23 @@ class Store {
     entries.sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9) || String(a.id).localeCompare(b.id));
     const relations = await readJson(this.p("relations.json"), []);
     const board = await readJson(this.p("board.json"), { items: [], links: [] });
+    const storyNames = (await fsp.readdir(this.p("stories")).catch(() => [])).filter((n) => n.endsWith(".json"));
+    const stories = [];
+    for (const n of storyNames) stories.push(StoryModel.normalizeStory(await readJson(this.p("stories", n))));
+    const storyRank = new Map((Array.isArray(world.storyOrder) ? world.storyOrder : []).map((id, i) => [id, i]));
+    stories.sort((a, b) => (storyRank.get(a.id) ?? 1e9) - (storyRank.get(b.id) ?? 1e9) || String(a.id).localeCompare(b.id));
     Object.assign(world, collections(world, entries, relations));
-    return { world, entries, relations, board };
+    return { world, entries, relations, board, stories };
   }
 
   updateWorld(patch) {
     return this.serial(async () => {
       const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
       for (const k of ["title", "note", "calendar"]) if (k in patch) w[k] = String(patch[k] ?? "");
-      // 作者名は設定シートや閲覧用ファイルに載せる名前。前後の空白を除き、長すぎる値は拒否する。
+      // 作者名は画像や閲覧用ページに載せる名前。前後の空白を除き、長すぎる値は拒否する。
       if ("author" in patch) { const author = String(patch.author ?? "").trim(); if (author.length > 200) throw new Error("作者名は200文字以内にしてください"); w.author = author; }
+      // ふりがなの既定位置。キャラごとに上書きできる（entry.readingPlace）。
+      if ("readingPlace" in patch) w.readingPlace = patch.readingPlace === "above" ? "above" : "below";
       if ("image" in patch) w.image = this.checkImage(patch.image);
       // 一覧の並び。存在する項目だけを重複なく並べ、送られなかった項目は元の順で末尾に残す。
       if ("order" in patch) {
@@ -187,6 +201,8 @@ class Store {
         w.organizations = normalizeOrganizations(w.organizations.filter((o) => o.id !== id).map((o) => o.parentId === id ? { ...o, parentId: null } : o));
       }
       if ("statusEnabled" in patch) w.statusEnabled = patch.statusEnabled !== false;
+      if ("attributes" in patch) w.attributes = Attributes.normalizeDefinitions(patch.attributes);
+      if ("attributeViews" in patch) w.attributeViews = Attributes.normalizeViews(patch.attributeViews, w.attributes || []);
       if ("linkTemplates" in patch) w.linkTemplates = DiagramModel.normalizeTemplates(patch.linkTemplates);
       if ("statusConcepts" in patch) w.statusConcepts = normalizeStatusConcepts(patch.statusConcepts);
       if ("statusConcept" in patch) {
@@ -233,6 +249,29 @@ class Store {
     board.items = board.items.filter((i) => !gone.has(i.id));
     board.links = board.links.filter((l) => !gone.has(l.from) && !gone.has(l.to));
     await writeJson(this.p("board.json"), board);
+    await this.cleanStoryReferences(removed);
+  }
+
+  async cleanStoryReferences(removed) {
+    if (!removed || !removed.size) return;
+    const storyNames = (await fsp.readdir(this.p("stories")).catch(() => [])).filter((n) => n.endsWith(".json"));
+    for (const n of storyNames) {
+      const st = await readJson(this.p("stories", n));
+      let changed = false;
+      if (Array.isArray(st.refs) && st.refs.some((id) => removed.has(id))) {
+        st.refs = st.refs.filter((id) => !removed.has(id));
+        changed = true;
+      }
+      if (Array.isArray(st.scenes)) {
+        for (const sc of st.scenes) {
+          if (Array.isArray(sc.refs) && sc.refs.some((id) => removed.has(id))) {
+            sc.refs = sc.refs.filter((id) => !removed.has(id));
+            changed = true;
+          }
+        }
+      }
+      if (changed) await writeJson(this.p("stories", n), st);
+    }
   }
 
   saveDiagram(type, input) {
@@ -410,6 +449,9 @@ class Store {
         const placements = input.tagPositions ?? prev.tagPositions ?? {};
         e.tagPositions = Object.fromEntries(Object.keys(e.tags).map((key) => [key, ["above", "below", "bottom", "hidden"].includes(placements[key]) ? placements[key] : "below"]));
         e.reading = String(input.reading ?? prev.reading ?? "").trim();
+        // ふりがなを名前の上に出すキャラだけ印を持つ（既定は名前の下）。世界の既定と違うときだけ持つ。
+        const readingPlace = input.readingPlace === undefined ? prev.readingPlace : input.readingPlace;
+        if (readingPlace === "above" || readingPlace === "below") e.readingPlace = readingPlace; else delete e.readingPlace;
         e.sections = (input.sections ?? prev.sections ?? []).map((s) => ({ title: String(s.title ?? "").trim(), text: String(s.text ?? "") })).filter((s) => s.title || s.text);
         if (e.sections.some((s) => !s.title)) throw new Error("文章の見出しを入れてください");
         e.hue = Number.isFinite(input.hue) ? input.hue : prev.hue ?? [...name].reduce((s, c) => s + c.codePointAt(0) * 37, 0) % 360;
@@ -440,6 +482,126 @@ class Store {
       await writeJson(this.p("world.json"), w);
       return e;
     });
+  }
+
+  // 属性: タグの分類に型・単位・選択肢を付ける。値は entries の tags にそのまま置く。
+  // id はタグの分類名そのもの。名前を変えるときだけ、全キャラの分類名を付け替える。
+  saveAttribute(input) {
+    return this.serial(async () => {
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      w.attributes = Attributes.normalizeDefinitions(w.attributes);
+      const raw = input || {};
+      const oldId = String(raw.id ?? "").trim();
+      const name = String(raw.name ?? oldId).trim();
+      if (!name) throw new Error("属性の名前を入れてください");
+      if (name.length > 80) throw new Error("属性の名前は80文字以内にしてください");
+      const existing = oldId ? w.attributes.find((d) => d.id === oldId) : null;
+      if (oldId && !existing) throw new Error("属性が見つかりません");
+      if (w.attributes.some((d) => d.id === name && d.id !== oldId)) throw new Error("同じ名前の属性があります");
+      if (existing && name !== oldId) {
+        await this.moveTagKey(oldId, name);
+        w.attributes = w.attributes.map((d) => d.id === oldId ? { ...d, id: name } : d);
+        w.attributeViews = (w.attributeViews || []).map((v) => ({
+          ...v,
+          card: (v.card || []).map((id) => id === oldId ? name : id),
+          detail: (v.detail || []).map((id) => id === oldId ? name : id),
+          filter: (v.filter || []).map((id) => id === oldId ? name : id),
+        }));
+      }
+      const def = Attributes.normalizeDefinitions([{ ...raw, id: name, name }])[0];
+      if (!def) throw new Error("属性の内容が不正です");
+      const index = w.attributes.findIndex((d) => d.id === name);
+      if (index >= 0) w.attributes[index] = def; else w.attributes.push(def);
+      w.attributeViews = Attributes.normalizeViews(w.attributeViews, w.attributes);
+      if (index < 0) Attributes.addToViews(w.attributeViews, name);
+      await writeJson(this.p("world.json"), w);
+      return def;
+    });
+  }
+
+  // まとめて属性にする（タグから昇格）。値はすでに tags にあるので、定義を足すだけ。
+  saveAttributes(list) {
+    return this.serial(async () => {
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      w.attributes = Attributes.normalizeDefinitions(w.attributes);
+      const defs = Attributes.normalizeDefinitions(list);
+      if (!defs.length) throw new Error("属性にするタグを選んでください");
+      const before = new Set(w.attributes.map((d) => d.id));
+      w.attributes = Attributes.normalizeDefinitions([...w.attributes, ...defs]);
+      w.attributeViews = Attributes.normalizeViews(w.attributeViews, w.attributes);
+      const added = defs.filter((d) => !before.has(d.id));
+      for (const def of added) Attributes.addToViews(w.attributeViews, def.id);
+      await writeJson(this.p("world.json"), w);
+      return added;
+    });
+  }
+
+  // 属性から外す。値は消さず、自由タグとして残す。
+  deleteAttribute(id) {
+    return this.serial(async () => {
+      const key = String(id ?? "").trim();
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      w.attributes = Attributes.normalizeDefinitions(w.attributes);
+      if (!w.attributes.some((d) => d.id === key)) throw new Error("属性が見つかりません");
+      w.attributes = w.attributes.filter((d) => d.id !== key);
+      w.attributeViews = Attributes.normalizeViews(w.attributeViews, w.attributes)
+        .map((v) => ({ ...v, card: v.card.filter((x) => x !== key), detail: v.detail.filter((x) => x !== key), filter: v.filter.filter((x) => x !== key) }));
+      await writeJson(this.p("world.json"), w);
+      return { id: key };
+    });
+  }
+
+  // 2つの属性を1つにまとめる。値・カード内位置・単位は、まとめる先を優先して残す。
+  mergeAttribute(source, target) {
+    return this.serial(async () => {
+      const from = String(source ?? "").trim(), to = String(target ?? "").trim();
+      if (!from || !to || from === to) throw new Error("統合する属性を選んでください");
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      w.attributes = Attributes.normalizeDefinitions(w.attributes);
+      if (!w.attributes.some((d) => d.id === from) || !w.attributes.some((d) => d.id === to)) throw new Error("属性が見つかりません");
+      await this.moveTagKey(from, to);
+      w.attributes = w.attributes.filter((d) => d.id !== from);
+      w.attributeViews = Attributes.normalizeViews(w.attributeViews, w.attributes).map((v) => ({
+        ...v,
+        card: [...new Set(v.card.map((id) => id === from ? to : id))],
+        detail: [...new Set(v.detail.map((id) => id === from ? to : id))],
+        filter: [...new Set(v.filter.map((id) => id === from ? to : id))],
+      }));
+      await writeJson(this.p("world.json"), w);
+      return w.attributes.find((d) => d.id === to);
+    });
+  }
+
+  saveAttributeViews(list) {
+    return this.serial(async () => {
+      if (!Array.isArray(list) || !list.length) throw new Error("表示を1つ以上残してください");
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      w.attributes = Attributes.normalizeDefinitions(w.attributes);
+      w.attributeViews = Attributes.normalizeViews(list, w.attributes);
+      await writeJson(this.p("world.json"), w);
+      return w.attributeViews;
+    });
+  }
+
+  // タグの分類名を付け替える。付け替え先に値があれば重複を除いてまとめる。
+  async moveTagKey(from, to) {
+    const names = (await fsp.readdir(this.p("entries")).catch(() => [])).filter((n) => n.endsWith(".json"));
+    for (const n of names) {
+      const file = this.p("entries", n);
+      const e = await readJson(file);
+      if (!e.tags || !(from in e.tags)) continue;
+      e.tags[to] = [...new Set([...(e.tags[to] || []), ...(e.tags[from] || [])])];
+      delete e.tags[from];
+      if (e.tagPositions && from in e.tagPositions) {
+        if (!(to in e.tagPositions)) e.tagPositions[to] = e.tagPositions[from];
+        delete e.tagPositions[from];
+      }
+      if (e.tagUnits && from in e.tagUnits) {
+        if (!(to in e.tagUnits)) e.tagUnits[to] = e.tagUnits[from];
+        delete e.tagUnits[from];
+      }
+      await writeJson(file, e);
+    }
   }
 
   // 位置だけ動かす（相関図・地図のドラッグ）
@@ -483,6 +645,58 @@ class Store {
           await writeJson(this.p("entries", n), e);
         }
       }
+      await this.cleanStoryReferences(new Set([id]));
+    });
+  }
+
+  saveStory(input) {
+    return this.serial(async () => {
+      const raw = input && typeof input === "object" ? input : {};
+      const id = raw.id ? String(raw.id).trim() : newId("s");
+      if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("idが不正");
+      const title = String(raw.title ?? "").trim();
+      if (!title) throw new Error("タイトルを入れてください");
+      await fsp.mkdir(this.p("stories"), { recursive: true });
+      const story = StoryModel.normalizeStory({ ...raw, id, title, updatedAt: Date.now() });
+      await writeJson(this.p("stories", id + ".json"), story);
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      const order = Array.isArray(w.storyOrder) ? [...w.storyOrder] : [];
+      if (!order.includes(id)) {
+        order.push(id);
+        w.storyOrder = order;
+        await writeJson(this.p("world.json"), w);
+      }
+      return story;
+    });
+  }
+
+  deleteStory(id) {
+    return this.serial(async () => {
+      if (!/^[a-zA-Z0-9_-]+$/.test(String(id || ""))) throw new Error("idが不正");
+      await fsp.rm(this.p("stories", id + ".json"), { force: true });
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      if (Array.isArray(w.storyOrder) && w.storyOrder.includes(id)) {
+        w.storyOrder = w.storyOrder.filter((x) => x !== id);
+        await writeJson(this.p("world.json"), w);
+      }
+    });
+  }
+
+  reorderStories(order) {
+    return this.serial(async () => {
+      if (!Array.isArray(order)) throw new Error("並び順の形式が不正");
+      const seen = new Set();
+      const clean = [];
+      for (const item of order) {
+        const id = String(item || "").trim();
+        if (!id || seen.has(id) || !/^[a-zA-Z0-9_-]+$/.test(id)) continue;
+        seen.add(id);
+        clean.push(id);
+      }
+      const w = { ...defaultWorld(), ...(await readJson(this.p("world.json"), defaultWorld())) };
+      w.storyOrder = clean;
+      await writeJson(this.p("world.json"), w);
+      return clean;
     });
   }
 

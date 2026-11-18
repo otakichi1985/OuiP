@@ -64,7 +64,7 @@
       return `<g class="nd" data-node="${id}" data-which="rel" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="${escape(e.name)}"><circle r="22" fill="hsl(${Number(e.hue) || 0} 45% 62%)"/>${face}<text y="46" text-anchor="middle">${escape(e.name)}</text></g>`;
     }).join("");
     const nodes = m.groups.map((o) => { const [x,y] = p[o.id]; return `<g class="nd organization-node" data-node="${escape(o.id)}" data-organization-node data-which="rel" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="組織 ${escape(o.name)}"><rect x="-65" y="-18" width="130" height="36" rx="5"/><text y="5" text-anchor="middle">${escape(o.name.length > 10 ? o.name.slice(0,9) + "…" : o.name)}</text><title>${escape(o.name)}</title></g>`; }).join("");
-    return `<div class="vis organization-graph"><svg viewBox="0 0 960 560" role="img" aria-label="相関図">${layout.gridMarkup(graph?.grid,graph?.id)}<g data-organization-frames>${framesMarkup(m)}</g>${edges}${people}${nodes}</svg></div>`;
+    return `<div class="vis organization-graph"><svg viewBox="0 0 960 560" role="img" aria-label="関係図">${layout.gridMarkup(graph?.grid,graph?.id)}<g data-organization-frames>${framesMarkup(m)}</g>${edges}${people}${nodes}</svg></div>`;
   }
   function createUI({ document, $, esc, api, toast, refresh, reportError, getState, getQuery, byId, activeDiagram, assetURL, RW, RH, write, queueGraphControl, emptyState = (icon, title, note = "", actions = "") => `<div class="empty"><p>${title}</p>${note ? `<p>${note}</p>` : ""}${actions}</div>` }) {
     function organizationControls(graph = null) {
@@ -76,13 +76,13 @@
       return `<div class="organization-list">${list.length ? list.map((o) => {
         const parent = (S.world.organizations || []).find((p) => p.id === o.parentId);
         const n = S.entries.filter((e) => e.organizationIds?.includes(o.id)).length;
-        return `<section class="organization-row"><div><strong>${esc(o.name)}</strong><span class="small muted">${parent ? `親組織: ${esc(parent.name)} ・ ` : ""}所属 ${n}人</span>${o.desc ? `<p>${esc(o.desc)}</p>` : ""}</div><button type="button" class="b quiet sm" data-edit-organization="${esc(o.id)}">編集</button><button type="button" class="b quiet sm danger" data-delete-organization="${esc(o.id)}">削除</button></section>`;
+        return `<section class="organization-row"><div><strong>${esc(o.name)}</strong><span class="small muted">${parent ? `親組織: ${esc(parent.name)} ・ ` : ""}所属 ${n}人</span>${o.desc ? `<p>${esc(o.desc)}</p>` : ""}</div><button type="button" class="b quiet sm" data-site-export="${esc(JSON.stringify({ organizationIds: [o.id], entryIds: S.entries.filter((e) => e.organizationIds?.includes(o.id)).map((e) => e.id) }))}">${typeof Icons !== "undefined" ? Icons.icon("export") : ""}閲覧用ページを書き出す</button><button type="button" class="b quiet sm" data-edit-organization="${esc(o.id)}">編集</button><button type="button" class="b quiet sm danger" data-delete-organization="${esc(o.id)}">削除</button></section>`;
       }).join("") : q ? emptyState("search", "条件に合う組織はありません", "検索の言葉を変えるか、条件を解除してください。", '<button type="button" class="b sm" data-clear-search>条件解除</button>') : emptyState("organization", "組織はまだありません", "上の「組織を追加」から登録すると、キャラの所属先に選べます。")}</div>`;
     }
     function organizationMembershipControl(e = {}) {
       const S = getState();
       const organizations = S.world.organizations || [];
-      return `<fieldset class="organization-membership"><legend>所属先（共通組織・複数選択）</legend>${organizations.length ? `<div class="organization-picker">${organizations.map((o) => `<label><input type="checkbox" data-organization-membership value="${esc(o.id)}" ${e.organizationIds?.includes(o.id) ? "checked" : ""}>${esc(o.name)}</label>`).join("")}</div>` : '<span class="small muted">組織タブで組織を追加できます。</span>'}<p class="small muted">旧「所属」タグは別項目として保持します。</p></fieldset>`;
+      return `<fieldset class="organization-membership"><legend>所属先（共通組織・複数選択）</legend>${organizations.length ? `<div class="organization-picker">${organizations.map((o) => `<label><input type="checkbox" data-organization-membership value="${esc(o.id)}" ${e.organizationIds?.includes(o.id) ? "checked" : ""}>${esc(o.name)}</label>`).join("")}</div>` : '<span class="small muted">組織タブで組織を追加できます。</span>'}<p class="small muted">選んだ組織は「所属」タグにも入ります。手で入れた「所属」タグの値は残します。</p></fieldset>`;
     }
     function selectedOrganizationIds(form) {
       return [...form.querySelectorAll("[data-organization-membership]:checked")].map((i) => i.value);
@@ -108,8 +108,9 @@
     function organizationForm(id = null) {
       const S = getState();
       const organizations = S.world.organizations || [], o = organizations.find((x) => x.id === id);
+      const people = S.entries.filter((e) => e.kind === "人物");
       const excluded = o ? descendants(o.id, organizations) : new Set();
-      $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${o ? "組織を編集" : "組織を追加"}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="organization-form" data-id="${esc(o?.id || "")}"><div class="organization-form-body"><label for="organization-name">組織名</label><input id="organization-name" required value="${esc(o?.name || "")}"><label for="organization-parent">親組織</label><select id="organization-parent"><option value="">なし</option>${organizations.filter((p) => !excluded.has(p.id)).map((p) => `<option value="${esc(p.id)}" ${p.id === o?.parentId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select><label for="organization-desc">説明</label><textarea id="organization-desc" rows="4">${esc(o?.desc || "")}</textarea></div><div class="modal-actions row"><button type="button" class="b quiet" data-vclose>取消</button><button type="submit" class="b primary">${o ? "決定" : "追加"}</button></div></form>`;
+      $("viewer").innerHTML = `<div class="vh"><h3 id="vt">${o ? "組織を編集" : "組織を追加"}</h3><button class="b quiet sm" data-vclose>閉じる</button></div><form id="organization-form" data-id="${esc(o?.id || "")}"><div class="organization-form-body"><label for="organization-name">組織名</label><input id="organization-name" required value="${esc(o?.name || "")}"><label for="organization-parent">親組織</label><select id="organization-parent"><option value="">なし</option>${organizations.filter((p) => !excluded.has(p.id)).map((p) => `<option value="${esc(p.id)}" ${p.id === o?.parentId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select><label for="organization-desc">説明</label><textarea id="organization-desc" rows="4">${esc(o?.desc || "")}</textarea><fieldset class="organization-people"><legend>所属するキャラ</legend>${people.length ? `<div class="organization-picker">${people.map((e) => `<label><input type="checkbox" data-organization-person value="${esc(e.id)}" ${o && (e.organizationIds || []).includes(o.id) ? "checked" : ""}>${esc(e.name)}</label>`).join("")}</div><p class="small muted">選んだキャラの所属先と「所属」タグに、この組織名が入ります。</p>` : '<span class="small muted">人物タブでキャラを登録できます。</span>'}</fieldset></div><div class="modal-actions row"><button type="button" class="b quiet" data-vclose>キャンセル</button><button type="submit" class="b primary">${o ? "OK" : "追加"}</button></div></form>`;
       $("veil").hidden = false; $("organization-name").focus();
     }
 
@@ -140,7 +141,7 @@
         document.querySelectorAll("[data-member]").forEach((input) => { if ((byId(input.value)?.organizationIds || []).some((id) => family.has(id))) input.checked = true; });
       } else if (button.dataset.deleteOrganization) {
         const o = (S.world.organizations || []).find((x) => x.id === button.dataset.deleteOrganization); if (!o) return;
-        $("viewer").innerHTML = `<div class="vh"><h3 id="vt">組織の削除</h3><button class="b quiet sm" data-vclose>閉じる</button></div><p>「${esc(o.name)}」を削除します。人物は削除しません。所属先・図の組織と接続を解除し、直属の子組織は親なしにします。</p><form id="organization-delete-form" data-id="${esc(o.id)}"><div class="modal-actions row"><button type="button" class="b quiet" data-vclose>取消</button><button type="submit" class="b danger">組織を削除</button></div></form>`;
+        $("viewer").innerHTML = `<div class="vh"><h3 id="vt">組織の削除</h3><button class="b quiet sm" data-vclose>閉じる</button></div><p>「${esc(o.name)}」を削除します。人物は削除しません。所属先・図の組織と接続を解除し、直属の子組織は親なしにします。</p><form id="organization-delete-form" data-id="${esc(o.id)}"><div class="modal-actions row"><button type="button" class="b quiet" data-vclose>キャンセル</button><button type="submit" class="b danger">組織を削除</button></div></form>`;
         $("veil").hidden = false;
       }
     });
@@ -148,8 +149,34 @@
       if (!["organization-form", "organization-delete-form"].includes(ev.target.id)) return;
       ev.preventDefault(); const form = ev.target, button = form.querySelector('[type="submit"]'); button.disabled = true;
       try {
-        const patch = form.id === "organization-delete-form" ? { deleteOrganization: form.dataset.id } : { organization: { ...(form.dataset.id ? { id: form.dataset.id } : {}), name: $("organization-name").value, parentId: $("organization-parent").value || null, desc: $("organization-desc").value } };
-        await write(async () => { await api.updateWorld(patch); await refresh(); }); $("veil").hidden = true;
+        if (form.id === "organization-delete-form") {
+          await write(async () => { await api.updateWorld({ deleteOrganization: form.dataset.id }); await refresh(); });
+        } else {
+          const before = getState(), editing = form.dataset.id || "";
+          const beforeIds = new Set((before.world.organizations || []).map((o) => o.id));
+          const previous = (before.world.organizations || []).find((o) => o.id === editing) || null;
+          const name = $("organization-name").value.trim();
+          const wanted = new Set([...form.querySelectorAll("[data-organization-person]:checked")].map((input) => input.value));
+          await write(async () => {
+            const nextWorld = await api.updateWorld({ organization: { ...(editing ? { id: editing } : {}), name, parentId: $("organization-parent").value || null, desc: $("organization-desc").value } });
+            const org = editing ? nextWorld.organizations.find((o) => o.id === editing) : nextWorld.organizations.find((o) => !beforeIds.has(o.id));
+            if (org) {
+              for (const entry of before.entries.filter((e) => e.kind === "人物")) {
+                const had = (entry.organizationIds || []).includes(org.id), want = wanted.has(entry.id);
+                const renamed = !!(previous && previous.name !== org.name && had);
+                if (!had && !want && !renamed) continue;
+                const ids = new Set(entry.organizationIds || []);
+                if (want) ids.add(org.id); else ids.delete(org.id);
+                const add = want ? [org.name] : [];
+                const remove = [...(renamed ? [previous.name] : []), ...(!want && had ? [org.name] : [])];
+                const tags = OrganizationTags.merge(entry.tags, add, remove);
+                await api.saveEntry({ id: entry.id, kind: "人物", name: entry.name, organizationIds: [...ids], tags });
+              }
+            }
+            await refresh();
+          });
+        }
+        $("veil").hidden = true;
       } catch (e) { reportError(e.message + '。入力内容を確認して再試行してください。', form); button.disabled = false; }
     });
     document.addEventListener("change", (ev) => {

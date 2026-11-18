@@ -19,7 +19,7 @@
     cloud: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 18.5h10.2a3.7 3.7 0 0 0 .6-7.4A5.2 5.2 0 0 0 7.4 9.8a3.8 3.8 0 0 0-.9 7.5"/></svg>',
   };
   const DASH_LABEL = { solid: '実線', dashed: '破線', dotted: '点線' };
-  const LOOK_LABEL = { card: 'カード（顔・名前・種類）', icon: 'アイコンと名前', name: '名前だけ', frame: '枠（所属するキャラを中に並べる）' };
+  const LOOK_LABEL = { card: 'カード（顔・名前・種類）', icon: 'アイコンと名前', iconRound: '丸いアイコンと名前', name: '名前だけ', frame: '枠（所属するキャラを中に並べる）' };
   const ORDER_LABEL = { list: '設定資料の並び', name: '名前順', reading: '読み順' };
   const LOOK_SIZE = { card: [150, 56], icon: [96, 104], name: [130, 40], frame: [360, 220] };
   const DIR_LABEL = { forward: '→ 片方向', both: '↔ 両方向', none: '― 矢印なし' };
@@ -107,14 +107,19 @@
       const placed = new Set((g?.items || []).filter((it) => it.kind === 'entry').map((it) => it.ref));
       const all = [...entries.map((e) => ({ id: e.id, name: e.name, reading: e.reading || '', kind: KIND_LABEL[e.kind] || e.kind })), ...(world.organizations || []).map((o) => ({ id: o.id, name: o.name, reading: '', kind: '組織' }))];
       const kinds = ['キャラ', '組織', '用語', '場所', '出来事'].filter((k) => all.some((x) => x.kind === k));
-      const shown = all.filter((x) => (!paletteKind || x.kind === paletteKind) && (!paletteMissing || !placed.has(x.id)) && (!q || x.name.includes(q) || x.reading.includes(q)));
+      const shown = all.filter((x) => (!paletteKind || x.kind === paletteKind) && (!paletteMissing || !placed.has(x.id)) && SearchQuery.allWords([x.name, x.reading], q));
       const groups = kinds.map((k) => [k, shown.filter((x) => x.kind === k)]).filter(([, list]) => list.length);
-      return `<div class="dg-palette-body"><p class="dg-head">設定資料から置く</p><input type="search" class="inp dg-search" data-dg-palette-q value="${esc(paletteQuery)}" placeholder="名前・読みで探す" aria-label="置く項目を探す">
+      return `<div class="dg-palette-body"><div class="dg-palette-head"><p class="dg-head">設定資料から置く</p><input type="search" class="inp dg-search" data-dg-palette-q value="${esc(paletteQuery)}" placeholder="名前・読みで探す" aria-label="置く項目を探す">
         <div class="dg-kinds" role="group" aria-label="種類で絞り込む"><button type="button" class="chipbtn" data-dg-kind="" aria-pressed="${!paletteKind}">すべて</button>${kinds.map((k) => `<button type="button" class="chipbtn" data-dg-kind="${esc(k)}" aria-pressed="${paletteKind === k}">${esc(k)}</button>`).join('')}</div>
-        <label class="small dg-missing"><input type="checkbox" data-dg-missing ${paletteMissing ? 'checked' : ''}>図にないものだけ</label>
+        <label class="small dg-missing"><input type="checkbox" data-dg-missing ${paletteMissing ? 'checked' : ''}>図にないものだけ</label></div>
         ${groups.map(([k, list]) => `<p class="dg-group small muted">${esc(k)}（${list.length}）</p><div class="dg-list">${list.map((x) => `<button type="button" class="dg-pal-item${placed.has(x.id) ? ' is-placed' : ''}" draggable="true" data-dg-add-ref="${esc(x.id)}" title="押すと図の真ん中に置く。ドラッグで好きな位置へ${placed.has(x.id) ? '（図にあります）' : ''}">${esc(x.name)}${placed.has(x.id) ? '<span class="small muted"> 図にあり</span>' : ''}</button>`).join('')}</div>`).join('') || '<p class="small muted">該当する項目はありません。</p>'}</div>`;
     }
     const colorInput = (key, value, label) => `<label class="dg-color">${label}<input type="color" data-dg-field="${key}" value="${esc(value)}"></label>`;
+    const tplSampleSvg = (x) => {
+      const dash = x.dash === 'dashed' ? '6 4' : x.dash === 'dotted' ? '1 4' : '';
+      const width = Math.max(1.5, Math.min(3.5, Number(x.width) || 2));
+      return `<svg viewBox="0 0 60 20" aria-hidden="true" focusable="false"><line x1="3" y1="10" x2="49" y2="10" stroke="${esc(x.color)}" stroke-width="${width}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round"/><path d="M48 5.5 58 10 48 14.5Z" fill="${esc(x.color)}"/></svg>`;
+    };
     // 図形は、何を選んでいてもいつでも置ける（右の欄のいちばん上）。
     const shapesRow = () => `<div class="dg-shapes-row"><span class="small muted">図形を置く</span>${SHAPES.map(([k, l]) => `<button type="button" class="b sm dg-shape-btn" draggable="true" data-dg-add-shape="${k}" aria-label="${l}を置く" title="${l}（押すと図の真ん中に置く。ドラッグで好きな位置へ）">${SHAPE_ICONS[k]}<span class="sr">${l}</span></button>`).join('')}</div>`;
     function inspectorHtml(g) { return shapesRow() + inspectorBody(g); }
@@ -123,7 +128,7 @@
       if (its.length === 1 && !ls.length) {
         const it = its[0], ref = it.kind === 'entry' ? resolveRef(it.ref) : null;
         return `<p class="dg-head">${it.kind === 'entry' ? esc(ref ? ref.kind + '：' + ref.name : '削除された項目') : esc({ box: '文字の箱', ellipse: '楕円', balloon: '吹き出し', cloud: '雲の吹き出し' }[it.kind])}</p>
-          ${it.kind === 'entry' ? `<label>見せ方<select class="inp" data-dg-look>${Object.entries(LOOK_LABEL).filter(([k]) => k !== 'frame' || it.ref.startsWith('org-')).map(([k, v]) => `<option value="${k}"${it.look === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>${it.look === 'frame' ? `<div class="dg-grid2"><label>並べる順<select class="inp" data-dg-field="frameOrder">${Object.entries(ORDER_LABEL).map(([k, v]) => `<option value="${k}"${it.frameOrder === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label>列の数<input type="number" class="inp" min="1" max="12" data-dg-field="frameCols" value="${it.frameCols}"></label></div><button type="button" class="b sm" data-dg-arrange>所属するキャラを枠の中に並べる</button><p class="small muted">図にないキャラは足し、図にあるキャラは枠の中へ移します。枠を動かすと中のキャラも一緒に動きます。</p>` : ''}<label>図での名前（空欄なら項目の名前）<input type="text" class="inp" data-dg-field="text" value="${esc(it.text)}" maxlength="1000"></label>${ref ? `<button type="button" class="b quiet sm" data-dg-open-ref="${esc(it.ref)}">項目を開く</button>` : ''}` : `<label>文字<textarea class="inp" rows="3" data-dg-field="text" maxlength="1000">${esc(it.text)}</textarea></label>`}
+          ${it.kind === 'entry' ? `<label>項目の表示<select class="inp" data-dg-look>${Object.entries(LOOK_LABEL).filter(([k]) => k !== 'frame' || it.ref.startsWith('org-')).map(([k, v]) => `<option value="${k}"${it.look === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>${it.look === 'frame' ? `<div class="dg-grid2"><label>並べる順<select class="inp" data-dg-field="frameOrder">${Object.entries(ORDER_LABEL).map(([k, v]) => `<option value="${k}"${it.frameOrder === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label>列の数<input type="number" class="inp" min="1" max="12" data-dg-field="frameCols" value="${it.frameCols}"></label></div><button type="button" class="b sm" data-dg-arrange>所属するキャラを枠の中に並べる</button><p class="small muted">図にないキャラは足し、図にあるキャラは枠の中へ移します。枠を動かすと中のキャラも一緒に動きます。</p>` : ''}<label>図での名前（空欄なら項目の名前）<input type="text" class="inp" data-dg-field="text" value="${esc(it.text)}" maxlength="1000"></label>${ref ? `<button type="button" class="b quiet sm" data-dg-open-ref="${esc(it.ref)}">項目を開く</button>` : ''}` : `<label>文字<textarea class="inp" rows="3" data-dg-field="text" maxlength="1000">${esc(it.text)}</textarea></label>`}
           <div class="dg-grid2"><label>文字の大きさ<input type="number" class="inp" min="10" max="48" data-dg-field="fontSize" value="${it.fontSize}"></label>${it.kind === 'entry' ? '' : `<label>文字の向き<select class="inp" data-dg-field="writing"><option value="horizontal"${it.writing === 'horizontal' ? ' selected' : ''}>横書き</option><option value="vertical"${it.writing === 'vertical' ? ' selected' : ''}>縦書き</option></select></label>`}
           <label>幅<input type="number" class="inp" min="${D.LIMITS.minW}" max="${D.LIMITS.maxW}" data-dg-field="w" value="${it.w}"></label><label>高さ<input type="number" class="inp" min="${D.LIMITS.minH}" max="${D.LIMITS.maxH}" data-dg-field="h" value="${it.h}"></label></div>
           <div class="dg-colors">${colorInput('fill', it.fill || '#1a1e27', '塗り')}${colorInput('stroke', it.stroke || '#6cc4b4', '枠')}${colorInput('textColor', it.textColor || '#e4e6ec', '文字')}</div>
@@ -132,11 +137,15 @@
       }
       if (ls.length === 1 && !its.length) {
         const l = ls[0], st = D.linkStyle(l, tpls);
-        return `<p class="dg-head">矢印</p><label>文字（任意）<textarea class="inp" rows="2" data-dg-field="text" maxlength="1000" placeholder="例: 気になる">${esc(l.text)}</textarea></label>
+        const dirGlyph = l.direction === 'both' ? '↔' : l.direction === 'none' ? '―' : '→';
+        // どの矢印を選んでいるか、つながりの両端の名前で示す（図の中で矢印が重なっても分かるように）。
+        const endName = (id) => { const it = g.items.find((x) => x.id === id); if (!it) return '（削除された図形）'; if (it.kind === 'entry') { const r = resolveRef(it.ref); return r ? r.name : '（削除された項目）'; } return it.text || { box: '文字の箱', ellipse: '楕円', balloon: '吹き出し', cloud: '雲の吹き出し' }[it.kind]; };
+        return `<p class="dg-head">矢印</p><div class="dg-endpoints-row"><p class="small muted dg-endpoints">${esc(endName(l.a))} ${dirGlyph} ${esc(endName(l.b))}</p><button type="button" class="b quiet sm" data-dg-swap-ends title="矢印の始点と終点を入れ替える">${typeof Icons !== 'undefined' ? Icons.icon('swap') : ''}向きを逆にする</button></div><label>文字（任意）<textarea class="inp" rows="2" data-dg-field="text" maxlength="1000" placeholder="例: 気になる">${esc(l.text)}</textarea></label>
           <label>テンプレート<select class="inp" data-dg-field="template"><option value="">なし</option>${tpls.map((t) => `<option value="${esc(t.id)}"${l.template === t.id ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>
+          ${tpls.length ? `<div class="dg-tpl-quick" role="group" aria-label="テンプレートをすぐ適用">${tpls.map((x) => `<button type="button" class="dg-tpl-chip${l.template === x.id ? ' is-active' : ''}" data-dg-apply-tpl="${esc(x.id)}" aria-pressed="${l.template === x.id}" title="${esc(x.name)}を適用">${tplSampleSvg(x)}<span class="dg-tpl-chip-name">${esc(x.name)}</span></button>`).join('')}</div>` : ''}
           <label>向き<select class="inp" data-dg-field="direction">${Object.entries(DIR_LABEL).map(([k, v]) => `<option value="${k}"${l.direction === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-          <div class="dg-grid2"><label>曲がり<input type="range" min="-300" max="300" step="10" data-dg-field="bend" value="${l.bend}"></label><button type="button" class="b quiet sm" data-dg-straight>まっすぐ</button></div>
-          <details class="dg-override"${l.color || l.dash || l.width ? ' open' : ''}><summary class="small">この矢印だけ見た目を変える</summary>
+          <div class="dg-grid2"><label>曲がり <span data-dg-bend-val>(${Math.round(Number(l.bend) || 0)})</span><input type="range" min="-300" max="300" step="10" data-dg-field="bend" value="${l.bend}"></label><button type="button" class="b quiet sm" data-dg-straight>まっすぐ</button></div>
+          <details class="dg-override"${l.color || l.dash || l.width ? ' open' : ''}><summary class="small">線の種類・太さ・色を変える（この矢印だけ）</summary>
             <div class="dg-grid2">${colorInput('color', st.color, '色')}<label>線の種類<select class="inp" data-dg-field="dash"><option value="">テンプレートのまま</option>${Object.entries(DASH_LABEL).map(([k, v]) => `<option value="${k}"${l.dash === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label>太さ<input type="number" class="inp" min="1" max="8" data-dg-field="width" value="${l.width || ''}" placeholder="${st.width}"></label></div>
             <button type="button" class="b quiet sm" data-dg-reset-style>テンプレートの見た目に戻す</button></details>
           <p class="small muted">文字はドラッグで位置を変えられます。曲がりは線の中ほどの丸い取っ手でも変えられます。</p>${actions(true)}`;
@@ -145,13 +154,8 @@
       const idx = tpls.length ? Math.max(0, Math.min(tpls.length - 1, tplIndex)) : 0;
       tplIndex = idx;
       const t = tpls[idx];
-      const sample = (x) => {
-        const dash = x.dash === 'dashed' ? '6 4' : x.dash === 'dotted' ? '1 4' : '';
-        const width = Math.max(1.5, Math.min(3.5, Number(x.width) || 2));
-        return `<svg viewBox="0 0 60 20" aria-hidden="true" focusable="false"><line x1="3" y1="10" x2="49" y2="10" stroke="${esc(x.color)}" stroke-width="${width}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round"/><path d="M48 5.5 58 10 48 14.5Z" fill="${esc(x.color)}"/></svg>`;
-      };
       return `<div class="dg-tpl-head"><p class="dg-head">矢印のテンプレート</p>${tpls.length ? `<span class="dg-tpl-count">${idx + 1} / ${tpls.length}</span>` : ''}</div>
-        ${tpls.length ? `<div class="dg-tpl-nav"><button type="button" class="b quiet sm dg-tpl-navbtn" data-dg-tpl-prev aria-label="前のテンプレート" title="前のテンプレート">‹</button><div class="dg-tpl-strip" role="group" aria-label="矢印のテンプレート">${tpls.map((x, i) => `<button type="button" class="dg-tpl-chip${i === idx ? ' is-active' : ''}" draggable="true" data-dg-tpl-select="${i}" data-dg-tpl-drag="${esc(x.id)}" aria-pressed="${i === idx}" aria-label="${esc(x.name)}。矢印へドラッグして適用" title="${esc(x.name)}を矢印へドラッグして適用">${sample(x)}<span class="dg-tpl-chip-name">${esc(x.name)}</span></button>`).join('')}</div><button type="button" class="b quiet sm dg-tpl-navbtn" data-dg-tpl-next aria-label="次のテンプレート" title="次のテンプレート">›</button></div>
+        ${tpls.length ? `<div class="dg-tpl-nav"><button type="button" class="b quiet sm dg-tpl-navbtn" data-dg-tpl-prev aria-label="前のテンプレート" title="前のテンプレート">‹</button><div class="dg-tpl-strip" role="group" aria-label="矢印のテンプレート">${tpls.map((x, i) => `<button type="button" class="dg-tpl-chip${i === idx ? ' is-active' : ''}" draggable="true" data-dg-tpl-select="${i}" data-dg-tpl-drag="${esc(x.id)}" aria-pressed="${i === idx}" aria-label="${esc(x.name)}。矢印へドラッグして適用" title="${esc(x.name)}を矢印へドラッグして適用">${tplSampleSvg(x)}<span class="dg-tpl-chip-name">${esc(x.name)}</span></button>`).join('')}</div><button type="button" class="b quiet sm dg-tpl-navbtn" data-dg-tpl-next aria-label="次のテンプレート" title="次のテンプレート">›</button></div>
         <p class="small muted dg-tpl-hint">見本を矢印へドラッグすると適用されます。選ぶと直せます。</p>
         <div class="dg-tpl-editor" data-dg-tpl="${idx}"><div class="dg-grid2"><label>名前<input class="inp" type="text" data-dg-tpl-field="name" value="${esc(t.name)}" aria-label="テンプレートの名前"></label><label>矢印に入る文字<input class="inp" type="text" data-dg-tpl-field="label" value="${esc(t.label)}" placeholder="空なら入れない" aria-label="矢印に入る文字"></label></div><div class="dg-tpl-look"><label>色<input type="color" data-dg-tpl-field="color" value="${esc(t.color)}" aria-label="${esc(t.name)}の色"></label><label>線の種類<select class="inp" data-dg-tpl-field="dash" aria-label="${esc(t.name)}の線の種類">${Object.entries(DASH_LABEL).map(([k, v]) => `<option value="${k}"${t.dash === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label>太さ<input class="inp" type="number" min="1" max="8" data-dg-tpl-field="width" value="${t.width}" aria-label="${esc(t.name)}の太さ"></label><button type="button" class="b quiet sm danger dg-x" data-dg-tpl-remove="${idx}" aria-label="${esc(t.name)}を削除" title="削除">×</button></div></div>` : '<p class="small muted">テンプレートがありません。下の「＋ テンプレート」で作れます。</p>'}
         <button type="button" class="b quiet sm dg-tpl-add" data-dg-tpl-add>＋ テンプレート</button>
@@ -226,8 +230,22 @@
           if (field === 'template' && raw) lastTemplate = raw;
         } else return;
       } catch (e) { if (!live) toast(e.message.replace(/^関係図: /, '')); return; }
-      if (live) { if (!liveBase) liveBase = graphOnly(g); working = { ...g, ...next }; paint({ inspector: false }); }
-      else { if (liveBase) { working = { ...g, ...liveBase }; liveBase = null; } commit(next); }
+      if (live) {
+        if (!liveBase) liveBase = graphOnly(g);
+        working = { ...g, ...next };
+        paint({ inspector: false });
+        if (field === 'bend') {
+          const bEl = document.querySelector(`[data-dg-shell="${CSS.escape(active || '')}"] [data-dg-bend-val]`);
+          if (bEl) bEl.textContent = `(${Math.round(Number(raw) || 0)})`;
+        }
+      } else { if (liveBase) { working = { ...g, ...liveBase }; liveBase = null; } commit(next); }
+    }
+
+    function repaintPalette(box) {
+      if (!box) return;
+      const y = box.scrollTop;
+      box.innerHTML = paletteHtml();
+      box.scrollTop = y;
     }
 
     // ---- 画面のできごと ----
@@ -237,7 +255,7 @@
       const b = ev.target.closest('button'); if (!b) return;
       const scope = b.closest('[data-dg-shell]') || (stageOf(b)?.querySelector('[data-dg-shell]') ? stageOf(b) : null); if (!scope) return;
       const g = current(); if (!g) return;
-      if (b.dataset.dgKind !== undefined) { paletteKind = b.dataset.dgKind; const box = b.closest('[data-dg-palette]'); if (box) box.innerHTML = paletteHtml(); return; }
+      if (b.dataset.dgKind !== undefined) { paletteKind = b.dataset.dgKind; repaintPalette(b.closest('[data-dg-palette]')); return; }
       if (b.hasAttribute('data-dg-arrange')) { arrange(); return; }
       if (b.dataset.dgAddShape) addAt(b.dataset.dgAddShape, null, centerPoint());
       else if (b.dataset.dgAddRef) addAt('entry', b.dataset.dgAddRef, centerPoint());
@@ -246,6 +264,8 @@
       else if (b.hasAttribute('data-dg-delete')) deleteSelected();
       else if (b.hasAttribute('data-dg-copy')) { if (copySelected()) pasteClip(); }
       else if (b.dataset.dgOrder) commit(D.reorder(g, selItems(g).map((it) => it.id), b.dataset.dgOrder));
+      else if (b.hasAttribute('data-dg-swap-ends')) { const l = selLinks(g)[0]; if (l) commit(D.updateLink(g, l.id, { a: l.b, b: l.a, bend: -(Number(l.bend) || 0) })); }
+      else if (b.dataset.dgApplyTpl !== undefined) { const l = selLinks(g)[0]; if (l) { commit(D.applyTemplate(g, l.id, b.dataset.dgApplyTpl, templates())); lastTemplate = b.dataset.dgApplyTpl; } }
       else if (b.hasAttribute('data-dg-straight')) { const l = selLinks(g)[0]; if (l) commit(D.updateLink(g, l.id, { bend: 0 })); }
       else if (b.hasAttribute('data-dg-reset-style')) { const l = selLinks(g)[0]; if (l) commit(D.updateLink(g, l.id, { color: undefined, dash: undefined, width: undefined })); }
       else if (b.dataset.dgOpenRef) openEntry(b.dataset.dgOpenRef);
@@ -273,13 +293,13 @@
     }
     document.addEventListener('input', (ev) => {
       if (!inEditor(ev.target)) return;
-      if (ev.target.matches('[data-dg-palette-q]')) { paletteQuery = ev.target.value; const box = ev.target.closest('[data-dg-palette]'); const pos = ev.target.selectionStart; box.innerHTML = paletteHtml(); const q = box.querySelector('[data-dg-palette-q]'); q.focus(); q.setSelectionRange(pos, pos); return; }
+      if (ev.target.matches('[data-dg-palette-q]')) { paletteQuery = ev.target.value; const box = ev.target.closest('[data-dg-palette]'); const pos = ev.target.selectionStart; repaintPalette(box); const q = box.querySelector('[data-dg-palette-q]'); q.focus(); q.setSelectionRange(pos, pos); return; }
       if (ev.target.dataset.dgField && ['text', 'bend', 'color', 'fill', 'stroke', 'textColor'].includes(ev.target.dataset.dgField)) applyField(ev.target.dataset.dgField, ev.target.value, true);
     });
     document.addEventListener('change', (ev) => {
       if (!inEditor(ev.target) && !ev.target.matches('[data-dg-grid]')) return;
       const t = ev.target;
-      if (t.matches('[data-dg-missing]')) { paletteMissing = t.checked; const box = t.closest('[data-dg-palette]'); if (box) box.innerHTML = paletteHtml(); return; }
+      if (t.matches('[data-dg-missing]')) { paletteMissing = t.checked; repaintPalette(t.closest('[data-dg-palette]')); return; }
       if (t.matches('[data-dg-look]')) { const it = selItems(current())[0]; if (it) { const [w, h] = LOOK_SIZE[t.value]; const next = D.updateItem(current(), it.id, { look: t.value, w, h }); commit(t.value === 'frame' ? D.reorder(next, [it.id], 'back') : next); } return; }
       if (t.dataset.dgField) { applyField(t.dataset.dgField, t.value, false); t.blur?.(); paint(); }
       else if (t.matches('[data-dg-default-template]')) lastTemplate = t.value;
@@ -383,7 +403,8 @@
         selection = d.add ? new Set([...selection, ...ids]) : new Set(ids); paint(); return;
       }
       if (d.type === 'connect') {
-        const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('[data-dg-item]')?.dataset.dgItem;
+        // 窓の外や重ねた操作の下へ放してもつながるよう、放した位置の図の座標で相手を決める。
+        const p = svgPoint(d.svg, ev), target = D.at(g, p.x, p.y);
         paint();
         if (!target || target === d.id) return;
         try { const added = D.addLink(g, { a: d.id, b: target, direction: 'forward' }), graph = D.applyTemplate(added.graph, added.id, lastTemplate, templates()); selection = new Set([added.id]); working = { ...g }; commit(graph); }

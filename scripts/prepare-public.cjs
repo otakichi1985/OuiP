@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { root, app, dist, assert, files, reset } = require('./package.cjs');
 function prepare(outputName = JSON.parse(fs.readFileSync(path.join(app, 'package.json'))).version) {
-  const selections = ['README.md', 'RELEASE_NOTES.md', 'scripts/package.cjs', 'scripts/prepare-public.cjs', 'scripts/make-test-env.cjs',
+  const selections = ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'RELEASE_NOTES.md', 'scripts/package.cjs', 'scripts/prepare-public.cjs', 'scripts/make-test-env.cjs',
     'app/main.js', 'app/preload.js', 'app/package.json', 'app/package-lock.json'];
   for (const dir of ['lib', 'renderer', 'share', 'test']) {
     for (const file of files(path.join(app, dir))) {
       // 同梱アイコン（Lucide）のライセンス全文は、表示義務のため公開ソースにも含める。
       // アーカイブ試験の説明も、試験の実行方法に要るため含める（2026-10-24確認・秘密情報なし）。
-      assert(/\.(js|cjs|html|css|json|ps1)$/.test(file) || `${dir}/${file}` === 'renderer/icons-LICENSE.txt' || `${dir}/${file}` === 'test/archive/README.md', `Review new source type before export: app/${dir}/${file}`);
+      assert(/\.(js|cjs|html|css|json|ps1|svg)$/.test(file) || `${dir}/${file}` === 'renderer/icons-LICENSE.txt' || `${dir}/${file}` === 'test/archive/README.md', `Review new source type before export: app/${dir}/${file}`);
       selections.push(`app/${dir}/${file}`);
     }
   }

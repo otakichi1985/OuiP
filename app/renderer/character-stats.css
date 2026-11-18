@@ -6,10 +6,10 @@
 .cs-values{list-style:none;padding:0;margin:0}
 .cs-value{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(3em,auto);gap:3px 8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line,#2e3441)}
 .cs-name,.cs-readout,.cs-range{overflow-wrap:anywhere;min-width:0}
-.cs-kind{font-size:11px;color:var(--muted,#a0a7b6);white-space:nowrap}
+.cs-kind{font-size:12px;color:var(--muted,#a0a7b6);white-space:nowrap}
 .cs-readout{text-align:right;min-height:1.6em;font-variant-numeric:tabular-nums}
 .cs-unset{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.cs-range{grid-column:1/-1;font-size:11px;color:var(--muted,#a0a7b6)}
+.cs-range{grid-column:1/-1;font-size:12px;color:var(--muted,#a0a7b6)}
 .cs-track,.cs-dots{grid-column:1/-1;display:flex;align-items:center;min-height:10px;max-width:440px;margin-inline:auto}
 .cs-track{position:relative;display:block;height:12px;border-radius:6px;background:var(--raise,#222733);overflow:hidden}
 .cs-track i{display:block;height:100%;background:var(--accent,#6cc4b4)}
@@ -31,7 +31,7 @@
 .cs-radar-fill{fill:var(--accent,#6cc4b4);fill-opacity:.12;stroke:var(--accent,#6cc4b4);stroke-width:1.5}
 .cs-radar-point{fill:var(--accent,#6cc4b4)}
 .cs-rough-point{fill:var(--surface,#1a1e27);stroke:var(--accent,#6cc4b4);stroke-width:2}
-.cs-radar text{fill:var(--fg,#e4e6ec);font-size:10px}
+.cs-radar text{fill:var(--fg,#e4e6ec);font-size:12px}
 /* 編集の並びは画面幅ではなく、置かれた作業領域の幅で変える。 */
 .cs-editor{padding-block:12px;container-type:inline-size}
 .cs-editor label{display:flex;flex-direction:column;gap:3px;min-width:0}

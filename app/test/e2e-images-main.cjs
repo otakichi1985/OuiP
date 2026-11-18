@@ -159,8 +159,10 @@ async function sheetScenario(entryId) {
   const $ = id => document.getElementById(id);
   const wait = ms => new Promise(r => setTimeout(r, ms));
   $('drawer').hidden = true; cur = null; page = 'book'; kind = '人物'; selectBookTab('人物'); render();
-  openEntry(entryId); await wait(500);
-  document.querySelector('[data-sheet-export]').click();
+  $('share-menu').open = true;
+  $('image-export-btn').click();
+  await wait(300);
+  document.querySelector(`[data-share-person="${entryId}"]`).click();
   const image = () => document.querySelector('#sheet-pages img');
   for (let i = 0; i < 160 && !image()?.naturalWidth; i++) await wait(250);
   const preview = { width: image()?.naturalWidth || 0, height: image()?.naturalHeight || 0, status: $('sheet-status')?.textContent || '' };
@@ -180,7 +182,7 @@ const shownWindows = [];
 app.on('browser-window-created', (_event, win) => {
   win.on('show', () => {
     if (win.isDestroyed()) return;
-    try { shownWindows.push({ title: win.getTitle(), visible: win.isVisible(), bounds: win.getBounds() }); } catch (_) {}
+    try { shownWindows.push({ id: win.id, title: win.getTitle(), visible: win.isVisible(), bounds: win.getBounds() }); } catch (_) {}
   });
   if (driver) return;
   driver = win;
@@ -191,9 +193,11 @@ async function run(win, ids) {
   if (win.webContents.isLoading()) await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
   win.setContentSize(1280, 900);
   win.webContents.setBackgroundThrottling(false);
-  // 試験所有のウィンドウ。画面の下（画面外）に置き、描画は止めない。
+  // 試験所有のウィンドウ。描画は止めない。OUIP_UI_AT=x,y があればそこへ（おたきちが主モニター・液タブを使っているとき）。
+  const at = (process.env.OUIP_UI_AT || '').split(',').map(Number);
   const display = screen.getPrimaryDisplay();
-  win.setPosition(display.bounds.x, display.bounds.y + display.bounds.height + 100);
+  if (at.length === 2 && at.every(Number.isFinite)) win.setPosition(at[0], at[1]);
+  else win.setPosition(display.bounds.x, display.bounds.y + display.bounds.height + 100);
   win.setFocusable(false);
   win.showInactive();
   await new Promise(resolve => setTimeout(resolve, 1500));
@@ -235,11 +239,9 @@ async function run(win, ids) {
   check(pages.every(image => image.getSize().width === 1080 && image.getSize().height === 1080), '保存した各ページが1080角');
   check(pages.length && [[100, 70], [300, 70], [100, 300]].every(([x, y]) => !isNear(sample(pages[0], x, y), BG, 6)), '保存した1枚目の上部に絵がある（空白でない）');
 
-  const saveWindow = shownWindows.find(item => item.title === '設定シートを保存しています（確認用）');
-  const area = screen.getPrimaryDisplay().workArea;
-  const intersects = item => item.bounds.x < area.x + area.width && item.bounds.x + item.bounds.width > area.x && item.bounds.y < area.y + area.height && item.bounds.y + item.bounds.height > area.y;
-  check(saveWindow && saveWindow.visible, '保存のとき撮影用のウィンドウが表示される');
-  check(saveWindow && intersects(saveWindow), '撮影用のウィンドウが画面内に出る');
+  // 見本も保存も、ウィンドウを出さずに撮る（2026-10-27）。試験のウィンドウのほかに何も表示されない。
+  const others = shownWindows.filter(item => item.id !== win.id);
+  check(!others.length, `画像の書き出しで、ほかのウィンドウが表示されない（${others.map(item => item.title).join('、') || 'なし'}）`);
 }
 
 // 保存ダイアログは模擬。設定シートのPNGだけを一時フォルダーへ書く。

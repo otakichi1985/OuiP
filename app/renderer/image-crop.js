@@ -9,8 +9,22 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const DEFAULT = Object.freeze({ x: 50, y: 50, zoom: 1 });
   const MAX_ZOOM = 8;
-  // 枠の縦横比（幅 ÷ 高さ）。大カードは 1:1.4142。
+  // 枠の縦横比（幅 ÷ 高さ）。大カードは 1:1.4142。ここが正本。
+  // 画面の CSS 変数（--crop-aspect-*）と閲覧用HTMLの :root はこの値から作る。
   const ASPECT = Object.freeze({ large: 1 / Math.SQRT2, small: 1, icon: 1, card: 1, place: 16 / 9 });
+  // CSS へ配る値。画面は読み込み時にこれを :root へ当て、閲覧用HTMLは書き出し時に埋め込む。
+  const CSS_VARS = Object.freeze({
+    "--crop-aspect-large": `1 / ${1 / ASPECT.large}`,
+    "--crop-aspect-card": String(ASPECT.card),
+    "--crop-aspect-place": String(ASPECT.place),
+  });
+  function applyAspectVars(doc = typeof document === "undefined" ? null : document) {
+    const style = doc?.documentElement?.style;
+    if (!style) return false;
+    for (const [name, value] of Object.entries(CSS_VARS)) style.setProperty(name, value);
+    return true;
+  }
+  if (typeof document !== "undefined") applyAspectVars(document);
   const KEYS = Object.freeze({ "人物": ["large", "small", "icon"], "用語": ["card", "icon"], "場所": ["place"] });
 
   const number = (value, min, max, fallback) => {
@@ -80,5 +94,5 @@
   function imageHTML(url, crop, className = "crop-img", extra = "") {
     return `<img class="${className}" src="${url}" alt="" draggable="false" style="${style(crop)}${extra}">`;
   }
-  return Object.freeze({ DEFAULT, MAX_ZOOM, ASPECT, normalize, value, keysFor, normalizeCrops, get, style, draw, rect, imageHTML });
+  return Object.freeze({ DEFAULT, MAX_ZOOM, ASPECT, CSS_VARS, applyAspectVars, normalize, value, keysFor, normalizeCrops, get, style, draw, rect, imageHTML });
 });

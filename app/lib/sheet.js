@@ -1,5 +1,5 @@
 'use strict';
-// キャラの設定シート（SNSに載せる1枚の画像）。載せるものは書き出す人が選んだ項目だけを明示的に拾う。
+// キャラの画像の書き出し（SNSに載せる画像）。載せるものは書き出す人が選んだ項目だけを明示的に拾う。
 // 世界の他の情報・履歴・ボード・関係は読まない。画像の読み込みと撮影は呼び出し側（本体）が行う。
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,7 +19,7 @@ const fieldNumber = no => 'A' + no;
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const list = value => Array.isArray(value) ? value : [];
 const nonblank = value => String(value ?? '').trim() !== '';
-const fail = message => { throw new Error('設定シート: ' + message); };
+const fail = message => { throw new Error('画像の書き出し: ' + message); };
 const styles = fs.readFileSync(path.join(__dirname, 'sheet.css'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, '../renderer/character-stats.css'), 'utf8');
 
 function defaultOptions(entry, world = {}) {

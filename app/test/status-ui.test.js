@@ -24,6 +24,16 @@ test('値: −／＋は範囲で止まり、空欄からは端で始める。数
   assert.equal(UI.parseValue(set.items[2], '  霧読み '), '霧読み');
 });
 
+test('ステータス一覧からは全体の設定へ案内し、全員の表示形式は設定にまとめる', () => {
+  const make = (entries) => UI.createStatusUI({
+    document: { addEventListener() {} }, $: () => ({}), api: {}, getState: () => ({ world: { statusConcepts: [set] }, entries }),
+    refresh: async () => {}, toast() {}, reportError() {}, writes: { write: async (task) => task() }, openSetsTab() {},
+  });
+  const html = make([{ kind: '人物', statusCardView: 'graph' }]).setsPage('');
+  assert.match(html, /data-open-settings>設定を開く/);
+  assert.doesNotMatch(html, /data-ss-card-view/);
+});
+
 test('割り当ての下書き: 読み取ると保存形になり、消えた項目の値も残す', () => {
   const draft = UI.createAssignDraft({ statusSets: [{ set: 'st-rpg', values: { 'si-hp': 62, 'si-old': 3 }, hidden: ['si-skill'] }] });
   draft.list[0].values['si-spd'] = '4';
@@ -35,7 +45,7 @@ test('割り当ての下書き: 読み取ると保存形になり、消えた項
   assert.match(html, /data-sa-step="-1"/);
   assert.match(html, /data-sa-level="4" aria-pressed="true">A</);
   assert.doesNotMatch(html, /cs-graph|ドラッグ/);
-  assert.match(UI.renderAssign({ hidden: false, list: [] }, { sets: [], enabled: true }), /ステータスタブで作る/);
+  assert.match(UI.renderAssign({ hidden: false, list: [] }, { sets: [], enabled: true }), /ステータスタブで追加/);
 });
 
 test('定義の下書き: 段階の数で欄を増減し、項目IDを保ったまま保存形にする', () => {
@@ -92,4 +102,7 @@ test('定義の見本: 入力中の定義を横長カードと詳細で見せ、
   const staticHtml = UI.renderSetPreview(fresh, { static: true });
   assert.doesNotMatch(staticHtml, /<button/, 'list preview has no dead buttons');
   assert.match(staticHtml, /ss-preview-card/, 'list preview still shows the card');
+  assert.doesNotMatch(staticHtml, /ss-preview-name/, 'list preview shows only the column, without name decoration');
+  const withChips = UI.createSetDraft(Model.normalizeSet({ name: '見本', card: 'bars', detail: 'bars', items: [{ name: '二つ名', mode: 'text', place: 'below' }] }));
+  assert.doesNotMatch(UI.renderSetPreview(withChips, { static: true }), /ss-preview-name/, 'chips do not bring back the name');
 });

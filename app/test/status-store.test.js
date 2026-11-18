@@ -80,7 +80,7 @@ test('移行の試し用データ: v0.2.2の保存形で作り、印のあるフ
   await fs.writeFile(path.join(dir, 'world.json'), '{"title":"変更"}');
   assert.equal(await ensureMigrationSample(dir), false, '印があっても、作り直しの指示がなければ触らない');
   assert.equal(await ensureMigrationSample(dir, { reset: true }), true);
-  assert.equal((await readJson(path.join(dir, 'world.json'))).title, 'ステータス移行の試し');
+  assert.equal((await readJson(path.join(dir, 'world.json'))).title, '旧形式からの移行の確認');
   const other = path.join(root, 'other');
   await fs.mkdir(other); await fs.writeFile(path.join(other, 'world.json'), '{"title":"本物"}');
   assert.equal(await ensureMigrationSample(other, { reset: true }), false);

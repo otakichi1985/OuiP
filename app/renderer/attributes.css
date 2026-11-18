@@ -1,0 +1,81 @@
+/* 共通タグの画面。定義・表示・タグからの昇格を1つのダイアログにまとめる。 */
+.attr-view-label{align-self:center;font-size:12px;color:var(--muted);white-space:nowrap}
+.viewer.attributes-viewer{width:min(1040px,100%);padding-bottom:16px}
+.attr-tabs{position:sticky;top:0;z-index:3;background:var(--surface);display:flex;gap:4px;padding:10px 0 12px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.attr-tabs button{border:1px solid transparent;background:none;border-radius:var(--r-pill);min-height:36px;padding:2px 14px;color:var(--muted);font-size:13px;cursor:pointer;white-space:nowrap}
+.attr-tabs button:hover{background:var(--wash);color:var(--fg)}
+.attr-tabs button[aria-selected="true"]{background:var(--wash-2);border-color:var(--glass-line);color:var(--fg);font-weight:700}
+.attr-body{min-width:0}
+.attr-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.attr-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.attr-toolbar p{margin:0;flex:1 1 260px}
+.attr-table,.attr-view-table,.attr-promote-table{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.attr-table th,.attr-table td,.attr-view-table th,.attr-view-table td,.attr-promote-table th,.attr-promote-table td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:middle}
+.attr-table thead th,.attr-view-table thead th,.attr-promote-table thead th{font-size:12px;color:var(--muted);font-weight:600;background:var(--raise);border-bottom-color:var(--control-line)}
+.attr-table tbody tr:last-child td,.attr-view-table tbody tr:last-child td,.attr-promote-table tbody tr:last-child td{border-bottom:0}
+.attr-table tbody tr{cursor:pointer}
+.attr-table tbody tr:hover td{background:var(--wash)}
+.attr-table tbody tr.on td{background:var(--accent-soft);color:var(--accent)}
+.attr-table .name,.attr-view-table .name,.attr-promote-table .name{font-weight:700;overflow-wrap:anywhere}
+.attr-table .num,.attr-view-table .num,.attr-promote-table .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.attr-view-table .chk,.attr-promote-table .chk{text-align:center;width:5.8em}
+.attr-view-table thead th,.attr-promote-table thead th{white-space:nowrap}
+.attr-view-table .order{white-space:nowrap;font-variant-numeric:tabular-nums}
+.attr-order{display:inline-flex;gap:2px;margin-left:6px}
+.attr-order .b{min-height:28px;padding:0 7px}
+.attr-note{margin:10px 0 0;line-height:1.7}
+.attr-editor{position:sticky;top:58px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px}
+.attr-editor h4{margin:0 0 10px;font-size:15px}
+.attr-field{display:flex;flex-direction:column;gap:4px;margin-bottom:9px}
+.attr-field label{font-size:12px;color:var(--muted)}
+.attr-field .inp{width:100%}
+.attr-type-help{margin:-2px 0 10px;line-height:1.7}
+.attr-actions{margin-top:10px;flex-wrap:wrap}
+.attr-merge{border-top:1px solid var(--line);margin-top:14px;padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end}
+.attr-merge label{display:block;width:100%;font-size:12px;color:var(--muted)}
+.attr-merge select{flex:1 1 140px;min-width:0}
+.attr-view-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;margin-bottom:10px}
+.attr-view-pick,.attr-view-name{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.attr-view-pick select{min-width:150px}
+.attr-view-name input{min-width:180px}
+.attr-place{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:auto}
+.attr-promote-head{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px}
+.attr-promote-head p{flex:1 1 300px;margin:0}
+.attr-promote-actions{position:sticky;bottom:0;z-index:2;background:var(--surface);padding:10px 0 4px;border-top:1px solid var(--line);margin-top:12px;justify-content:flex-end;gap:10px}
+.attr-promote-actions .small{margin-right:auto}
+
+/* キャラの編集: 共通タグと固有タグを分け、値の候補と単位は今までどおり畳んでおく。 */
+.edit-page #f-tags{display:flex;flex-direction:column;gap:14px}
+.edit-page #f-attrs,.edit-page #f-free{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),var(--pair-max-item)));gap:6px;align-items:start}
+.tag-layer{border-top:1px solid var(--line);padding-top:10px}
+.tag-layer:first-child{border-top:0;padding-top:0}
+.tag-layer-note{margin:2px 0 10px}
+.tag-layer-note + .tag-layer{border-top:0;padding-top:0}
+.tag-layer-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.tag-layer-head h5{margin:0;font-size:13px}
+.tag-layer>p{margin:2px 0 8px}
+.tag-empty{margin:0;padding:8px 10px;border:1px dashed var(--line);border-radius:8px}
+.tag-editor.is-attribute{border-color:color-mix(in srgb,var(--accent) 34%,var(--line))}
+.tag-editor.is-attribute [data-tk]{color:var(--fg);cursor:default}
+.attr-add-row{margin-top:8px;align-items:center;gap:6px;flex-wrap:wrap}
+.attr-add-row select{flex:1 1 180px;min-width:0}
+.new-attr-inline{border:1px dashed var(--control-line);border-radius:10px;padding:10px;margin-top:8px;background:var(--bg)}
+.new-attr-inline .row{margin-top:8px;gap:6px;flex-wrap:wrap}
+.new-attr-inline p{margin:6px 0 0}
+
+/* 絞り込みの位置。「上」は左の列を使わず、一覧の上で開く。 */
+.book-layout[data-filter-place="top"]{grid-template-columns:minmax(0,1fr)}
+.book-layout[data-filter-place="top"]>#facets{position:static;max-height:none;margin-bottom:0;padding:0 0 var(--space-line);border-right:0;border-bottom:1px solid var(--line)}
+
+@media(max-width:900px){
+  .attr-layout{grid-template-columns:minmax(0,1fr)}
+  .attr-editor{position:static;max-width:none}
+}
+@media(max-width:760px){
+  .viewer.attributes-viewer{padding-inline:10px}
+  .attr-view-name input{min-width:0;width:100%}
+  .attr-view-name,.attr-view-pick{flex:1 1 150px}
+  .attr-place{margin-left:0}
+  .attr-table,.attr-view-table,.attr-promote-table{font-size:12px}
+  .drawer.editor-expanded #f-attrs,.drawer.editor-expanded #f-free{grid-template-columns:1fr}
+}

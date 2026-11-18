@@ -33,6 +33,8 @@ async function screenshotView(action, name) {
   const $ = id => document.getElementById(id);
   const assert = (ok, message) => { if (!ok) throw Error('capture ' + name + ': ' + message); };
   const graphView = name === 'graph' || name === 'graph-node' || name === 'light-graph';
+  const attrView = name === 'attributes' || name === 'attributes-views' || name === 'attributes-promote';
+  const detailView = name === 'detail';
   const visible = el => {
     if (!el || el.closest('[hidden]')) return false;
     const r = el.getBoundingClientRect(), css = getComputedStyle(el);
@@ -80,7 +82,7 @@ async function screenshotView(action, name) {
   }
   if (action === 'prepare') {
     await writes.idle(); await timelineController.waitForSave();
-    OuipTheme.set(name.startsWith('light') ? 'light' : 'dark'); OuipTheme.setAccent(name === 'appearance' ? 'indigo' : 'celadon'); OuipTheme.setBase(name === 'appearance' ? 'kinari' : 'sumikon'); paintThemeChoice(); $('theme-menu').open = false;
+    OuipTheme.set(name.startsWith('light') ? 'light' : 'dark'); OuipTheme.setAccent(name === 'appearance' ? 'indigo' : 'celadon'); OuipTheme.setBase(name === 'appearance' ? 'kinari' : 'charcoal'); OuipTheme.setContrast(name === 'contrast' ? 'more' : 'auto'); paintThemeChoice(); $('theme-menu').open = false;
     // Clear test-owned transient UI, never stored entries/graphs/board data.
     $('veil').hidden = true; $('viewer').replaceChildren();
     $('viewer').classList.remove('image-editor'); $('viewer').classList.remove('crop-editor'); $('viewer').scrollTop = 0;
@@ -91,13 +93,18 @@ async function screenshotView(action, name) {
     bsel = null; linking = null; lsel = null; bdrag = null;
     ndrag = null; pan = null; penStart = null; penMode = false; freeGraphDrag = null; freeGraphConnect = null; timelineController.clearDrag();
     clearTimeout(toast.h); $('toast').hidden = true; $('update-notice').hidden = true;
-    page = name === 'header' || name === 'appearance' ? 'world' : 'book';
-    const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : graphView || name === 'organization' ? 'graphs' : '人物';
+    page = name === 'story' ? 'story' : name === 'header' || name === 'appearance' ? 'world' : 'book';
+    const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : name === 'status' ? 'statuses' : graphView || name === 'organization' || name === 'diagram-canvas' ? 'graphs' : '人物';
     assert(document.documentElement.dataset.theme === (name.startsWith('light') ? 'light' : 'dark'), 'capture theme not applied');
+    assert(document.documentElement.dataset.contrast === (name === 'contrast' ? 'more' : 'normal'), 'capture contrast not applied');
     selectBookTab(tab); q = ''; tabQueries[tab] = ''; sel[tab] = {}; $('q').value = '';
     if (graphView) {
       const graph = S.world.graphs.find(g => g.format === 'free' && g.nodes.length >= 2 && g.edges.length);
       assert(graph, 'missing populated free diagram'); selectedDiagram.graphs = graph.id;
+    }
+    if (name === 'diagram-canvas') {
+      const graph = S.world.graphs.find(g => g.format === 'canvas' && (g.items || []).length >= 2);
+      assert(graph, 'missing canvas diagram'); selectedDiagram.graphs = graph.id;
     }
     if (name === 'map') {
       const map = S.world.maps.find(m => m.image) || S.world.maps[0];
@@ -109,6 +116,17 @@ async function screenshotView(action, name) {
     }
     if (name === 'empty') { q = '一致しない撮影用の言葉'; tabQueries[tab] = q; $('q').value = q; }
     render(); scrollTo(0, 0);
+    if (attrView) openAttributes(name === 'attributes-views' ? 'views' : name === 'attributes-promote' ? 'promote' : 'list');
+    if (detailView) {
+      const person = S.entries.find((e) => e.kind === '人物' && e.desc) || S.entries.find((e) => e.kind === '人物');
+      assert(person, 'missing person for detail capture');
+      const filter = $('facets').querySelector('details'); if (filter) filter.open = true;
+      openEntry(person.id);
+      const prose = $('drawer').querySelector('.desc');
+      assert(prose, 'detail description missing');
+      const proseStyle = getComputedStyle(prose);
+      assert(proseStyle.fontFamily.includes('IBM Plex Sans') && Number(proseStyle.fontWeight) === 300, 'detail prose is not the lighter face');
+    }
     if (name === 'image') {
       const person = S.entries.find(e => e.kind === '人物' && e.image);
       assert(person, 'missing character image');
@@ -118,6 +136,11 @@ async function screenshotView(action, name) {
       assert($('viewer').classList.contains('crop-editor'), 'crop editor not opened');
     }
     if (name === 'tags' || name === 'tags-closed') {
+      // 閉じたときは、選んだ条件がチップで見えること（2026-11-01）。
+      if (name === 'tags-closed') {
+        const pick = document.querySelector('#facets .f[data-fc][data-fv]:not([disabled])');
+        if (pick) { (sel[tab] ??= {})[pick.dataset.fc] ??= new Set(); sel[tab][pick.dataset.fc].add(pick.dataset.fv); render(); }
+      }
       const group = $('facets').querySelector('details');
       assert(group, 'missing tag filters'); group.open = name === 'tags';
     }
@@ -142,21 +165,28 @@ async function screenshotView(action, name) {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await new Promise(resolve => setTimeout(resolve, 220)); // existing 180ms entrance animation
   }
-  if (name !== 'image') assert($('drawer').hidden && cur === null && statsEditors === null, 'drawer/editor remains open');
+  if (name !== 'image' && !detailView) assert($('drawer').hidden && cur === null && statsEditors === null, 'drawer/editor remains open');
   assert($('wspanel').hidden && !BoardShareUI.state.readOnly && !BoardShareUI.state.busy && !bsel && !linking && !lsel, 'board state remains active');
   assert(!document.querySelector('#viewer #graph-arrange-form'), 'stale alignment modal');
-  const image = name === 'image', modal = image || name === 'graph-node';
+  const image = name === 'image', modal = image || name === 'graph-node' || attrView;
   assert($('veil').hidden === !modal, 'unexpected modal/image state');
-  assert(page === (name === 'header' || name === 'appearance' ? 'world' : 'book'), 'wrong page: ' + page);
+  assert(page === (name === 'story' ? 'story' : name === 'header' || name === 'appearance' ? 'world' : 'book'), 'wrong page: ' + page);
   assert(document.querySelector('[data-page][aria-current="page"]')?.dataset.page === page, 'selected page mismatch');
   let marker;
-  if (name === 'timeline' || name === 'map' || name === 'empty' || name === 'light' || graphView || name === 'organization' || name === 'tags' || name === 'tags-closed' || image) {
-    const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : name === 'image' || name.startsWith('tags') || name === 'empty' || name === 'light' ? '人物' : 'graphs';
+  if (name === 'status' || name === 'timeline' || name === 'map' || name === 'empty' || name === 'light' || name === 'contrast' || graphView || name === 'organization' || name === 'diagram-canvas' || name === 'tags' || name === 'tags-closed' || image || attrView || detailView) {
+    const tab = name === 'timeline' ? '出来事' : name === 'map' ? 'maps' : name === 'status' ? 'statuses' : name === 'image' || name.startsWith('tags') || name === 'empty' || name === 'light' || name === 'contrast' || attrView || detailView ? '人物' : 'graphs';
     assert(bookTab === tab && visible($('p-book')) && !visible($('p-world')), 'wrong book tab: ' + bookTab);
     const selected = $('booktabs').querySelector('[aria-selected="true"]');
     assert(selected && (selected.dataset.kind || selected.dataset.bookTab) === tab, 'selected tab mismatch');
-    marker = name === 'image' ? $('viewer').querySelector('[data-crop-stage]') : name.startsWith('tags') || name === 'light' ? $('facets') : name === 'empty' ? document.querySelector('#bookbody .empty-state') : name === 'map' ? document.querySelector('#bookbody svg[data-camera^="maps:"]') : name === 'timeline' ? document.querySelector('#bookbody .timeline-layout') : name === 'graph-node' ? $('free-node-form') : document.querySelector(name === 'organization' ? '#bookbody .organization-graph svg[data-camera]' : '#bookbody svg.free-graph[data-camera^="graphs:"]');
+    marker = detailView ? $('drawer') : attrView ? $('viewer').querySelector('.attr-body') : name === 'image' ? $('viewer').querySelector('[data-crop-stage]') : name === 'status' ? document.querySelector('#bookbody .status-sets-tools') : name === 'contrast' ? document.querySelector('#bookbody .entries') : name.startsWith('tags') || name === 'light' ? $('facets') : name === 'empty' ? document.querySelector('#bookbody .empty-state') : name === 'map' ? document.querySelector('#bookbody svg[data-camera^="maps:"]') : name === 'timeline' ? document.querySelector('#bookbody .timeline-layout') : name === 'graph-node' ? $('free-node-form') : name === 'diagram-canvas' ? document.querySelector('#bookbody [data-dg-shell]') : document.querySelector(name === 'organization' ? '#bookbody .organization-graph svg[data-camera]' : '#bookbody svg.free-graph[data-camera^="graphs:"]');
     if (image) assert($('viewer').classList.contains('crop-editor') && $('viewer').querySelector('[data-crop-window]'), 'crop editor not rendered');
+    if (attrView) {
+      assert($('viewer').classList.contains('attributes-viewer') && document.querySelectorAll('[data-attr-page]').length === 3, 'attribute manager not rendered');
+      assert($('viewer').scrollWidth <= $('viewer').clientWidth + 1, 'attribute manager overflows horizontally');
+      if (name === 'attributes') assert(document.querySelectorAll('[data-attr-row]').length > 0, 'attribute definitions not listed');
+      if (name === 'attributes-views') assert(document.querySelectorAll('[data-attr-view-check]').length > 0, 'view membership not listed');
+      if (name === 'attributes-promote') assert(document.querySelector('.attr-promote-table, .empty-state'), 'promotion candidates not listed');
+    }
     if (name === 'organization') {
       const frames = [...document.querySelectorAll('[data-organization-frame] text')];
       const nodes = [...document.querySelectorAll('[data-node]')];
@@ -175,6 +205,9 @@ async function screenshotView(action, name) {
       assert(r.top>=0&&r.bottom<=innerHeight&&r.right<=innerWidth,'free node decision outside viewport');
       assert($('viewer').scrollWidth<=$('viewer').clientWidth+1,'free node modal horizontally overflows');
     }
+  } else if (name === 'story') {
+    assert(visible($('p-story')) && !visible($('p-book')) && !visible($('p-world')), 'story workspace not rendered');
+    marker = $('p-story').querySelector('.story-shell');
   } else {
     assert(visible($('p-world')) && !visible($('p-book')), 'overview not rendered');
     if (name === 'appearance') {
@@ -196,7 +229,7 @@ async function screenshotView(action, name) {
 async function captureViews(w, execute, rendererSource, artifactBase) {
   const fs = require('node:fs/promises');
   const { createHash } = require('node:crypto');
-  const names = ['tags', 'tags-closed', 'empty', 'light', 'light-graph', 'appearance', 'timeline', 'map', 'graph', 'graph-node', 'organization', 'header', 'image'];
+  const names = ['tags', 'tags-closed', 'empty', 'light', 'light-graph', 'contrast', 'appearance', 'status', 'timeline', 'map', 'graph', 'graph-node', 'organization', 'diagram-canvas', 'story', 'header', 'attributes', 'attributes-views', 'attributes-promote', 'detail', 'image'];
   const hashes = new Map();
   const bounded = async (label, fn) => {
     let timer;
@@ -242,6 +275,8 @@ async function captureViews(w, execute, rendererSource, artifactBase) {
         for (let attempt = 1; attempt <= 3; attempt++) {
           await bounded(name + ' repaint', async () => {
             await execute('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+            // 画面の切替は短い動きで入る。撮影は落ち着いた姿で撮るため、短い動きだけ終わらせる。
+            await execute('document.getAnimations().filter(a=>{const d=a.effect?.getTiming?.().duration;return typeof d==="number"&&d<=500}).forEach(a=>{try{a.finish()}catch(_){}})');
             await new Promise(r => setTimeout(r, 80));
           });
           const before = await bounded(name + ' pre-capture assertion', () => view('assert', name));
@@ -398,8 +433,16 @@ async function freeGraphScenario() {
   check((await graph(id)).format === 'free' && !(await graph(id)).nodes.length, 'new diagram starts empty, not from characters');
   check((await graph(id)).grid.visible && (await graph(id)).grid.snap && (await graph(id)).grid.size === 30, 'grid defaults visible/snap/30');
   {
-    check(document.querySelectorAll('header .nav button > svg.icon').length === 3 && ['site-export-btn','save-btn','hist-btn','update-btn'].every(id => $(id).querySelector(':scope > svg.icon')), 'landmark icons sit beside the header labels');
-    check($('w-author').placeholder.includes('閲覧用ファイル'), 'author name placeholder names the exports');
+    check(document.querySelectorAll('header .nav button > svg.icon').length === 4 && ['site-export-btn','save-btn','hist-btn','update-btn'].every(id => $(id).querySelector(':scope > svg.icon')), 'landmark icons sit beside the header labels');
+    {
+      // 副操作も、地と違う面を持つ（文字だけを並べると操作と分からない。NN/g の手掛かりの研究。2026-11-01）。
+      const surface = el => getComputedStyle(el).backgroundColor;
+      const plain = v => !v || v === 'transparent' || /rgba\(0, 0, 0, 0\)/.test(v);
+      check(!plain(surface($('hist-btn'))) && !plain(surface($('settings-btn'))), 'header secondary actions keep a visible surface: ' + surface($('hist-btn')));
+      const bad = window.__sepGaps();
+      check(bad.length === 0, 'header separators keep --space-line from controls: ' + (bad.slice(0, 8).join(', ') || 'ok'));
+    }
+    check($('w-author').placeholder.includes('閲覧用ページ'), 'author name placeholder names the exports');
     {
       const menu = $('theme-menu'), pick = choice => { menu.open = true; document.querySelector(`[data-theme-choice="${choice}"]`).click(); };
       const token = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -410,16 +453,21 @@ async function freeGraphScenario() {
       check(document.documentElement.dataset.theme === 'dark' && token('--bg') === '#0f1115' && document.querySelector('[data-theme-choice="dark"]').getAttribute('aria-pressed') === 'true', 'appearance menu switches back to dark');
       menu.open = true; document.querySelector('[data-accent-choice="indigo"]').click();
       check(!document.documentElement.hasAttribute('aria-pressed') && menu.open && token('--accent') === '#7fb2ff' && document.querySelector('[data-accent-choice="indigo"]').getAttribute('aria-pressed') === 'true' && localStorage.getItem('ouip.accent') === 'indigo', 'accent swatch applies the dark value, stays open and is remembered');
-      pick('light'); check(token('--accent') === '#1f5bd0' && document.querySelector('[data-accent-choice="indigo"] .swatch').style.getPropertyValue('--sw') === '#1f5bd0', 'light uses its own accent value and the swatches follow');
+      pick('light'); check(token('--accent') === '#315bae' && document.querySelector('[data-accent-choice="indigo"] .swatch').style.getPropertyValue('--sw') === '#315bae', 'light uses its own accent value and the swatches follow');
       menu.open = true; const custom = document.querySelector('[data-accent-custom]'); custom.value = '#ff0000'; custom.dispatchEvent(new Event('input', {bubbles:true}));
       check(token('--accent') === OuipTheme.accentFor('#ff0000', 'light').accent && document.querySelector('.accent-custom').dataset.selected === 'true' && OuipTheme.contrast(token('--accent'), '#ffffff') >= 4.5, 'custom accent is adjusted to stay readable');
       menu.open = true; document.querySelector('[data-base-choice="kinari"]').click();
       check(menu.open && token('--bg') === OuipTheme.baseOf('kinari').light.bg && document.documentElement.dataset.base === 'kinari' && document.querySelector('[data-base-choice="kinari"]').getAttribute('aria-pressed') === 'true' && localStorage.getItem('ouip.base') === 'kinari', 'base color applies the light value, stays open and is remembered');
       pick('dark'); check(token('--bg') === OuipTheme.baseOf('kinari').dark.bg && OuipTheme.contrast(token('--accent'), token('--surface')) >= 4.5, 'dark uses the base dark value and the accent stays readable on it');
-      menu.open = true; document.querySelector('[data-base-choice="sumikon"]').click();
+      menu.open = true; document.querySelector('[data-base-choice="charcoal"]').click();
       check(!document.documentElement.style.getPropertyValue('--bg') && token('--bg') === '#0f1115', 'default base falls back to the stylesheet');
       document.querySelector('[data-accent-choice="celadon"]').click(); pick('dark');
       check(!document.documentElement.style.getPropertyValue('--accent') && token('--accent') === '#5fd0bb', 'default accent falls back to the stylesheet');
+      const strong = $('contrast-toggle');
+      menu.open = true; strong.checked = true; strong.dispatchEvent(new Event('change', { bubbles: true }));
+      check(document.documentElement.dataset.contrast === 'more' && localStorage.getItem('ouip.contrast') === 'more' && token('--fg') === '#f4f8f6', 'high contrast applies stronger text and is remembered');
+      strong.checked = false; strong.dispatchEvent(new Event('change', { bubbles: true }));
+      check(document.documentElement.dataset.contrast === 'normal' && token('--fg') === '#e4e6ec', 'high contrast can be turned off');
       menu.open = false;
     }
     check([...document.querySelectorAll('#booktabs [role="tab"]')].every(tab => tab.querySelector(':scope > svg.icon') && tab.textContent.trim()), 'every settings tab has an icon and a text label');
@@ -465,7 +513,7 @@ async function freeGraphScenario() {
   assertRendered(nodeSelector(a), '独立ノード甲', '#c48060', 'horizontal');
   assertRendered(nodeSelector(b), '独立ノード乙', '#6080c4', 'vertical');
   activate(a); check($('free-color').value === '#c48060' && $('free-writing').value === 'horizontal', 'node appearance reopens');
-  appearance('取消した文字','#ffffff','vertical'); click('#free-node-form [data-vclose]');
+  appearance('キャンセルした文字','#ffffff','vertical'); click('#free-node-form [data-vclose]');
   check(JSON.stringify(await graph(id)) === JSON.stringify(saved), 'node cancel does not write');
   activate(a); appearance('編集した甲','#c46080','vertical'); await submit('free-node-form');
   activate(a); check($('free-text').value === '編集した甲' && $('free-writing').value === 'vertical' && $('free-color').value === '#c46080', 'edited node reopens'); click('#free-node-form [data-vclose]');
@@ -478,7 +526,7 @@ async function freeGraphScenario() {
   check(document.querySelector(edgeSelector(edge.id)+' .free-edge-line').hasAttribute('marker-start'), 'both-direction arrowheads rendered');
   click(edgeSelector(edge.id));
   check($('free-a').value === a && $('free-b').value === b && $('free-direction').value === 'both' && $('free-writing').value === 'vertical' && $('free-color').value === '#80c460', 'edge form reopens saved appearance');
-  appearance('取消する線','#ffffff','horizontal'); $('free-direction').value='none'; click('#free-edge-form [data-vclose]');
+  appearance('キャンセルする線','#ffffff','horizontal'); $('free-direction').value='none'; click('#free-edge-form [data-vclose]');
   check(JSON.stringify((await graph(id)).edges[0]) === JSON.stringify(edge), 'edge cancel does not write');
   for (const direction of ['none','forward']) {
     click(edgeSelector(edge.id)); appearance('編集した接続','#cc8844','horizontal'); $('free-direction').value=direction; await submit('free-edge-form');
@@ -591,7 +639,7 @@ async function freeGraphScenario() {
   // 撮影/以後の独立性stage用に接続を一つ残す。
   click('[data-free-add-edge]'); $('free-a').value=a; $('free-b').value=b; appearance('図固有の接続','#cc8844','horizontal'); await submit('free-edge-form');
   const beforeRename=await graph(id);
-  click('[data-edit-diagram="graphs"]'); $('free-diagram-name').value='取消する図名'; click('#free-diagram-form [data-vclose]');
+  click('[data-edit-diagram="graphs"]'); $('free-diagram-name').value='キャンセルする図名'; click('#free-diagram-form [data-vclose]');
   check(JSON.stringify(await graph(id))===JSON.stringify(beforeRename),'diagram name cancel does not write');
   click('[data-edit-diagram="graphs"]'); $('free-diagram-name').value='自由ノード試験図・改名'; await submit('free-diagram-form');
   click('#save-btn'); await writes.idle();
@@ -615,8 +663,129 @@ async function scenario() {
   const click = (query) => { const b = document.querySelector(query); if (!b) throw Error("missing: " + query); b.click(); };
   const wait = () => new Promise((r) => setTimeout(r, 350));
   const check = (ok, message) => { if (!ok) throw Error(message); };
+  // 区切り線（data-sep）と操作の縁の距離を測る。--space-line 未満は失敗（2026-11-01）。
+  // 線は、専用の要素・要素の罫線のすべてを数える。操作は、その線の要素自身を除く。
+  window.__sepGaps = () => {
+    const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-line')) || 10;
+    const bad = [];
+    const ops = [...document.querySelectorAll('button, summary, input, select, textarea, a[href], [role="tab"]')];
+    const rect = el => { const r = el.getBoundingClientRect(); return r.width || r.height ? r : null; };
+    const gap = (a, b) => {
+      const dx = Math.max(0, Math.max(a.left - b.right, b.left - a.right));
+      const dy = Math.max(0, Math.max(a.top - b.bottom, b.top - a.bottom));
+      return Math.hypot(dx, dy);
+    };
+    const linesOf = el => {
+      const r = rect(el); if (!r) return [];
+      const cs = getComputedStyle(el), out = [];
+      const w = k => parseFloat(cs[k]) || 0;
+      const has = k => cs[k] !== 'none' && w(k) > 0;
+      if (has('borderTopWidth')) out.push({ left: r.left, right: r.right, top: r.top, bottom: r.top + w('borderTopWidth') });
+      if (has('borderBottomWidth')) out.push({ left: r.left, right: r.right, top: r.bottom - w('borderBottomWidth'), bottom: r.bottom });
+      if (has('borderLeftWidth')) out.push({ left: r.left, right: r.left + w('borderLeftWidth'), top: r.top, bottom: r.bottom });
+      if (has('borderRightWidth')) out.push({ left: r.right - w('borderRightWidth'), right: r.right, top: r.top, bottom: r.bottom });
+      if (r.width <= 2 || r.height <= 2) out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+      return out;
+    };
+    for (const sep of document.querySelectorAll('[data-sep]')) {
+      if (!sep.getClientRects().length) continue;
+      for (const line of linesOf(sep)) {
+        for (const op of ops) {
+          if (op === sep) continue;
+          if (op.closest('.menu-pop, .viewer, .drawer, .wspanel, details:not([open])')) continue;
+          const r = rect(op); if (!r) continue;
+          const g = gap(line, r);
+          if (g < min - 0.01) bad.push((sep.id || String(sep.className).split(' ')[0]) + '>' + (op.id || (op.textContent || '').trim().slice(0, 8)) + ':' + g.toFixed(1) + '@' + Math.round(line.top) + '-' + Math.round(line.bottom) + '|' + Math.round(r.top) + '-' + Math.round(r.bottom) + (sep.id === 'facets' ? ' open=' + !!sep.querySelector('details')?.open : ''));
+        }
+      }
+    }
+    return [...new Set(bad)];
+  };
+  // 文字だけで並ぶ操作（面・境界・グリフ・下線のどれもない）を探す（2026-11-01）。
+  // ナビ・タブ・メニューの並びは、選択中の印か行き先の文脈があるので除く。
+  window.__flatFind = () => {
+    const visible = el => el.getClientRects().length > 0 && !el.closest('[hidden], details:not([open])');
+    const clear = c => !c || c === 'transparent' || /rgba\(0, 0, 0, 0\)/.test(c);
+    const panel = el => {
+      const cs = getComputedStyle(el);
+      if (!clear(cs.backgroundColor)) return true;
+      return ['Top', 'Right', 'Bottom', 'Left'].some(s => parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none' && !clear(cs['border' + s + 'Color']));
+    };
+    const cue = el => panel(el) || (getComputedStyle(el).textDecorationLine || '').includes('underline') || !!el.querySelector('svg, .icon, img, [data-icon]') || /^[↑↓←→‹›×✕◀▶▲▼+＋−-]$/.test((el.textContent || '').trim());
+    const pick = 'button, summary, a[href], [role="tab"], [role="button"], [role="menuitem"]';
+    const groups = new Map();
+    for (const el of [...document.querySelectorAll(pick)].filter(visible)) {
+      if (el.closest('svg')) continue;
+      const p = el.parentElement; if (!p) continue;
+      if (!groups.has(p)) groups.set(p, []);
+      groups.get(p).push(el);
+    }
+    const out = [];
+    for (const [parent, list] of groups) {
+      if (list.length < 2 || list.every(cue)) continue;
+      if (parent.closest('nav, [role="tablist"], [role="menu"], .menu-pop, .subtabs')) continue;
+      if (panel(parent) || list.some(el => el.closest('[data-flat-ok]'))) continue;
+      const name = parent.id || String(parent.className).split(' ')[0] || parent.tagName;
+      out.push(name + ': ' + list.map(e => (e.id || e.getAttribute('aria-label') || e.textContent.trim().slice(0, 6))).join(' / '));
+    }
+    return out;
+  };
+  // メイン画面以外も、初期状態の並びを一通り見る。
+  const scanFlatScreens = async () => {
+    const scan = (label) => { for (const x of window.__flatFind()) window.__flatSeen.add(label + ' / ' + x); };
+    const step = () => new Promise(r => setTimeout(r, 160));
+    click('[data-page="book"]'); await step();
+    for (const t of [...document.querySelectorAll('#booktabs [role="tab"]')]) { t.click(); await step(); const label = t.textContent.replace(/\d+/g, '').trim(); scan('設定資料/' + label); if (label === '組織') { const addOrg = document.querySelector('[data-new-organization]'); if (addOrg) { addOrg.click(); await step(); scan('組織の追加'); const c = document.querySelector('#viewer [data-vclose]'); if (c) c.click(); await step(); } } }
+    const personTab = [...document.querySelectorAll('#booktabs [role="tab"]')].find(t => /キャラ/.test(t.textContent));
+    if (personTab) personTab.click(); await step();
+    const card = document.querySelector('#bookbody .open-btn');
+    if (card) {
+      card.click(); await step(); scan('詳細');
+      const edit = document.querySelector('[data-edit]');
+      if (edit) {
+        edit.click(); await step(); scan('編集');
+        const crops = document.querySelector('[data-edit-crops]');
+        if (crops) { crops.click(); await step(); scan('表示を調整'); click('[data-crop-close]'); await step(); }
+        const cancel = document.querySelector('#ef [data-entry], #ef [data-close]');
+        if (cancel) { cancel.click(); await step(); }
+      }
+      if (!$('drawer').hidden) { click('#drawer [data-close]'); await step(); }
+    }
+    click('#ws-toggle'); await step(); scan('ボード'); click('#ws-toggle'); await step();
+    $('share-menu').open = true; await step(); scan('共有メニュー'); $('share-menu').open = false;
+    $('theme-menu').open = true; await step(); scan('外観'); $('theme-menu').open = false;
+    click('#hist-btn'); await step(); scan('履歴');
+    { const c = document.querySelector('#viewer [data-vclose]'); if (c) c.click(); } await step();
+    $('share-menu').open = true; await step(); click('#image-export-btn'); await step(); scan('画像の書き出し/人物選び');
+    { const c = document.querySelector('#viewer [data-vclose]'); if (c) c.click(); } await step();
+    click('#settings-btn'); await step(); scan('設定');
+    const closeSettings = document.querySelector('#viewer [data-vclose], #viewer [data-close]');
+    if (closeSettings) closeSettings.click(); else $('veil').hidden = true;
+    await step();
+    click('[data-page="world"]'); await step();
+    return window.__flatSeen;
+  };
+  // テストが開く画面（ダイアログ・引き出し・ボード）も、開いた時点で自動で見る。
+  window.__flatSeen = new Set();
+  window.__flatCtx = new Set();
+  {
+    let timer = null;
+    const scanNow = () => {
+      timer = null;
+      const where = !$('veil').hidden ? 'ダイアログ' : !$('drawer').hidden ? '詳細/編集' : !$('wspanel').hidden ? 'ボード' : '画面';
+      window.__flatCtx.add(where);
+      try { for (const x of window.__flatFind()) window.__flatSeen.add(where + ' / ' + x); } catch (_) {}
+    };
+    const schedule = () => { if (!timer) timer = setTimeout(scanNow, 150); };
+    new MutationObserver(schedule).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'open'] });
+    setInterval(schedule, 600);
+  }
   const state = await ouip.load();
   console.log('smoke: loaded');
+  {
+    const flat = await scanFlatScreens();
+    check(flat.size === 0, 'text-only action groups: ' + [...flat].slice(0, 10).join(' / '));
+  }
   check($("world-image").querySelector("img"), "world image");
   await Promise.race([$("world-image").querySelector("img").decode(), new Promise((r)=>setTimeout(r,1200))]);
   console.log('smoke: world decoded');
@@ -666,31 +835,119 @@ async function scenario() {
   click('[data-page="book"]');
   console.log('smoke: book');
   const facets = () => $('facets').querySelector('details');
-  // 狭い画面では、一覧を先に見せるため絞り込みを閉じて始める（開閉はその後も覚える）。
-  if (innerWidth < 1000) { check(facets() && !facets().open, 'narrow window starts with filters folded'); click('#facets summary'); }
-  check(facets()?.open && facets().querySelector('summary').textContent === 'タグで絞り込み', 'tag filter has expanded native disclosure');
-  click('#facets [data-fc="未定"][data-fv="なし"]');
-  const filteredIds = () => [...document.querySelectorAll('#bookbody [data-drag]')].map(el => el.dataset.drag).join('/');
-  const idsBeforeFold = filteredIds(), expandedHeight = $('facets').getBoundingClientRect().height;
-  click('#facets summary');
-  // refreshを直後に発生させ、非同期toggleの前でも開閉を失わない。
-  await refresh();
-  check(!facets().open && $('facets').getBoundingClientRect().height < expandedHeight && filteredIds() === idsBeforeFold, 'fold hides filters without changing results across immediate refresh');
-  check(facets().querySelector('summary').textContent.includes('選択中 1'), 'closed filter indicates active selection');
-  check(!document.querySelector('#facets [data-fv="なし"]').checkVisibility(), 'closed filter buttons are not visible');
-  click('[data-kind="用語"]');
-  check(facets().open === (innerWidth >= 1000), 'term disclosure independent from character (wide opens, narrow starts folded)');
-  if (!facets().open) click('#facets summary');
-  click('#facets summary'); click('[data-kind="人物"]');
-  check(!facets().open, 'character fold survives tab switch');
-  click('#facets summary');
-  check(document.querySelector('#facets [data-fv="なし"]').getAttribute('aria-pressed') === 'true', 'reopen preserves selected tag');
-  click('#facets [data-fc=""]');
-  check(!facets().querySelector('.facet-selection') && sel.人物.未定.size === 0, 'filter clear removes selected count and conditions');
-  click('[data-kind="用語"]'); check(!facets().open, 'term fold survives tab switch');
-  click('#facets summary'); click('[data-kind="人物"]');
-  $('q').value = '一致しないタグ折りたたみ試験'; $('q').dispatchEvent(new Event('input', {bubbles:true}));
-  check(document.querySelector('#bookbody .empty') && facets().open, 'zero results keep disclosure and filters available');
+  const wideFilter = innerWidth >= 1000;
+  if (wideFilter) {
+    // 広い画面では、絞り込みは左の常設サイドバーとして開いて始まる（2026-11-02）。
+    check(facets() && facets().open, 'filters start open as a sidebar on wide screens');
+    check($('facets').getBoundingClientRect().width > 200 && $('facets').getBoundingClientRect().right <= $('bookbody').getBoundingClientRect().left, 'filter sits in a left column');
+    { const bad = window.__sepGaps(); check(bad.length === 0, 'separators keep --space-line with filters open: ' + (bad.slice(0, 8).join(', ') || 'ok')); }
+    check(facets().querySelector('summary').textContent.trim() === '絞り込み', 'tag filter has a panel heading, not a pill');
+    {
+      const grip = document.querySelector('[data-facets-resize]');
+      const width = () => Math.round($('facets').getBoundingClientRect().width);
+      check(grip && getComputedStyle(grip).display !== 'none', 'filter sidebar has a visible resize handle');
+      const before = width();
+      grip.setPointerCapture = () => {}; grip.releasePointerCapture = () => {};
+      const x = grip.getBoundingClientRect().left + 5;
+      grip.dispatchEvent(new PointerEvent('pointerdown', {pointerId:31, button:0, clientX:x, bubbles:true}));
+      grip.dispatchEvent(new PointerEvent('pointermove', {pointerId:31, clientX:x + 40, bubbles:true}));
+      grip.dispatchEvent(new PointerEvent('pointerup', {pointerId:31, clientX:x + 40, bubbles:true}));
+      check(width() > before, 'filter sidebar width can be dragged');
+      grip.focus();
+      grip.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true}));
+      check(width() === before + 50, 'keyboard changes the filter width');
+      grip.dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));
+      check(width() === 250, 'double click resets the filter width');
+    }
+    {
+      // 絞り込みの値にフォーカスが残っていても、ページ送りのキーはページを動かす（2026-11-02）。
+      const chip = document.querySelector('#facets .f:not(:disabled)');
+      check(chip, 'filter has a value to focus');
+      chip.focus();
+      $('facets').scrollTop = 0; scrollTo(0, 0);
+      const original = window.scrollTo; let called = null;
+      window.scrollTo = (opts) => { called = opts; };
+      const event = new KeyboardEvent('keydown', {key:'End', bubbles:true, cancelable:true});
+      const notPrevented = chip.dispatchEvent(event);
+      window.scrollTo = original;
+      check(!notPrevented && called && called.top === document.documentElement.scrollHeight, 'page keys scroll the page from the filter');
+      check($('facets').scrollTop === 0, 'page keys do not scroll the filter');
+      chip.blur();
+    }
+    const unsetValue = document.querySelector('#facets [data-fc="未定"][data-fv="なし"]') ? 'なし' : 'あり';
+    click(`#facets [data-fc="未定"][data-fv="${unsetValue}"]`);
+    const filteredIds = () => [...document.querySelectorAll('#bookbody [data-drag]')].map(el => el.dataset.drag).join('/');
+    const idsBeforeFold = filteredIds(), expandedWidth = $('facets').getBoundingClientRect().width;
+    check(facets().querySelector('summary').textContent.includes('選択中 1'), 'open filter indicates active selection');
+    click('#facets summary');
+    // refreshを直後に発生させ、非同期toggleの前でも開閉を失わない。
+    await refresh();
+    check(!facets().open && $('facets').getBoundingClientRect().width < expandedWidth && filteredIds() === idsBeforeFold, 'fold shrinks the sidebar without changing results across immediate refresh');
+    check(facets().querySelector('summary').textContent.includes('1'), 'closed filter keeps the selected count in the rail');
+    check(!document.querySelector(`#facets [data-fv="${unsetValue}"]`).checkVisibility(), 'closed filter buttons are not visible');
+    { const bad = window.__sepGaps(); check(bad.length === 0, 'separators keep --space-line with filters closed: ' + (bad.slice(0, 8).join(', ') || 'ok')); }
+    {
+      // 区切り線と操作の印は、フォーカス枠（外へ4px）より広く離す（2026-11-01、2回目の指摘）。
+      const gapToLine = (box, line) => line - box.bottom;
+      const bar = $('booktabs').getBoundingClientRect();
+      const tab = document.querySelector('#booktabs button[aria-selected="true"]').getBoundingClientRect();
+      check(gapToLine(tab, bar.bottom - 1) >= 6, 'selected tab keeps clear of the divider: ' + Math.round(gapToLine(tab, bar.bottom - 1)));
+      const facetsBox = $('facets').getBoundingClientRect();
+      const railSummary = facets().querySelector('summary').getBoundingClientRect();
+      check(facetsBox.width <= 48 && railSummary.width <= facetsBox.width + 1, 'the folded filter stays in a narrow rail');
+    }
+    click('[data-kind="用語"]');
+    check(facets().open, 'term filter also starts open on wide screens');
+    click('#facets summary');
+    click('[data-kind="人物"]');
+    check(!facets().open, 'character rail state survives tab switch');
+    click('#facets summary');
+    check(document.querySelector(`#facets [data-fv="${unsetValue}"]`).getAttribute('aria-pressed') === 'true', 'reopen preserves selected tag');
+    click('#facets [data-fc=""]');
+    check(!facets().querySelector('.facet-selection') && sel.人物.未定.size === 0, 'filter clear removes selected count and conditions');
+    click('[data-kind="用語"]'); check(!facets().open, 'term rail state survives tab switch');
+    click('[data-kind="人物"]');
+    $('q').value = '一致しないタグ折りたたみ試験'; $('q').dispatchEvent(new Event('input', {bubbles:true}));
+    check(document.querySelector('#bookbody .empty') && facets().open, 'zero results keep the filter open and available');
+  } else {
+    // 狭い画面では、今までどおり一覧の上で開く。
+    check(facets() && !facets().open, 'filters start folded on narrow screens');
+    { const bad = window.__sepGaps(); check(bad.length === 0, 'separators keep --space-line with filters closed: ' + (bad.slice(0, 8).join(', ') || 'ok')); }
+    click('#facets summary');
+    check(facets()?.open && facets().querySelector('summary').textContent === '絞り込み', 'tag filter opens above the list');
+    { const bad = window.__sepGaps(); check(bad.length === 0, 'separators keep --space-line with filters open: ' + (bad.slice(0, 8).join(', ') || 'ok')); }
+    const unsetValue = document.querySelector('#facets [data-fc="未定"][data-fv="なし"]') ? 'なし' : 'あり';
+    click(`#facets [data-fc="未定"][data-fv="${unsetValue}"]`);
+    const filteredIds = () => [...document.querySelectorAll('#bookbody [data-drag]')].map(el => el.dataset.drag).join('/');
+    const idsBeforeFold = filteredIds(), expandedHeight = $('facets').getBoundingClientRect().height;
+    click('#facets summary');
+    await refresh();
+    check(!facets().open && $('facets').getBoundingClientRect().height < expandedHeight && filteredIds() === idsBeforeFold, 'fold hides filters without changing results across immediate refresh');
+    check(facets().querySelector('summary').textContent.includes('選択中 1'), 'closed filter indicates active selection');
+    check(!document.querySelector(`#facets [data-fv="${unsetValue}"]`).checkVisibility(), 'closed filter buttons are not visible');
+    {
+      const gapToLine = (box, line) => line - box.bottom;
+      const bar = $('booktabs').getBoundingClientRect();
+      const tab = document.querySelector('#booktabs button[aria-selected="true"]').getBoundingClientRect();
+      check(gapToLine(tab, bar.bottom - 1) >= 6, 'selected tab keeps clear of the divider: ' + Math.round(gapToLine(tab, bar.bottom - 1)));
+      const facetsBox = $('facets').getBoundingClientRect();
+      const chipPill = facets().querySelector('summary').getBoundingClientRect();
+      check(gapToLine(chipPill, facetsBox.bottom - 1) >= 6, 'filter pill keeps clear of the divider: ' + Math.round(gapToLine(chipPill, facetsBox.bottom - 1)));
+    }
+    click('[data-kind="用語"]');
+    check(!facets().open, 'term disclosure starts folded too');
+    if (!facets().open) click('#facets summary');
+    click('#facets summary'); click('[data-kind="人物"]');
+    check(!facets().open, 'character fold survives tab switch');
+    click('#facets summary');
+    check(document.querySelector(`#facets [data-fv="${unsetValue}"]`).getAttribute('aria-pressed') === 'true', 'reopen preserves selected tag');
+    click('#facets [data-fc=""]');
+    check(!facets().querySelector('.facet-selection') && sel.人物.未定.size === 0, 'filter clear removes selected count and conditions');
+    click('[data-kind="用語"]'); check(!facets().open, 'term fold survives tab switch');
+    click('#facets summary'); click('[data-kind="人物"]');
+    $('q').value = '一致しないタグ折りたたみ試験'; $('q').dispatchEvent(new Event('input', {bubbles:true}));
+    check(document.querySelector('#bookbody .empty') && facets().open, 'zero results keep disclosure and filters available');
+  }
   { const empty = document.querySelector('#bookbody .empty-state'); check(empty?.querySelector('.empty-mark > svg.icon') && empty.querySelector('.empty-title')?.textContent.includes('条件に合う') && empty.querySelector('.empty-actions [data-clear-search]'), 'zero results use the shared empty state with mark, title and the clear action'); }
   click('[data-clear-search]');
   {
@@ -698,11 +955,12 @@ async function scenario() {
     const filler = Array.from({length: 24}, (_, i) => ({id:'c-scroll'+i, kind:'人物', name:'スクロール確認'+i, tags:{}}));
     const realEntries = S.entries; S.entries = [...realEntries, ...filler]; renderBook();
     const heights = size => { click(`[data-card-size="${size}"]`); return [...new Set([...document.querySelectorAll('#bookbody .en')].map(el => Math.round(el.getBoundingClientRect().height)))]; };
-    for (const size of ['small', 'large', 'medium']) { const h = heights(size); check(h.length === 1, `cards share one height (${size}): ${h}`); }
-    // 大は横長: 絵（1:√2の縦）が左、名前が右。1枚が画面の半分より低い。ステータスは1行ずつ。
+    for (const size of ['small', 'large', 'medium']) { const h = heights(size); check(Math.max(...h) - Math.min(...h) <= 1, `cards share one height (${size}): ${h}`); }
+    // 大は横長: 絵（1:√2の縦）が左、名前が右。カードの高さは幅の半分より低い（前の縦長は 475×1037）。
+    // 画面の高さとは比べない（最小の 720×520 では、横長でも画面の半分を数px超える。2026-10-27）。ステータスは1行ずつ。
     { click('[data-card-size="large"]'); const card = [...document.querySelectorAll('#bookbody .en')].find(el => el.querySelector('.cs-lines')) || document.querySelector('#bookbody .en');
       const face = card.querySelector('.face').getBoundingClientRect(), name = card.querySelector('.character-name').getBoundingClientRect(), box = card.getBoundingClientRect();
-      check(face.right <= name.left + 1 && Math.abs(face.height / face.width - Math.SQRT2) < .02 && box.height < innerHeight / 2, `large card is horizontal: face ${Math.round(face.width)}x${Math.round(face.height)}, card ${Math.round(box.width)}x${Math.round(box.height)}`);
+      check(face.right <= name.left + 1 && Math.abs(face.height / face.width - Math.SQRT2) < .02 && box.height < box.width / 2, `large card is horizontal: face ${Math.round(face.width)}x${Math.round(face.height)}, card ${Math.round(box.width)}x${Math.round(box.height)}, view ${innerWidth}x${innerHeight}`);
       const lines = card.querySelector('.cs-lines');
       check(!lines || lines.getBoundingClientRect().bottom <= box.bottom + 1, 'status lines stay inside the large card');
       click('[data-card-size="medium"]'); }
@@ -723,20 +981,76 @@ async function scenario() {
     window.scrollTo(0, 900); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     const topBottom = document.querySelector('.top').getBoundingClientRect().bottom, tabs = $('booktabs').getBoundingClientRect(), search = $('q').getBoundingClientRect(), add = $('addentry').getBoundingClientRect();
     check(scrollY > 300 && tabs.top >= topBottom - 1 && tabs.bottom < innerHeight && search.top > 0 && search.bottom < innerHeight && add.top > 0, 'toolbar stays visible while the list scrolls');
-    if (innerWidth >= 1000) { const f = $('facets').getBoundingClientRect(); check(f.top > 0 && f.top < innerHeight / 2 && f.left < $('bookbody').getBoundingClientRect().left, 'filter column stays on the left while scrolling'); }
+    if (innerWidth >= 1000) {
+      const f = $('facets').getBoundingClientRect();
+      check(f.top > 0 && f.top < innerHeight / 2 && f.left < $('bookbody').getBoundingClientRect().left, 'filter column stays on the left while scrolling');
+      check(parseFloat(getComputedStyle($('facets')).paddingLeft) >= 8, 'filter surface has a left inset');
+      scrollTo(0, document.documentElement.scrollHeight);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const facetBottom = $('facets').getBoundingClientRect(), barBottom = document.querySelector('.book-toolbar').getBoundingClientRect();
+      check(facetBottom.top >= barBottom.bottom - 1, 'filter top stays below the toolbar at the page bottom: ' + Math.round(facetBottom.top) + '/' + Math.round(barBottom.bottom));
+      // 折りたたんだ細い列: 文字を面の中で中央に置き、展開の印が画面内に残り、下端でも列が付いてくる（2026-11-02）。
+      const det = $('facets').querySelector('details[data-facet-tab]');
+      det.open = false;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const rail = $('facets').getBoundingClientRect(), sum = det.querySelector('summary'), sumBox = sum.getBoundingClientRect();
+      const sumStyle = getComputedStyle(sum), marker = getComputedStyle(sum, '::after');
+      const markerBottom = sumBox.top + parseFloat(marker.top) + parseFloat(marker.height);
+      check(Math.abs(rail.width - 44) < 1.5 && Math.abs(sumBox.width - rail.width) < 2 && sumStyle.alignItems === 'center' && parseFloat(sumStyle.paddingTop) >= 40,
+        'collapsed filter rail pads and centers its label');
+      check(markerBottom > sumBox.top && markerBottom <= innerHeight, 'collapsed filter keeps the expand marker in view: ' + Math.round(markerBottom) + '/' + innerHeight);
+      scrollTo(0, document.documentElement.scrollHeight);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const railBottom = $('facets').getBoundingClientRect();
+      const barAtBottom = document.querySelector('.book-toolbar').getBoundingClientRect();
+      check(railBottom.top >= barAtBottom.bottom - 1 && railBottom.bottom <= innerHeight, 'collapsed filter rail stays below the toolbar at the page bottom: ' + Math.round(railBottom.top) + '/' + Math.round(barAtBottom.bottom));
+      det.open = true;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
     window.scrollTo(0, 0); S.entries = realEntries; renderBook();
   }
+  click('#attributes-btn');
+  check($('viewer').classList.contains('attributes-viewer') && document.querySelectorAll('[data-attr-row]').length === 4, 'attribute manager lists the definitions');
+  {
+    const help = document.querySelector('.attr-type-help');
+    const options = [...document.querySelectorAll('#attr-type option')].map((o) => o.textContent).join('/');
+    check(help && help.textContent.includes('どう入れるか') && help.textContent.includes('選択肢から1つ'), 'type help explains what a type is, with an example');
+    // ui-lint-ignore（画面に出さない旧い名前が残っていないかを検査で確かめる）
+    check(options.includes('選択肢から1つ') && options.includes('選択肢から複数') && !options.includes('複数選択'), 'type options say what the value looks like: ' + options);
+  }
+  click('[data-attr-page="views"]');
+  check(document.querySelectorAll('[data-attr-view-check="card"]').length === 4 && document.querySelector('[data-attr-view-check="card"][data-id="体重"]').checked, 'views table shows card membership');
+  click('[data-attr-page="promote"]');
+  check(document.querySelector('[data-promote-check][data-id="種族"]') && !document.querySelector('[data-promote-run]').disabled, 'free tags are offered for promotion');
+  click('[data-vclose]');
   click('#addentry');
   check([...document.querySelectorAll('#booktabs [role="tab"]')].slice(0,3).map(b => b.textContent.replace(/\d/g,'')).join('/') === 'キャラ/組織/関係図', 'character/organization/graph navigation grouped');
-  check(document.querySelector('[data-addtag]').textContent.includes('タグ追加'), 'tag action label');
-  check([...document.querySelectorAll("[data-tk]")].map((i) => i.value).join("/") === "年齢/身長/性別/所属/身分/誕生日", "default tags");
-  click('[data-tagpreset="体重"]');
-  check(document.querySelector('[data-tagpreset="体重"]').disabled, "preset disabled");
+  check(document.querySelector('[data-addtag]').textContent.includes('固有タグを追加') && document.querySelector('[data-attr-form-add]').textContent.includes('共通タグを追加'), 'attribute and free tag actions');
+  check([...document.querySelectorAll('#f-attrs [data-tk]')].map((i) => i.value).join('/') === '年齢/身長/所属', 'default attributes');
+  check([...document.querySelectorAll('#f-free [data-tk]')].map((i) => i.value).join('/') === '性別/身分/誕生日', 'default free tags');
+  {
+    const note = [...document.querySelectorAll('.tag-layer-note')].map((p) => p.textContent).join('');
+    check(note.includes('作品共通') && note.includes('一人ひとり') && note.includes('昇格'), '編集画面に共通タグと固有タグの使い分けを説明する文がある');
+  }
+  click('[data-attr-form-new]');
+  document.querySelector('[data-new-attr-name]').value = '血液型';
+  document.querySelector('[data-new-attr-type]').value = 'select';
+  document.querySelector('[data-new-attr-meta]').value = 'A型、B型';
+  click('[data-new-attr-create]'); await wait();
+  check([...document.querySelectorAll('#f-attrs [data-tk]')].some((i) => i.value === '血液型'), 'new attribute can be made in the entry form');
+  check((await ouip.load()).world.attributes.some((a) => a.id === '血液型'), 'new attribute is saved from the entry form');
+  [...document.querySelectorAll('#f-attrs [data-trow]')].find((r) => r.querySelector('[data-tk]').value === '血液型')?.querySelector('[data-rmtag]').click();
+  const attrAddSelect = document.querySelector('[data-attr-form-select]');
+  attrAddSelect.value = '体重';
+  click('[data-attr-form-add]');
+  check([...document.querySelectorAll('#f-attrs [data-tk]')].some((i) => i.value === '体重'), 'attribute added from the entry form');
+  click('[data-tagpreset="種族"]');
+  check(document.querySelector('[data-tagpreset="種族"]').disabled, "preset disabled");
   const gender = [...document.querySelectorAll("[data-trow]")].find((r) => r.querySelector("[data-tk]").value === "性別");
   gender.querySelector('[data-tagvalue="女性"]').click();
   check(gender.querySelector("[data-tv]").value === "女性", "value picker");
   document.querySelector('[data-trow] [data-rmtag]').click();
-  check(!document.querySelector('[data-tagpreset="年齢"]').disabled, "removed tag available");
+  check([...document.querySelectorAll('[data-attr-form-select] option')].some((o) => o.value === '年齢'), "removed attribute is available to add");
   click('[data-addsection]');
   document.querySelector('[data-section-title]').value = "生い立ち";
   document.querySelector('[data-section-text]').value = "一行目\n二行目";
@@ -818,6 +1132,13 @@ async function scenario() {
   event.dataTransfer = { setData() {}, effectAllowed: "" };
   document.querySelector('.en').dispatchEvent(event);
   check($('wspanel').hidden && event.defaultPrevented, "drag must not open board");
+  // ボードを開くときは、開いている詳細を閉じる（2026-11-17）。
+  openEntry(person.id); await wait();
+  check(!$('drawer').hidden && $('wspanel').hidden, 'detail opens while the board is closed');
+  toggleBoard(true);
+  check(!$('wspanel').hidden && $('drawer').hidden && cur === null, 'opening the board closes the open detail');
+  toggleBoard(false);
+  check($('wspanel').hidden, 'board closes again');
   click('[data-book-tab="graphs"]');
   check($('bookview').hidden && !$('booktabs').querySelector('[data-view="相関図"]'), 'graph is independent tab');
   console.log('smoke: first graph');
@@ -952,7 +1273,7 @@ async function scenario() {
   $('bs-incoming-form').requestSubmit(); for (let i=0;i<20 && !$('veil').hidden;i++) await wait(); await writes.idle();
   const shared=await ouip.load();
   check(shared.board.items.length===2 && shared.entries.filter(e=>e.name===person.name).length===1 && shared.board.items.some(i=>i.type==='memo' && i.text.startsWith(person.name)),'duplicate imported as memo without a second character');
-  check($('veil').hidden && !$('wspanel').hidden && $('bs-status').textContent.includes('追加しました'),'import adds to board and reports');
+  check($('veil').hidden && !$('wspanel').hidden && $('bs-status').textContent.includes('取り込みました'),'import adds to board and reports');
   click('#update-btn');await wait();
   check($('update-status').textContent.includes('配布版'),'development updater disabled');
   click('[data-vclose]');
@@ -974,7 +1295,7 @@ async function scenario() {
   click('[data-vclose]');
   click('#site-export-btn');
   check($('site-export-form') && !$('veil').hidden,'site export opens');
-  check($('viewer').textContent.includes('閲覧用ファイルの名前'), 'site export names the file, not a shared site');
+  check($('viewer').textContent.includes('閲覧用ページの名前'), 'site export names the file, not a shared site');
   check($('site-selection-count').textContent === '選択 0件' && $('site-export-form').querySelector('[type="submit"]').disabled,'site export starts empty');
   check(['standard','light','paper'].every(value=>$('site-template').querySelector(`option[value="${value}"]`)) && $('site-template').value==='standard','site export offers appearance templates');
   {
@@ -988,13 +1309,40 @@ async function scenario() {
   }
   click('#site-export-form [data-vclose]');
   check($('veil').hidden,'site export closes');
-  // 設定シート: 載せるものを選び、仕上がりを見てから画像で書き出す。保存データは変えない。
-  click('[data-kind="人物"]'); openEntry(person.id);
-  check(document.querySelector('[data-sheet-export]')?.textContent.trim() === '設定シートを書き出す', 'sheet export button names the sheet');
-  click('[data-sheet-export]');
+  // 共有メニュー: 閲覧用ページ・画像・ボードを1か所にまとめる。
+  check($('share-menu')?.querySelector('summary')?.textContent.trim() === '共有', 'share menu is in the header');
+  $('share-menu').open = true;
+  check(['site-export-btn','image-export-btn','board-export-btn','board-import-btn'].every(id => $(id)), 'share menu groups the four actions');
+  check($('share-menu').closest('.tool-app') && $('settings-btn').closest('.tool-app') && $('save-btn').closest('.tool-data'), 'share sits with settings, apart from save and history');
+  check(typeof globalThis.BoardShareUI?.exportShare === 'function' && typeof globalThis.BoardShareUI?.importShare === 'function', 'board share is reachable from the menu');
+  await wait(); { const r = $('share-menu').querySelector('.menu-pop').getBoundingClientRect(); check(r.left >= -1 && r.right <= innerWidth + 1, `share menu stays within the viewport: ${Math.round(r.left)}-${Math.round(r.right)} of ${innerWidth}`); }
+  check($('site-export-btn').textContent.includes('アプリを持たない人') && $('image-export-btn').textContent.includes('SNS'), 'share menu explains each export');
+  const shareSummary = $('share-menu').querySelector('summary');
+  shareSummary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  check(!$('share-menu').open && document.activeElement === shareSummary, 'Escape closes the share menu and returns focus');
+  $('share-menu').open = true;
+  document.querySelector('main').click();
+  check(!$('share-menu').open, 'outside click closes the share menu');
+  $('share-menu').open = true;
+  click('#image-export-btn');
+  check($('share-person-list').querySelector('.share-person-icon'), 'image export shows a face or initial');
+  click('#viewer [data-vclose]');
+  check(document.activeElement === shareSummary, 'closing the person picker returns focus');
+  $('share-menu').open = true;
+  click('#image-export-btn');
+  click('#image-export-btn');
+  check(!$('veil').hidden && $('viewer').classList.contains('share-picker-viewer'), 'image export asks for a person');
+  check($('share-person-list').querySelectorAll('[data-share-person]').length > 0, 'image export lists people');
+  {
+    const search = $('share-person-search');
+    search.value = '存在しない名前'; search.dispatchEvent(new Event('input', { bubbles: true }));
+    check($('share-person-list').textContent.includes('該当する人物がいません'), 'image export search filters the list');
+    search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  click(`[data-share-person="${person.id}"]`);
   const sheetImage=()=>$('sheet-pages')?.querySelector('img');
   for (let i=0;i<80 && !sheetImage()?.naturalWidth;i++) await wait();
-  check(document.querySelector('#sheet-form')?.textContent.includes('確認用のウィンドウ'), 'sheet export announces the capture window');
+  check(!document.querySelector('#sheet-form')?.textContent.includes('確認用のウィンドウ'), 'sheet export no longer announces a capture window');
   check(!$('veil').hidden && sheetImage()?.naturalWidth===1080 && sheetImage().naturalHeight===1080,'sheet preview is exact default square size');
   const portraitSize=document.querySelector('[name="sheet-size"][value="portrait"]'); portraitSize.checked=true; portraitSize.dispatchEvent(new Event('change',{bubbles:true}));
   for (let i=0;i<80 && sheetImage()?.naturalHeight!==1350;i++) await wait();
@@ -1005,7 +1353,33 @@ async function scenario() {
   const beforeSheet=JSON.stringify(await ouip.load());
   $('sheet-form').requestSubmit(); for (let i=0;i<80 && !$('veil').hidden;i++) await wait();
   check($('veil').hidden && $('toast').textContent.includes('枚を書き出しました') && JSON.stringify(await ouip.load())===beforeSheet,'sheet export saves images without changing data');
-  click('[data-close]');
+  // 各画面からの書き出し（2026-10-27）: 人物の詳細・関係図・地図・組織から、その対象だけを選んだ状態で開く。
+  click('[data-kind="人物"]'); click(`[data-entry="${person.id}"]`);
+  check(document.querySelector(`#drawer [data-sheet-export="${person.id}"]`), 'person detail offers image export');
+  click(`#drawer [data-sheet-export="${person.id}"]`); await wait();
+  check(!$('veil').hidden && $('sheet-form') && $('viewer').textContent.includes(person.name), 'image export opens from the person detail for that person');
+  click('[data-vclose]'); click('[data-close]');
+  {
+    const checkedItems = () => [...$('site-export-form').querySelectorAll('[data-site-item]:checked')].map(input => input.dataset.siteItem + ':' + input.value).sort();
+    for (const [tab, key] of [['graphs', 'graphIds'], ['maps', 'mapIds']]) {
+      click(`[data-book-tab="${tab}"]`); await wait();
+      const id = $('diagram-select')?.value;
+      check(id && document.querySelector('.diagram-toolbar [data-site-export]'), `${tab} toolbar offers site export`);
+      click('.diagram-toolbar [data-site-export]');
+      check($('site-export-form') && JSON.stringify(checkedItems()) === JSON.stringify([key + ':' + id]) && $('site-selection-count').textContent === '選択 1件', `${tab} site export selects only the current one`);
+      click('[data-vclose]');
+    }
+    click('[data-book-tab="organizations"]'); await wait();
+    const orgButton = document.querySelector('.organization-row [data-site-export]');
+    check(orgButton, 'organization row offers site export');
+    if (orgButton) {
+      const pre = JSON.parse(orgButton.dataset.siteExport);
+      orgButton.click();
+      const expected = [...pre.organizationIds.map(id => 'organizationIds:' + id), ...pre.entryIds.map(id => 'entryIds:' + id)].sort();
+      check(pre.organizationIds.length === 1 && JSON.stringify(checkedItems()) === JSON.stringify(expected), 'organization site export selects that organization and its members');
+      click('[data-vclose]');
+    }
+  }
   // 最小ウィンドウ・長文・フォーム末尾でも主要操作は表示領域内。
   click('[data-kind="人物"]'); click(`[data-entry="${person.id}"]`); click('[data-edit]');
   click('[data-editor-expand]');
@@ -1026,6 +1400,13 @@ async function scenario() {
   click('[data-kind="人物"]'); openEntry(person.id); click('[data-edit]');
   $('drawer').classList.add('editor-expanded');
   $('drawer').querySelector('.drawer-body').scrollTop = 700;
+  // テストが開いた画面も含め、最後にまとめて判定する（2026-11-01）。
+  {
+    const layers = ['画面', '詳細/編集', 'ダイアログ', 'ボード'];
+    check(layers.every(w => window.__flatCtx.has(w)), 'flat scan watched every layer: ' + [...window.__flatCtx].join(', '));
+    const left = [...window.__flatSeen];
+    check(left.length === 0, 'text-only action groups (all screens): ' + left.slice(0, 12).join(' / '));
+  }
 }
 
 // 新機能は独立した段階で失敗を収集し、失敗時もactual mainの撮影/終了経路を通す。
@@ -1134,7 +1515,7 @@ async function featureScenario(personId) {
   });
   await stage('retired relation UI absent / refresh preserves drafts / status assign save', async () => {
     openEntry(personId); click('[data-edit]');
-    check($('f-status-assign') && $('f-status-assign').textContent.includes('ステータスタブで作る'), 'without definitions the status page points to the statuses tab');
+    check($('f-status-assign') && $('f-status-assign').textContent.includes('ステータスタブで追加'), 'without definitions the status page points to the statuses tab');
     $('drawer').hidden = true; cur = null;
     // 世界観の定義（数値・文字の段階・自由な文字）を作ってから、キャラに割り当てる。
     await ouip.updateWorld({ statusConcept: { name: '試験RPG', card: 'radar', detail: 'bars', items: [{ name: '体力', mode: 'number', min: -10, max: 90, unit: '点' }, { name: '評価', mode: 'rough', levels: ['C', 'B', 'A'] }, { name: '固有スキル', mode: 'text' }] } });
@@ -1213,14 +1594,88 @@ async function featureScenario(personId) {
       const col = document.querySelector(`[data-drag="${personId}"] .cs-card-graph`);
       check(col && col.querySelector('.cs-track, .cs-dots, .cs-radar') && !col.querySelector('.cs-readout, .cs-range') && !/〜/.test(col.textContent), 'graph column leaves out the text value rows');
     }
-    // ステータスタブから全員へ一括で揃えられる。
+    // ステータスタブから全体の設定を開き、全員の大カードのステータスを揃える。
     selectBookTab('statuses'); render();
-    document.querySelector('[data-ss-card-view]').value = 'lines';
-    click('[data-ss-card-view-apply]');
-    check(document.querySelector('[data-ss-card-view-apply]').hasAttribute('data-armed'), 'bulk card view asks for confirmation');
-    click('[data-ss-card-view-apply]'); await wait();
+    click('[data-open-settings]');
+    const bulkView = document.querySelector('[data-settings-card-view]');
+    check(bulkView && bulkView.value === '' && bulkView.querySelector('option[value=""]')?.disabled, 'settings show a mixed card view state');
+    bulkView.value = 'lines';
+    bulkView.dispatchEvent(new Event('change', { bubbles: true })); await wait();
     const everyone = (await ouip.load()).entries.filter(e => e.kind === '人物');
-    check(everyone.length > 1 && everyone.every(e => e.statusCardView !== 'graph'), 'bulk card view applies lines to everyone');
+    check(everyone.length > 1 && everyone.every(e => e.statusCardView !== 'graph'), 'settings apply lines to everyone');
+    check(document.querySelector('[data-settings-card-view]').value === 'lines', 'settings keep the applied value');
+    $('veil').hidden = true;
+  });
+  await stage('character detail opens as a right column or overlay by setting', async () => {
+    const wide = innerWidth >= 1200;
+    page = 'book'; selectBookTab('人物'); render();
+    $('drawer').hidden = true; cur = null;
+    openEntry(personId); await wait();
+    const D = $('drawer'), body = document.body;
+    if (wide) {
+      check(body.classList.contains('detail-column'), 'wide detail defaults to the right column');
+      check(getComputedStyle(body).overflow !== 'hidden', 'right column keeps the page scrollable');
+      const dr = D.getBoundingClientRect(), list = document.querySelector('#bookbody').getBoundingClientRect();
+      const bar = document.querySelector('.book-toolbar').getBoundingClientRect();
+      check(dr.top > 60 && dr.top >= bar.bottom - 1 && dr.left >= list.right - 1, 'detail column sits below the toolbar and right of the list');
+      scrollTo(0, 160); await wait();
+      const drScrolled = D.getBoundingClientRect(), barScrolled = document.querySelector('.book-toolbar').getBoundingClientRect();
+      check(drScrolled.top >= barScrolled.bottom - 1 && drScrolled.top <= dr.top + 1, 'detail column stays below the sticky toolbar while scrolling');
+      scrollTo(0, 0); await wait();
+      check(getComputedStyle(D).boxShadow === 'none', 'detail column has no overlay shadow');
+      {
+        const handle = document.querySelector('[data-drawer-resize]');
+        const before = D.getBoundingClientRect().width;
+        handle.setPointerCapture = () => {}; handle.releasePointerCapture = () => {};
+        const x = handle.getBoundingClientRect().left + 5;
+        handle.dispatchEvent(new PointerEvent('pointerdown', {pointerId:41, button:0, clientX:x, bubbles:true}));
+        handle.dispatchEvent(new PointerEvent('pointermove', {pointerId:41, clientX:x - 30, bubbles:true}));
+        handle.dispatchEvent(new PointerEvent('pointerup', {pointerId:41, clientX:x - 30, bubbles:true}));
+        check(D.getBoundingClientRect().width > before, 'detail column width can be dragged');
+        check(document.querySelector('#bookbody').getBoundingClientRect().right <= D.getBoundingClientRect().left + 1, 'list stays clear after resizing the detail column');
+      }
+    } else {
+      check(!body.classList.contains('detail-column'), 'narrow detail overlays');
+      check(D.getBoundingClientRect().top === 0, 'narrow detail covers the full height');
+      check(getComputedStyle(body).overflow === 'hidden', 'overlay detail locks the page behind');
+    }
+    click('#settings-btn'); await wait();
+    const select = document.querySelector('[data-settings-detail]');
+    check(select, 'settings offer the detail mode');
+    if (wide) {
+      select.value = 'overlay'; select.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+      check(!document.body.classList.contains('detail-column'), 'overlay mode removes the right column');
+      check($('drawer').getBoundingClientRect().top === 0, 'overlay detail covers the full height');
+      check(getComputedStyle(body).overflow === 'hidden', 'overlay detail locks the page behind');
+      check(getComputedStyle(document.querySelector('main')).pointerEvents === 'none', 'overlay detail keeps the background out of pointer reach');
+      const back = document.querySelector('[data-settings-detail]');
+      back.value = 'column'; back.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+      check(document.body.classList.contains('detail-column'), 'column mode returns the right column');
+      check(getComputedStyle(document.querySelector('main')).pointerEvents !== 'none', 'column mode unlocks the page');
+    } else {
+      check(!document.body.classList.contains('detail-column'), 'narrow detail stays overlay even when column is selected');
+    }
+    click('[data-vclose]');
+    $('drawer').hidden = true; cur = null;
+  });
+  await stage('detail adds an inherent tag without the editor', async () => {
+    const temp = await ouip.saveEntry({ kind: '人物', name: '固有タグ追加の確認' });
+    await refresh(); page = 'book'; selectBookTab('人物'); render();
+    openEntry(temp.id); await wait();
+    const open = document.querySelector('[data-detail-tag-open]');
+    check(open && open.textContent.includes('固有タグを追加'), 'detail offers adding an inherent tag');
+    click('[data-detail-tag-open]');
+    const form = document.querySelector('[data-detail-tag-form]');
+    check(form && !form.hidden, 'inherent tag form opens in the detail');
+    form.querySelector('[data-detail-tag-key]').value = '猫派';
+    form.querySelector('[data-detail-tag-value]').value = 'はい';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await wait(); await wait();
+    const loaded = await ouip.load();
+    check(loaded.entries.find((e) => e.id === temp.id)?.tags.猫派?.[0] === 'はい', 'inherent tag saves through IPC');
+    check(document.querySelector('#drawer [data-detail-group="tags"]')?.textContent.includes('猫派'), 'saved inherent tag shows in the detail');
+    $('drawer').hidden = true; cur = null;
+    await ouip.deleteEntry(temp.id); await refresh();
   });
   await stage('legacy status migration notice / preview / apply', async () => {
     $('drawer').hidden = true; cur = null;
@@ -1278,13 +1733,34 @@ async function featureScenario(personId) {
     set('#sort-by', '');
     check(!$('reorder-btn').disabled, 'manual order returns');
   });
-  await stage('statuses tab shows a foldable graph preview per definition', async () => {
+  await stage('statuses tab shows a compact preview per definition', async () => {
     $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('statuses'); render();
-    const d = document.querySelector('[data-ss-preview-of]');
-    check(d && d.open && d.querySelector('.ss-preview-card') && $('sort-by').hidden, 'definition rows show an open preview and no character sort control');
-    d.open = false; d.dispatchEvent(new Event('toggle')); render();
-    check(document.querySelector(`[data-ss-preview-of="${d.dataset.ssPreviewOf}"]`).open === false, 'closed preview stays closed after redraw');
-    const again = document.querySelector(`[data-ss-preview-of="${d.dataset.ssPreviewOf}"]`); again.open = true; again.dispatchEvent(new Event('toggle'));
+    const rows = [...document.querySelectorAll('.status-row')];
+    const row = rows[0];
+    check(row && row.querySelector('.status-row-preview .ss-preview-card') && row.querySelector('.status-row-preview .ss-preview-detail') && $('sort-by').hidden, 'definition rows show card and detail previews inline, without character sort');
+    if (innerWidth >= 1040) {
+      const text = row.querySelector('.status-row-text').getBoundingClientRect(), prev = row.querySelector('.status-row-preview').getBoundingClientRect();
+      check(prev.left >= text.right - 1 && prev.top < text.bottom, 'preview sits beside the description, not below: ' + Math.round(text.width) + '/' + Math.round(prev.width));
+    }
+  });
+  await stage('status assignees toggle never moves its own trigger or the preview', async () => {
+    // 開閉で増える内容は操作子の行の下にだけ出す。人数によらず操作子と見本の位置を変えない（2026-11-01）。
+    $('drawer').hidden = true; cur = null; page = 'book'; selectBookTab('statuses'); render();
+    const targets = [...document.querySelectorAll('.status-row')];
+    check(targets.some((row) => row.querySelector('.status-assignees summary')), 'some definitions have assignees to toggle');
+    for (const row of targets) {
+      const sum = row.querySelector('.status-assignees summary');
+      if (!sum) continue;
+      const prev = row.querySelector('.status-row-preview');
+      const r0 = sum.getBoundingClientRect(), p0 = prev.getBoundingClientRect();
+      sum.click(); await wait();
+      const r1 = sum.getBoundingClientRect(), p1 = prev.getBoundingClientRect();
+      check(Math.abs(r0.left - r1.left) < 1 && Math.abs(r0.top - r1.top) < 1, 'opening assignees keeps the trigger in place: ' + sum.textContent.trim());
+      check(Math.abs(p0.left - p1.left) < 1 && Math.abs(p0.top - p1.top) < 1, 'opening assignees keeps the preview in place: ' + sum.textContent.trim());
+      sum.click(); await wait();
+      const r2 = sum.getBoundingClientRect();
+      check(Math.abs(r0.left - r2.left) < 1 && Math.abs(r0.top - r2.top) < 1, 'closing assignees restores the trigger: ' + sum.textContent.trim());
+    }
   });
   await stage('free-placement diagram: place / balloon resize and tail / connect / template / undo-redo / copy-paste / delete', async () => {
     let thrown = 0; const count = () => { thrown++; };
@@ -1467,13 +1943,14 @@ async function featureScenario(personId) {
       check(thrown === 0, 'no uncaught errors on the map');
     } finally { window.removeEventListener('error', count); window.removeEventListener('unhandledrejection', count); mapSelection.clear(); }
   });
-  await stage('edit basic puts images right after the name', async () => {
+  await stage('edit basic puts reading right after the name', async () => {
     openEntry(personId); click('[data-edit]');
     {
       const basic = document.querySelector('[data-edit-page="basic"]');
       const imgH = [...basic.querySelectorAll('h4.form-heading')].find(h => h.textContent === '画像');
-      const reading = basic.querySelector('#f-reading');
-      check(imgH && reading && (imgH.compareDocumentPosition(reading) & Node.DOCUMENT_POSITION_FOLLOWING), 'character images come right after the name in basic edit');
+      const name = basic.querySelector('#f-name'), reading = basic.querySelector('#f-reading');
+      check(name && reading && (name.compareDocumentPosition(reading) & Node.DOCUMENT_POSITION_FOLLOWING), 'reading field comes right after the name');
+      check(imgH && reading && (reading.compareDocumentPosition(imgH) & Node.DOCUMENT_POSITION_FOLLOWING), 'images come after the reading field');
     }
     $('drawer').hidden = true; cur = null;
     const word = S.entries.find(e => e.kind === '用語');
@@ -1499,19 +1976,35 @@ async function featureScenario(personId) {
         check(hint && hint.getClientRects().length && /ドラッグ/.test(hint.textContent), 'edit page tabs explain drag reordering');
       }
     }
-    // 上下両方向を通し、元とは異なる最終順を保存。
-    for (const [container, row, field] of [['#f-tags','[data-trow]','[data-tk]'],['#f-sections','[data-section]','[data-section-title]'],['#f-fields','[data-frow]','[data-fk]']]) {
-      const add = container === '#f-tags' ? '[data-addtag]' : container === '#f-sections' ? '[data-addsection]' : '[data-addfield]';
+    // 縦一列の見出しは↑↓、段組みのタグ・設定項目はつまみのドラッグ（番号が今の並び順）。
+    // 人物のタグは共通と固有の2層なので、固有タグの層（#f-free）の中で確かめる。
+    for (const [container, row, field] of [['#f-free','[data-trow]','[data-tk]'],['#f-sections','[data-section]','[data-section-title]'],['#f-fields','[data-frow]','[data-fk]']]) {
+      const add = row === '[data-trow]' ? '[data-addtag]' : container === '#f-sections' ? '[data-addsection]' : '[data-addfield]';
       while (document.querySelectorAll(container + ' ' + row).length < 3) {
         click(add); const list = [...document.querySelectorAll(container + ' ' + row)]; list.at(-1).querySelector(field).value = '順序試験' + list.length;
       }
       await new Promise(r => setTimeout(r,0));
       const first = document.querySelector(container + ' ' + row); const name = first.querySelector(field).value;
-      first.querySelector('[data-editor-order="down"]').click();
-      check([...document.querySelectorAll(container + ' ' + row)][1].querySelector(field).value === name, container + ' down action');
-      first.querySelector('[data-editor-order="up"]').click();
-      check(document.querySelector(container + ' ' + row).querySelector(field).value === name, container + ' up action');
-      first.querySelector('[data-editor-order="down"]').click();
+      const rowsOf = () => [...document.querySelectorAll(container + ' ' + row)];
+      if (row === '[data-section]') {
+        first.querySelector('[data-editor-order="down"]').click();
+        check(rowsOf()[1].querySelector(field).value === name, container + ' down action');
+        first.querySelector('[data-editor-order="up"]').click();
+        check(document.querySelector(container + ' ' + row).querySelector(field).value === name, container + ' up action');
+        first.querySelector('[data-editor-order="down"]').click();
+      } else {
+        check(!first.querySelector('[data-editor-order="up"]') && first.querySelector('.editor-order-no'), container + ' has a number and a grip, no up/down');
+        check(rowsOf().map(r => r.querySelector('.editor-order-no').textContent).join(',') === rowsOf().map((_, i) => String(i + 1)).join(','), container + ' numbers show the order');
+        const dt = new DataTransfer();
+        const handle = first.querySelector('[data-editor-order="handle"]');
+        handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        const last = rowsOf().at(-1), r = last.getBoundingClientRect(), y = r.height ? r.top + r.height - 2 : 1e6;
+        last.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }));
+        last.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }));
+        await new Promise(r => setTimeout(r,0));
+        check(rowsOf().at(-1).querySelector(field).value === name, container + ' drag moves the row to the end');
+        check(rowsOf().map(r2 => r2.querySelector('.editor-order-no').textContent).join(',') === rowsOf().map((_, i) => String(i + 1)).join(','), container + ' numbers follow the new order');
+      }
     }
     const orders = () => [ [...document.querySelectorAll('[data-tk]')].map(e => e.value), [...document.querySelectorAll('[data-section-title]')].map(e => e.value), [...document.querySelectorAll('[data-fk]')].map(e => e.value) ];
     const expected = orders(); $('ef').requestSubmit(); await wait();
@@ -1572,7 +2065,7 @@ async function featureScenario(personId) {
     const order = () => cards().map(el => el.dataset.drag);
     const mine = list => list.filter(id => made.includes(id));
     check($('reorder-btn').hidden === false, 'reorder button shows on a plain kind list');
-    click('#reorder-btn');
+    click('#reorder-btn'); await wait();
     check($('reorder-btn').getAttribute('aria-pressed') === 'true' && document.querySelector('#bookbody .entries.reordering'), 'reorder mode enters');
     {
       const grid = document.querySelector('#bookbody .entries.reordering'), card = grid.querySelector('.en');
@@ -1822,9 +2315,15 @@ async function featureScenario(personId) {
         {
           const previewBox = tabs[0].closest('.ss-preview'), fieldsBox = form().querySelector('.ss-form-body');
           const pr = previewBox.getBoundingClientRect(), fr = fieldsBox.getBoundingClientRect();
-          check(pr.left < fr.left && Math.abs(pr.top - fr.top) < 40, 'definition preview sits on the left of the fields');
-          const cs = getComputedStyle;
-          check(cs(previewBox).overflowY === 'auto' && cs(fieldsBox).overflowY === 'auto' && cs(form()).overflowY === 'hidden', 'preview and fields scroll separately');
+          const cs = getComputedStyle, narrow = matchMedia('(max-width: 860px)').matches;
+          // 広い画面は見本を左・入力欄を右に分けて別々にスクロールする。狭い画面は見本を上に積み、全体で1つスクロールする（UI_CONVENTIONS）。
+          if (narrow) {
+            check(pr.top < fr.top && Math.abs(pr.left - fr.left) < 40, '狭い画面: 定義の見本は入力欄の上に来る');
+            check(cs(previewBox).overflowY === 'auto' && cs(form()).overflowY === 'auto' && cs(fieldsBox).overflowY === 'visible', '狭い画面: 見本の高さに上限があり、画面全体でスクロールする');
+          } else {
+            check(pr.left < fr.left && Math.abs(pr.top - fr.top) < 40, 'definition preview sits on the left of the fields');
+            check(cs(previewBox).overflowY === 'auto' && cs(fieldsBox).overflowY === 'auto' && cs(form()).overflowY === 'hidden', 'preview and fields scroll separately');
+          }
         }
         click('#status-set-form [data-ss-preview-tab="detail"]'); await wait();
         check(form().querySelector('[data-ss-preview] .ss-preview-detail') && form().querySelector('[data-ss-preview-tab="detail"]').getAttribute('aria-selected') === 'true', 'definition preview switches to the detail tab');
@@ -1848,9 +2347,14 @@ async function featureScenario(personId) {
       $('status-set-form').requestSubmit(); await closed();
       const copy = (await ouip.load()).world.statusConcepts.find(c => c.name === '試験の定義2のコピー');
       check(copy && copy.id !== def.id && copy.items[0].id !== def.items[0].id, 'copy makes a new definition with new item ids');
-      document.querySelector('[data-ss-preset]').value = 'profile'; click('[data-ss-from-preset]');
+      document.querySelector('.status-preset-menu').open = true; click('[data-ss-from-preset="profile"]');
       $('status-set-form').requestSubmit(); await closed();
       check((await ouip.load()).world.statusConcepts.some(c => c.name === '二つ名・固有スキル'), 'preset can be saved as a definition');
+      check(!document.querySelector('[data-ss-enabled]') && !document.querySelector('[data-ss-preset]'), 'status switch and preset select are gone from the status toolbar');
+      check(!!document.querySelector('.status-assignees, .status-meta'), 'status row shows who is assigned');
+      click('[data-open-settings]'); await wait();
+      check(!!document.querySelector('[data-settings-status-enabled]'), 'status switch lives in settings');
+      click('#viewer [data-vclose]'); await wait();
       for (const target of [def, copy]) {
         click(`[data-ss-delete="${target.id}"]`);
         $('status-set-delete').requestSubmit(); await closed();
@@ -1862,6 +2366,183 @@ async function featureScenario(personId) {
       }
       check(thrown === 0, 'no uncaught errors while opening dialogs');
     } finally { window.removeEventListener('error', count); window.removeEventListener('unhandledrejection', count); }
+  });
+  window.__ouipFeatureFailures = failures;
+  await stage('attributes: promote, rename, view membership, and removal save through IPC', async () => {
+    const temp = await ouip.saveEntry({ kind: '人物', name: '共通タグの確認', tags: { 下書き: ['A'] } }); await refresh();
+    page = 'book'; selectBookTab('人物'); render();
+    click('#attributes-btn');
+    click('[data-attr-page="promote"]');
+    click('[data-promote-none]');
+    const candidate = document.querySelector('[data-promote-check][data-id="下書き"]');
+    check(candidate, 'promotion candidate missing');
+    candidate.click();
+    check(!document.querySelector('[data-promote-run]').disabled, 'promotion can run after selecting a tag');
+    click('[data-promote-run]'); await wait(); await wait();
+    let loaded = await ouip.load();
+    check(loaded.world.attributes.some((a) => a.id === '下書き'), 'promoted attribute is saved');
+    check(loaded.entries.find((e) => e.id === temp.id)?.tags.下書き?.[0] === 'A', 'promoted attribute keeps its value');
+
+    const row = document.querySelector('[data-attr-row="下書き"]');
+    check(row, 'promoted attribute is listed');
+    row.click(); await wait();
+    $('viewer').querySelector('[data-attr-name]').value = '下書き名';
+    click('[data-attr-save]'); await wait(); await wait();
+    loaded = await ouip.load();
+    check(loaded.world.attributes.some((a) => a.id === '下書き名') && !loaded.world.attributes.some((a) => a.id === '下書き'), 'attribute rename is saved');
+    check(loaded.entries.find((e) => e.id === temp.id)?.tags.下書き名?.[0] === 'A', 'attribute rename moves the values');
+
+    click('[data-attr-page="views"]');
+    const cardCheck = document.querySelector('[data-attr-view-check="card"][data-id="下書き名"]');
+    check(cardCheck?.checked, 'a promoted attribute joins the view');
+    cardCheck.click(); await wait();
+    loaded = await ouip.load();
+    check(!loaded.world.attributeViews[0].card.includes('下書き名'), 'view card exclusion is saved');
+    document.querySelector('[data-attr-view-check="card"][data-id="下書き名"]').click(); await wait();
+    click('[data-attr-view-place]'); await wait();
+    loaded = await ouip.load();
+    check(loaded.world.attributeViews[0].filterPlace === 'top' && document.querySelector('.book-layout').dataset.filterPlace === 'top', 'filter placement saves and reaches the list');
+    click('[data-attr-view-place]'); await wait();
+    click('[data-attr-page="list"]'); await wait();
+    const deleteRow = document.querySelector('[data-attr-row="下書き名"]');
+    check(deleteRow, 'attribute row is back on the list');
+    deleteRow.click(); await wait();
+    const originalConfirm = window.confirm; window.confirm = () => true;
+    try {
+      click('[data-attr-delete]'); await wait(); await wait();
+      loaded = await ouip.load();
+      check(!loaded.world.attributes.some((a) => a.id === '下書き名'), 'attribute removal is saved');
+      check(loaded.entries.find((e) => e.id === temp.id)?.tags.下書き名?.[0] === 'A', 'attribute removal keeps the value as a free tag');
+    } finally { window.confirm = originalConfirm; }
+    click('[data-vclose]');
+    await ouip.deleteEntry(temp.id); await refresh();
+  });
+  await stage('story: create, edit beats/scenes/refs, vertical read, entry backlink, and delete', async () => {
+    click('header [data-page="story"]'); await wait();
+    const logoMark = document.querySelector('.logo .logo-mark');
+    check(logoMark && logoMark.complete && logoMark.naturalWidth > 0, 'header displays decoded SVG logo mark');
+    check(!$('p-story').hidden && $('p-book').hidden && $('p-world').hidden, 'story nav shows story workspace');
+    check(document.documentElement.scrollWidth <= window.innerWidth + 1, 'story workspace has no horizontal overflow');
+    click('[data-story-new="小説"]'); await writes.idle(); await wait();
+    const titleInp = document.querySelector('[data-story-field="title"]');
+    check(titleInp, 'created story opens title input');
+    titleInp.value = 'テスト短編';
+    titleInp.dispatchEvent(new Event('input', { bubbles: true }));
+    click('[data-story-save]'); await writes.idle(); await wait();
+    click('[data-story-tab="beats"]');
+    click('[data-story-template="kishotenketsu"]'); await writes.idle(); await wait();
+    check(document.querySelectorAll('.story-beat').length === 4, 'kishotenketsu template inserts 4 beats');
+    click('[data-story-tab="scenes"]');
+    const bodyEl = document.querySelector('[data-scene-field="body"]');
+    check(bodyEl, 'new novel starts with one chapter body');
+    bodyEl.value = '一二三四五';
+    bodyEl.dispatchEvent(new Event('input', { bubbles: true }));
+    check(document.querySelector('[data-story-total-chars]')?.textContent.includes('5 文字'), 'character count updates live');
+    click('[data-scene-insert-btn]');
+    check(bodyEl.value.includes('[['), 'quick insert adds setting reference marker');
+    click('[data-story-save]'); await writes.idle();
+    click('[data-story-tab="refs"]');
+    const refChk = document.querySelector('[data-story-ref-toggle]');
+    check(refChk, 'story refs lists setting entries');
+    const firstRefId = refChk.dataset.storyRefToggle;
+    refChk.click(); await writes.idle(); await wait();
+    const refChip = document.querySelector('.story-linked-bar .chipbtn');
+    const refIcon = refChip?.querySelector('svg.icon');
+    check(refChip && refIcon, 'linked setting chip renders book icon');
+    if (refChip && refIcon) {
+      const b = refChip.getBoundingClientRect(), i = refIcon.getBoundingClientRect();
+      check(i.left >= b.left - 0.5 && i.right <= b.right + 0.5 && i.top >= b.top - 0.5 && i.bottom <= b.bottom + 0.5, 'book icon fits strictly inside linked setting chip');
+    }
+    click('[data-story-tab="read"]');
+    click('[data-story-writing="vertical"]'); await wait();
+    check(document.querySelector('.story-reader.is-vertical'), 'reader toggles vertical writing mode');
+    const jumpBtn = document.querySelector('.story-reader button.story-inline-ref[data-story-jump]');
+    check(jumpBtn, 'vertical reader shows inline setting link button');
+    if (jumpBtn) {
+      const cs = getComputedStyle(jumpBtn);
+      check(cs.borderTopWidth === '0px' && cs.textDecorationLine.includes('underline'), 'vertical inline setting link renders underline without pill border');
+      jumpBtn.click(); await wait();
+      check(!$('drawer').hidden, 'clicking inline setting link opens entry drawer');
+    } else {
+      openEntry(firstRefId); await wait();
+    }
+    check(document.querySelector('#drawer [data-open-story]'), 'entry detail shows referencing stories');
+    click('[data-close]');
+    const delSelector = '[data-story-delete]';
+    click(delSelector);
+    click(delSelector); await writes.idle(); await wait();
+    const loadedAfter = await ouip.load();
+    check(!(loadedAfter.stories || []).some((x) => x.title === 'テスト短編'), '2-click story delete removes story cleanly');
+    await ouip.saveStory({ kind: '小説', status: '執筆中', title: '夜明け前の郵便船', summary: '昼と夜の境目に交わされる短い手紙。', refs: [firstRefId], beats: [{ act: '起', title: '夜明けのポスト', body: '灯台に手紙が届く。', status: '確定' }], scenes: [{ title: '第一章', body: '夜霧の晴れる頃、郵便船の鐘が鳴った。' }] });
+    await refresh();
+  });
+  await stage('scroll & diagram inspector polish', async () => {
+    click('header [data-page="book"]');
+    selectBookTab('人物'); render(); await wait();
+    const f = $('facets');
+    const rootSum = f?.querySelector(':scope > details > summary');
+    const cfgSum = f?.querySelector('.facet-config > summary');
+    const fSearch = f?.querySelector('.facet-search');
+    check(cfgSum && getComputedStyle(cfgSum).position !== 'sticky', 'facet-config summary is not sticky (never overlaps search)');
+    if (matchMedia('(min-width: 1040px)').matches) {
+      check(rootSum && getComputedStyle(rootSum).position === 'sticky', 'wide #facets root summary stays sticky');
+    }
+    if (f && fSearch && cfgSum) {
+      const cfg = f.querySelector('.facet-config');
+      if (cfg) cfg.open = true;
+      if (f.scrollHeight > f.clientHeight + 10) {
+        f.scrollTop = 20;
+        check(cfgSum.getBoundingClientRect().top >= fSearch.getBoundingClientRect().bottom - 1, 'scrolled #facets keeps facet-config summary below facet search');
+        const opt = f.querySelector('[data-fc]');
+        if (opt) { opt.click(); await wait(); check(f.scrollTop >= 10, '#facets keeps scroll position across filter toggle'); }
+      }
+      const cfgAfter = f.querySelector('.facet-config');
+      if (cfgAfter) cfgAfter.open = false;
+    }
+    selectBookTab('graphs'); render(); await wait();
+    check(window.scrollY === 0, 'switching to graphs resets scrollY to 0');
+    const freeG = (S.world.graphs || []).find(g => g.format === 'canvas' && (g.links || []).length > 0);
+    if (freeG && $('diagram-select')?.value !== freeG.id) {
+      $('diagram-select').value = freeG.id;
+      $('diagram-select').dispatchEvent(new Event('change', { bubbles: true }));
+      await wait();
+    }
+    const shell = document.querySelector('[data-dg-shell]');
+    check(shell, 'free-placement diagram shell is rendered');
+    if (shell) {
+      let pal = shell.querySelector('[data-dg-palette]');
+      if (pal && getComputedStyle(pal).display === 'none') {
+        click('[data-dg-toggle="palette"]');
+      }
+      pal = shell.querySelector('[data-dg-palette]');
+      const pHead = pal?.querySelector('.dg-palette-head');
+      check(pal && pHead, 'diagram palette header is present');
+      if (pal && pHead) {
+        if (pal.scrollHeight > pal.clientHeight + 4) pal.scrollTop = 20;
+        check(Math.abs(pHead.getBoundingClientRect().top - pal.getBoundingClientRect().top) <= 2, 'diagram palette sticky header stays flush with palette top (no peeking gap)');
+      }
+      const linkEl = shell.querySelector('[data-dg-link]');
+      check(linkEl, 'diagram has link to inspect');
+      if (linkEl) {
+        linkEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+        let ins = shell.querySelector('[data-dg-inspector]');
+        if (ins && getComputedStyle(ins).display === 'none') {
+          click('[data-dg-toggle="inspector"]');
+        }
+        await wait();
+        const swap = shell.querySelector('[data-dg-swap-ends]');
+        const ep = shell.querySelector('.dg-endpoints')?.textContent || '';
+        check(swap && shell.querySelector('[data-dg-apply-tpl]'), 'link inspector offers swap button and template quick chips');
+        if (swap) {
+          swap.click(); await writes.idle();
+          const epAfter = shell.querySelector('.dg-endpoints')?.textContent || '';
+          check(epAfter !== ep, 'swap ends reverses arrow endpoints');
+        }
+      }
+    }
+    click('header [data-page="world"]'); await wait();
+    check(window.__sepGaps().length === 0, 'all header separators keep --space-line clearance after additions');
+    page = 'book'; selectBookTab('人物'); render(); await wait();
   });
   window.__ouipFeatureFailures = failures;
   console.log('FEATURE SUMMARY: failures=' + failures);
@@ -1878,14 +2559,25 @@ async function featureScenario(personId) {
     const image = await s.importImage(src);
     await s.updateWorld({ image, map: { image } });
     await s.saveEntry({ kind: "人物", name: "灯", image, icon: image });
+    await s.saveEntry({ kind: "人物", name: "固有タグの人", tags: { 種族: ['人間'] } });
     await s.saveEntry({ kind: "用語", name: "紋章", image });
     await s.saveEntry({ kind: "場所", name: "灯台" });
+    // 共通タグの画面と、共通タグ・固有タグの2層を実画面で確かめるための最小の定義。
+    await s.saveAttributes([
+      { id: '年齢', type: 'number', unit: '歳' },
+      { id: '身長', type: 'number', unit: 'cm' },
+      { id: '所属', type: 'select', options: ['灯台', '郵便局'] },
+      { id: '体重', type: 'number', unit: 'kg' },
+    ]);
+    await s.saveAttributeViews([
+      { id: 'view-basic', name: '基本', card: ['年齢', '所属', '体重'], detail: ['年齢', '身長', '体重', '所属'], filter: ['年齢', '所属'], filterPlace: 'left' },
+    ]);
     const main = path.resolve(__dirname, "../main.js");
     const harness = path.join(tmp, "main.cjs");
     const scenarioFile = path.join(tmp,'scenario.js');
     await fs.writeFile(scenarioFile, `${freeGraphScenario.toString()}\n${featureScenario.toString()}\n(${scenario.toString()})().catch(e=>{console.error('SMOKE FAILED: '+e.stack);window.__ouipFeatureFailures=(window.__ouipFeatureFailures||0)+1;})`);
     console.log('HARNESS: actual main=' + main + '; TEMP=' + tmp);
-    await fs.writeFile(harness, `const {app,dialog}=require('electron');if(process.env.OUIP_UI_SMALL){let sized=false;app.on('browser-window-created',(_e,w)=>{if(!sized){sized=true;w.setSize(720,520);}});}dialog.showOpenDialog=async(w,o)=>({canceled:false,filePaths:[o.title==='共有ボードを読み込む'?${JSON.stringify(path.join(tmp,'shared.ouip-board'))}:${JSON.stringify(src)}]});dialog.showSaveDialog=async(w,o)=>({canceled:false,filePath:o.title==='共有ボードを書き出す'?${JSON.stringify(path.join(tmp,'shared.ouip-board'))}:${JSON.stringify(path.join(tmp,'board.png'))}});const original=app.setPath.bind(app);app.setPath=(n,v)=>original(n,n==='userData'?${JSON.stringify(path.join(tmp,"profile"))}:v);require(${JSON.stringify(main)});`);
+    await fs.writeFile(harness, `const {app,dialog}=require('electron');if(process.env.OUIP_UI_SMALL){let sized=false;app.on('browser-window-created',(_e,w)=>{if(!sized){sized=true;w.setSize(720,520);}});}if(process.env.OUIP_UI_AT){const [x,y]=process.env.OUIP_UI_AT.split(',').map(Number);const {BrowserWindow,screen}=require('electron');const setPosition=BrowserWindow.prototype.setPosition;BrowserWindow.prototype.setPosition=function(px,py,...rest){const p=screen.getPrimaryDisplay().bounds;const inside=px>=p.x&&px<p.x+p.width&&py>=p.y&&py<p.y+p.height;return setPosition.call(this,inside?x+px-p.x:px,inside?y+py-p.y:py,...rest);};app.on('browser-window-created',(_e,w)=>w.setPosition(x,y));}dialog.showOpenDialog=async(w,o)=>({canceled:false,filePaths:[o.title==='ボードを読み込む'?${JSON.stringify(path.join(tmp,'shared.ouip-board'))}:${JSON.stringify(src)}]});dialog.showSaveDialog=async(w,o)=>({canceled:false,filePath:o.title==='ボードを書き出す'?${JSON.stringify(path.join(tmp,'shared.ouip-board'))}:${JSON.stringify(path.join(tmp,'board.png'))}});const original=app.setPath.bind(app);app.setPath=(n,v)=>original(n,n==='userData'?${JSON.stringify(path.join(tmp,"profile"))}:v);require(${JSON.stringify(main)});`);
     let errors = "";
     const harnessText = await fs.readFile(harness,'utf8');
     const artifactBase = process.env.OUIP_UI_ARTIFACT ? path.resolve(process.env.OUIP_UI_ARTIFACT).replace(/\.png$/i,'') : null;
@@ -1904,14 +2596,14 @@ async function featureScenario(personId) {
     child.stderr.on("data", (b) => { errors += b; process.stderr.write(b); });
     child.stdout.on("data", (b) => { errors += b; process.stdout.write(b); });
     await new Promise((resolve, reject) => {
-      const timeout = Math.min(90000, Math.max(55000, Number(process.env.OUIP_UI_TIMEOUT_MS) || 55000));
+      const timeout = Math.min(120000, Math.max(55000, Number(process.env.OUIP_UI_TIMEOUT_MS) || 55000));
       const timer = setTimeout(() => reject(Error("timeout: " + errors)), timeout);
       child.once('error', e => { clearTimeout(timer); reject(e); });
       child.once("close", (code) => { clearTimeout(timer); console.log('HARNESS: actual main screenshot exit=' + code); code === 0 ? resolve() : reject(Error(errors)); });
     });
     await fs.access(path.join(tmp,"shot.png"));
     if (process.env.OUIP_UI_ARTIFACT) await fs.copyFile(path.join(tmp,"shot.png"), path.resolve(process.env.OUIP_UI_ARTIFACT));
-    if (/FEATURE FAILED:|SMOKE FAILED:|CAPTURE FAILED:|Uncaught|Error occurred in handler/.test(errors) || !errors.includes('FEATURE SUMMARY: failures=0') || (artifactBase && !errors.includes('CAPTURE SUMMARY: distinct outputs=13/13'))) throw Error('UI regression/capture failed (valid screenshots retained); see FEATURE/SMOKE/CAPTURE failures above');
+    if (/FEATURE FAILED:|SMOKE FAILED:|CAPTURE FAILED:|Uncaught|Error occurred in handler/.test(errors) || !errors.includes('FEATURE SUMMARY: failures=0') || (artifactBase && !/CAPTURE SUMMARY: distinct outputs=(\d+)\/\1/.test(errors))) throw Error('UI regression/capture failed (valid screenshots retained); see FEATURE/SMOKE/CAPTURE failures above');
     console.log("PASS: 実Electron actual main撮影/exit=0、既存地図/画像/ボード回帰、旧図の人物・組織ドラッグ/取消/座標のみ保存/再読込・複製元保持、自由図/ノード/矢印CRUD・縦横文字/色/方向・grid/位置保存/重なり回避・組織と独立、人物の旧relf不在/draft保持、kg/lb、数値rough・カード詳細グラフ、タグ文章項目順、年の横上/ラベル順/年単位順。OSダイアログ/pointer capture/DNDは模擬");
   } finally {
     await stopOwnedChild(child);

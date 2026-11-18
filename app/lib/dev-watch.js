@@ -1,31 +1,39 @@
-// 開発画面だけを監視。ファイル置換による保存にも対応し、閉じたら監視を外す。
+// 開発画面を監視する。renderer の .js / .css / .html を全部見る。
+// ファイルを置き換える保存（一時ファイル→rename）にも対応し、閉じたら監視を外す。
 const fs = require("node:fs");
-const path = require("node:path");
 
 function watchRenderer(dir, notify, interval = 250) {
-  const files = ["style.css", "index.html", "app.js", "canvas-tools.js", "updates.js", "timeline-model.js", "timeline-view.js", "timeline-tools.js"];
+  const debounce = Math.max(25, Math.min(500, Number(interval) || 250));
   const pending = new Set();
   let timer;
   let closed = false;
-  const listeners = files.map((name) => {
-    const file = path.join(dir, name);
-    const listener = (now, before) => {
-      if (closed || now.mtimeMs === before.mtimeMs && now.size === before.size) return;
-      pending.add(name);
+  let watcher = null;
+  const isCode = (name) => /\.(?:css|js|html)$/i.test(name);
+  const flush = () => {
+    if (closed || !pending.size) return;
+    const changed = [...pending];
+    pending.clear();
+    notify(changed.some((name) => !/\.css$/i.test(name)) ? "reload" : "css");
+  };
+  try {
+    watcher = fs.watch(dir, { persistent: false }, (_event, filename) => {
+      if (closed) return;
+      // filename が取れない環境では、安全側で再読み込みにする。
+      const name = filename == null ? "" : String(filename);
+      if (name && !isCode(name)) return;
+      pending.add(name || "unknown.js");
       clearTimeout(timer);
-      timer = setTimeout(() => {
-        const changed = [...pending];
-        pending.clear();
-        notify(changed.some((n) => n !== "style.css") ? "reload" : "css");
-      }, 150);
-    };
-    fs.watchFile(file, { interval, persistent: false }, listener);
-    return [file, listener];
-  });
+      timer = setTimeout(flush, debounce);
+    });
+    watcher.on?.("error", () => { /* 監視が切れてもアプリは動かす */ });
+  } catch (_) {
+    watcher = null;
+  }
   return () => {
     closed = true;
     clearTimeout(timer);
-    for (const [file, listener] of listeners) fs.unwatchFile(file, listener);
+    pending.clear();
+    try { watcher?.close(); } catch (_) { /* すでに閉じている */ }
   };
 }
 

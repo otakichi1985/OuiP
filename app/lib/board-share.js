@@ -11,7 +11,7 @@ const ImageSet = require('../renderer/image-set');
 const ImageCrop = require('../renderer/image-crop');
 const LIMITS = Object.freeze({json:30*1024*1024, images:20*1024*1024, items:200, entries:100, links:1000});
 const IMAGE = /^assets\/(?:image|character)-([a-f0-9]{64})\.(png|jpg|jpeg|webp)$/;
-const fail = (text) => { throw new Error('共有ボード: '+text); };
+const fail = (text) => { throw new Error('ボード: '+text); };
 function safe(value, depth=0) {
   if (depth>24) fail('入れ子が深すぎます');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
@@ -211,7 +211,7 @@ class BoardShare {
     if(worldWritten)try{await fs.writeFile(worldFile,originalWorld);}catch(e){failures.push(e.message);}
     for(const dest of added.reverse())try{await fs.unlink(dest);}catch(e){failures.push(e.message);}
     for(const file of ['world.json','board.json'])await fs.rm(path.join(this.dir,file+'.'+process.pid+'.tmp'),{force:true}).catch(()=>{});
-    if(failures.length)throw new AggregateError([error,...failures.map(m=>new Error(m))],'共有読み込み失敗。復旧を確認してください');
+    if(failures.length)throw new AggregateError([error,...failures.map(m=>new Error(m))],'ボードの読み込みに失敗しました。復旧を確認してください');
     throw error;
    }
    return {board:next,entries,mapping,addedItems:imported.items.length,addedIds:imported.items.map(i=>i.id)};

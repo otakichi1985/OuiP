@@ -3,18 +3,19 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Theme = require('../renderer/theme');
 
-function fakeWindow({ prefersLight = false, stored = null, storageFails = false } = {}) {
+function fakeWindow({ prefersLight = false, prefersContrast = false, stored = null, storageFails = false } = {}) {
   const listeners = [], store = new Map(stored ? [[Theme.KEY, stored]] : []);
   const media = { matches: prefersLight, addEventListener: (_type, fn) => listeners.push(fn) };
+  const contrastMedia = { matches: prefersContrast, addEventListener: (_type, fn) => listeners.push(fn) };
   const win = {
-    matchMedia: () => media,
+    matchMedia: (query) => String(query).includes('contrast') ? contrastMedia : media,
     localStorage: {
       getItem: key => { if (storageFails) throw Error('blocked'); return store.get(key) ?? null; },
       setItem: (key, value) => { if (storageFails) throw Error('blocked'); store.set(key, value); },
     },
     document: { documentElement: { dataset: {}, style: { props: {}, setProperty(k, v) { this.props[k] = v; }, removeProperty(k) { delete this.props[k]; } } } },
   };
-  return { win, media, listeners, store, el: win.document.documentElement };
+  return { win, media, contrastMedia, listeners, store, el: win.document.documentElement };
 }
 
 test('自動はOSに従い、ライト・ダークは選んだ方に固定する', () => {
@@ -50,7 +51,7 @@ test('知らない値は自動として扱い、保存できない環境でも�
   assert.equal(blocked.el.dataset.theme, 'light');
 });
 
-test('用意した差し色は、ライトとダークそれぞれの値で字・主ボタン・薄い面の基準を満たす', () => {
+test('用意したアクセントカラーは、ライトとダークそれぞれの値で字・主ボタン・薄い面の基準を満たす', () => {
   for (const p of Theme.PRESETS) for (const theme of ['dark', 'light']) {
     const set = Theme.accentSet(p[theme], theme), g = Theme.GROUND[theme];
     for (const [label, r] of [['地', Theme.contrast(set.accent, g.bg)], ['面', Theme.contrast(set.accent, g.surface)], ['主ボタンの字', Theme.contrast(set.ink, set.accent)], ['薄い面の上の字', Theme.contrast(set.accent, set.soft)]])
@@ -71,21 +72,22 @@ test('カスタムの色は、どんな色でも両方の配色で読める明�
   for (const c of red) { const [r, g, b] = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); assert.ok(r > g && r > b, `赤は赤のまま ${c}`); }
 });
 
-test('差し色の選択を覚え、配色に合う値を当てる。既定の青磁はCSSの値に任せる', () => {
+test('アクセントカラーの選択を覚え、配色に合う値を当てる。既定のグリーンはCSSの値に任せる', () => {
   const f = fakeWindow({ prefersLight: false });
   const theme = Theme.create(f.win), props = f.el.style.props;
   assert.equal(theme.readAccent(), 'celadon'); assert.equal(props['--accent'], undefined);
   theme.setAccent('indigo');
   assert.equal(f.store.get(Theme.ACCENT_KEY), 'indigo'); assert.equal(props['--accent'], '#7fb2ff');
-  theme.set('light'); assert.equal(props['--accent'], '#1f5bd0', '配色を変えるとその配色の値');
+  theme.set('light'); assert.equal(props['--accent'], '#315bae', '配色を変えるとその配色の値');
   theme.setAccent('#FF0000'); assert.equal(f.store.get(Theme.ACCENT_KEY), '#ff0000'); assert.equal(props['--accent'], Theme.derive('#ff0000', 'light'));
   theme.setAccent('rgb(1,2,3)'); assert.equal(theme.readAccent(), '#ff0000', '知らない形式は無視');
+  theme.setAccent('amber'); assert.equal(props['--accent'], '#8c5008', 'アンバーも選んだ色として当てる（外観はライト）');
   theme.setAccent('celadon'); assert.equal(props['--accent'], undefined);
   const again = fakeWindow({ stored: null }); again.store.set(Theme.ACCENT_KEY, 'violet'); Theme.create(again.win);
   assert.equal(again.el.style.props['--accent'], '#b89dff', '次に開いたときも覚えている');
 });
 
-test('既定のベース（墨紺）はstyle.cssのトークンと同じ値を持つ', () => {
+test('既定のベース（チャコール）はstyle.cssのトークンと同じ値を持つ', () => {
   const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../renderer/style.css'), 'utf8').replace(/\r\n/g, '\n');
   const grab = block => Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map(m => [m[1], m[2].trim()]));
   const dark = Object.assign({}, ...[...css.matchAll(/:root\{([^}]*)\}/g)].map(m => grab(m[1])));
@@ -94,7 +96,7 @@ test('既定のベース（墨紺）はstyle.cssのトークンと同じ値を�
     for (const [k, v] of Object.entries(Theme.BASES[0][theme])) assert.equal(v, tokens[k], `${theme} --${k}`);
 });
 
-test('どのベースでも、両方の配色で本文・補足・入力の境界・状態色・差し色が基準を満たす', () => {
+test('どのベースでも、両方の配色で本文・補足・入力の境界・状態色・アクセントカラーが基準を満たす', () => {
   const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../renderer/style.css'), 'utf8');
   const lightBlock = css.slice(css.indexOf(':root[data-theme="light"]{'), css.indexOf('}', css.indexOf(':root[data-theme="light"]{')));
   const tone = (theme, name) => new RegExp(`--${name}:(#[0-9a-f]{6});`).exec(theme === 'dark' ? css : lightBlock)[1];
@@ -114,15 +116,34 @@ test('どのベースでも、両方の配色で本文・補足・入力の境�
   }
 });
 
-test('ベース色を覚えて当て、既定に戻すとCSSの値に任せる', () => {
+test('ベースカラーを覚えて当て、既定に戻すとCSSの値に任せる', () => {
   const f = fakeWindow({ prefersLight: false });
   const theme = Theme.create(f.win), props = f.el.style.props;
-  assert.equal(theme.readBase(), 'sumikon'); assert.equal(props['--bg'], undefined); assert.equal(f.el.dataset.base, 'sumikon');
+  assert.equal(theme.readBase(), 'charcoal'); assert.equal(props['--bg'], undefined); assert.equal(f.el.dataset.base, 'charcoal');
   theme.setBase('kinari');
   assert.equal(f.store.get(Theme.BASE_KEY), 'kinari'); assert.equal(props['--bg'], Theme.baseOf('kinari').dark.bg);
   assert.match(props['--glass-bar'], /^rgb\(\d+ \d+ \d+\/\.72\)$/);
-  assert.ok(props['--accent'], '既定の差し色でも、ベースに合わせて薄い面を作り直す');
+  assert.ok(props['--accent'], '既定のアクセントカラーでも、ベースに合わせて薄い面を作り直す');
   theme.set('light'); assert.equal(props['--bg'], Theme.baseOf('kinari').light.bg);
   theme.setBase('unknown'); assert.equal(theme.readBase(), 'kinari', '知らないベースは無視');
-  theme.setBase('sumikon'); assert.equal(props['--bg'], undefined); assert.equal(props['--accent'], undefined);
+  theme.setBase('charcoal'); assert.equal(props['--bg'], undefined); assert.equal(props['--accent'], undefined);
+});
+
+test('高コントラストは外観モードと別に覚え、自動のときだけOSの設定に従う', () => {
+  const f = fakeWindow({ prefersContrast: false });
+  const theme = Theme.create(f.win);
+  assert.equal(theme.readContrast(), 'auto');
+  assert.equal(f.el.dataset.contrast, 'normal', 'OSが標準なら normal');
+  f.contrastMedia.matches = true; f.listeners.forEach(fn => fn());
+  assert.equal(f.el.dataset.contrast, 'more', '自動はOSの高コントラストに追従する');
+  theme.setContrast('normal');
+  assert.equal(f.store.get(Theme.CONTRAST_KEY), 'normal');
+  assert.equal(f.el.dataset.contrast, 'normal', '自分で選んだ後はOSの設定に従わない');
+  f.contrastMedia.matches = false; f.listeners.forEach(fn => fn());
+  assert.equal(f.el.dataset.contrast, 'normal');
+  theme.setContrast('more');
+  assert.equal(f.el.dataset.contrast, 'more', '高コントラストを選ぶとOSが標準でも more');
+  assert.equal(theme.readContrast(), 'more', '次に開いたときも覚えている');
+  theme.setContrast('おかしな値');
+  assert.equal(theme.readContrast(), 'more', '知らない値は無視');
 });

@@ -148,6 +148,17 @@ test('表示切替は先行ドラッグ保存を待ち、位置を含めない�
   assert.deepEqual(Object.keys(saves[0].patch).sort(),['groupDisplay','id']);
 });
 
+test('組織の編集フォームから所属するキャラを選べる',()=>{
+  const graph = {id:'graph-aa',members:[],organizationIds:[],positions:{},groupDisplay:'frames'};
+  const S = {world:{organizations:[{id:'org-aa',kind:'組織',name:'灯台',parentId:null}]},entries:[{id:'c-aa',name:'灯',kind:'人物',organizationIds:['org-aa']},{id:'c-bb',name:'他',kind:'人物'}]};
+  const els = {}, $ = id => els[id] ||= {innerHTML:'', hidden:true, focus(){}, value:''};
+  const ui = Draw.createUI({document:{addEventListener:()=>{}},$,esc:s=>String(s??''),api:{},toast:()=>{},refresh:async()=>{},reportError:()=>{},getState:()=>S,getQuery:()=>"",byId:()=>null,activeDiagram:()=>graph,assetURL:()=>'',RW:960,RH:560,write:async task=>task(),queueGraphControl:()=>{}});
+  ui.organizationForm('org-aa');
+  assert.match(els.viewer.innerHTML,/data-organization-person value="c-aa" checked/);
+  assert.match(els.viewer.innerHTML,/data-organization-person value="c-bb" >/);
+  assert.match(els.viewer.innerHTML,/選んだキャラの所属先と「所属」タグに、この組織名が入ります/);
+});
+
 test('親向けフォーム・候補・カメラ・ドラッグ囲みの統合API',async()=>{
   const graph = {id:'graph-aa',members:['c-aa'],organizationIds:['org-aa'],positions:{'c-aa':[900,1100],'org-aa':[100,80]},groupDisplay:'frames'};
   const S = {world:{organizations:[{id:'org-aa',kind:'組織',name:'灯台',parentId:null}]},entries:[{id:'c-aa',name:'灯',kind:'人物',organizationIds:['org-aa']},{id:'c-bb',name:'他',kind:'人物'}]};

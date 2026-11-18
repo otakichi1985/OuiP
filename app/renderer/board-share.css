@@ -4,9 +4,9 @@
 #wspanel .bs-tools button{white-space:nowrap}
 #board .bi.bs-card{width:240px;overflow-wrap:anywhere}
 #board .bs-picture{display:block;margin:6px 0}
-#board .bs-crop{display:block;position:relative;width:100%;aspect-ratio:1;overflow:hidden;border-radius:6px;background:var(--bg)}
+#board .bs-crop{display:block;position:relative;width:100%;aspect-ratio:var(--crop-aspect-card);overflow:hidden;border-radius:6px;background:var(--bg)}
 #board .bs-picture.is-icon .bs-crop{width:64px;height:64px;margin-inline:auto;border-radius:50%}
-#board .bs-picture.is-wide .bs-crop{width:100%;height:auto;aspect-ratio:16/9;margin-inline:0;border-radius:6px}
+#board .bs-picture.is-wide .bs-crop{width:100%;height:auto;aspect-ratio:var(--crop-aspect-place);margin-inline:0;border-radius:6px}
 #board .bs-image{display:block;width:100%;height:100%;object-fit:cover;background:var(--bg);pointer-events:none;margin:0;border-radius:0}
 #board .bs-title{display:flex;align-items:center;gap:8px;font-family:var(--display);font-size:17px;line-height:1.5}
 #board .bs-icon-frame{display:inline-flex;width:32px;height:32px;border-radius:50%;overflow:hidden;flex:none;background:var(--bg)}
@@ -45,7 +45,7 @@
 #wspanel.bs-present .boardwrap{border:0;border-radius:0;background-image:none;cursor:grab}
 #wspanel.bs-present .bi.sel,#wspanel.bs-present .bi.target{outline:none}
 #wspanel .bs-present-controls{display:none}
-#wspanel.bs-present .bs-present-controls{display:flex;gap:6px;position:absolute;right:16px;bottom:16px;z-index:2;transition:opacity .3s}
+#wspanel.bs-present .bs-present-controls{display:flex;gap:6px;position:absolute;right:16px;bottom:16px;z-index:2;transition:opacity var(--dur-panel) var(--ease-out)}
 #wspanel.bs-present.bs-idle .bs-present-controls{opacity:0;pointer-events:none}
 #wspanel.bs-present.bs-idle .boardwrap{cursor:none}
 @media(max-width:700px){#wspanel.bs-expanded{inset:4px;padding:8px}#wspanel .bs-tools{margin-left:0;width:100%}}

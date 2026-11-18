@@ -2,16 +2,19 @@
 // 見え方の調整。元画像はそのままに、大カード・小/中カード・アイコンの
 // 位置（object-position）と拡大率だけを決める。各枠は独立して動かせる。
 (function (root, factory) {
-  const api = factory();
-  if (typeof module === "object" && module.exports) module.exports = api;
+  const isNode = typeof module === "object" && module.exports;
+  const api = factory(isNode ? require("./image-crop") : root.ImageCrop);
+  if (isNode) module.exports = api;
   else root.CropEditor = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (ImageCrop) {
+  // 見本の比率は image-crop.js の ASPECT をそのまま使う（実物とずれないように）。
+  const ASPECT = ImageCrop.ASPECT;
   const SURFACES = {
-    large: { label: "大カード", note: "1:1.414", aspect: 1 / Math.SQRT2 },
-    small: { label: "小・中カード", note: "1:1", aspect: 1 },
-    icon: { label: "アイコン", note: "1:1・丸", aspect: 1, circle: true },
-    card: { label: "カード", note: "1:1", aspect: 1 },
-    place: { label: "場所カード", note: "16:9", aspect: 16 / 9 },
+    large: { label: "大カード", note: "1:1.414", aspect: ASPECT.large },
+    small: { label: "小・中カード", note: "1:1", aspect: ASPECT.small },
+    icon: { label: "アイコン", note: "1:1・丸", aspect: ASPECT.icon, circle: true },
+    card: { label: "カード", note: "1:1", aspect: ASPECT.card },
+    place: { label: "場所カード", note: "16:9", aspect: ASPECT.place },
   };
   const tabsFor = kind => kind === "人物" ? ["large", "small", "icon"] : kind === "場所" ? ["place"] : ["card", "icon"];
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -77,10 +80,10 @@
             ${context()}
           </div>
           <aside class="crop-side">
-            <p class="small muted">この絵が出る場所。枠ごとに別々に決められます。</p>
+            <p class="small muted">この画像が出る場所。枠ごとに別々に決められます。</p>
             <div class="crop-tabs">${tabs.map(mini).join("")}</div>
             ${state.active === "icon" ? `<div class="crop-icon-tools"><button type="button" class="b quiet sm" data-crop-pick-icon>${state.icon ? "別の画像を変更" : "別の画像を使う"}</button>${state.icon ? `<button type="button" class="b quiet sm" data-crop-clear-icon>カード画像に戻す</button>` : ""}<p class="small muted">別の画像を選ばないときは、カード画像から切り出します。</p></div>` : ""}
-            <p class="small muted">詳細とギャラリーでは、絵の全体を表示します。</p>
+            <p class="small muted">詳細とギャラリーでは、画像の全体を表示します。</p>
           </aside>
         </div>`;
     }

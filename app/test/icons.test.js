@@ -20,7 +20,7 @@ test('アイコンは形の要素だけを持つ装飾のSVGで、知らない�
 });
 
 test('画面で使う名前はすべて入っている', () => {
-  const sources = ['renderer/app.js', 'renderer/canvas-tools.js', 'renderer/free-graph-ui.js', 'renderer/index.html', 'lib/site-view.js']
+  const sources = ['renderer/app.js', 'renderer/canvas-tools.js', 'renderer/free-graph-ui.js', 'renderer/diagram-editor.js', 'renderer/story-ui.js', 'renderer/index.html', 'lib/site-view.js']
     .map(file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')).join('\n');
   const used = new Set([...sources.matchAll(/Icons\.icon\("(\w+)"\)|Icons\.icon\('(\w+)'\)|data-icon="(\w+)"/g)].map(m => m[1] || m[2] || m[3]));
   for (const map of sources.matchAll(/TAB_ICONS = \{([^}]*)\}/g)) for (const [, name] of map[1].matchAll(/['"](\w+)['"]/g)) used.add(name);

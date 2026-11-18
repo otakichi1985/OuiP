@@ -1,8 +1,9 @@
 /* 関係図（自由配置）の編集画面: 左に置けるもの、中央に図、右に設定。狭いときは左右を畳んで図を広く使う。 */
 .dg-wrap{container-type:inline-size;min-width:0}
 .dg-shell{display:grid;grid-template-columns:minmax(150px,200px) minmax(0,1fr) minmax(260px,300px);gap:10px;align-items:start;min-width:0}
-.dg-palette,.dg-inspector{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0;max-height:72vh;overflow:auto;font-size:13px}
+.dg-palette,.dg-inspector{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 10px 8px;min-width:0;max-height:var(--diagram-h,min(72vh,640px));overflow:auto;font-size:13px}
 .dg-palette-body,.dg-inspector{display:flex;flex-direction:column;gap:6px}
+.dg-palette-head{position:sticky;top:0;z-index:2;background:var(--surface);margin:0 -10px 2px;padding:8px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
 .dg-inspector label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);min-width:0}
 .dg-inspector .inp{min-height:32px;padding:3px 8px;font-size:13px}
 .dg-inspector textarea.inp{resize:vertical}
@@ -18,6 +19,12 @@
 .dg-color{flex-direction:row!important;align-items:center;gap:4px!important}
 .dg-color input[type=color]{width:34px;min-height:28px;padding:1px}
 .dg-actions{gap:4px;flex-wrap:wrap}
+/* 削除などの操作は、設定の本文をスクロールしても届く位置に置く（右の欄の下端に固定）。 */
+.dg-inspector .dg-actions{position:sticky;bottom:0;margin:0 -10px;padding:8px 10px 10px;background:var(--surface);border-top:1px solid var(--line)}
+.dg-endpoints{margin:0}
+.dg-endpoints-row{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.dg-tpl-quick{display:flex;flex-wrap:wrap;gap:4px}
+.dg-tpl-quick .dg-tpl-chip{width:auto;min-width:56px;padding:3px 6px}
 .dg-link.is-drop path:not(.dg-hit){stroke-width:5}
 .dg-kinds{display:flex;flex-wrap:wrap;gap:4px}
 .dg-missing{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
@@ -25,7 +32,7 @@
 /* テンプレート: 矢印の見本を横に並べ、‹ › で選ぶ。直す欄は選んだものだけ出す。 */
 .dg-tpl-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dg-tpl-head .dg-head{margin-bottom:0}
-.dg-tpl-count{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.dg-tpl-count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
 .dg-tpl-nav{display:flex;align-items:stretch;gap:3px;min-width:0}
 .dg-tpl-nav .dg-tpl-navbtn{flex:none;width:26px;min-height:44px;padding:0;font-size:18px;line-height:1}
 .dg-tpl-strip{display:flex;gap:4px;min-width:0;flex:1;overflow-x:auto;padding:1px;scrollbar-width:thin;scrollbar-color:var(--line) transparent;scroll-snap-type:x proximity}
@@ -36,7 +43,7 @@
 .dg-tpl-chip:hover,.dg-tpl-chip:focus-visible{border-color:var(--accent)}
 .dg-tpl-chip.is-active{background:var(--accent-soft);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .dg-tpl-chip svg{display:block;width:60px;height:20px;pointer-events:none}
-.dg-tpl-chip-name{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--muted)}
+.dg-tpl-chip-name{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)}
 .dg-tpl-chip.is-active .dg-tpl-chip-name{color:var(--fg)}
 .dg-tpl-hint{margin:0}
 .dg-tpl-editor{display:flex;flex-direction:column;gap:6px;padding:6px;border:1px solid var(--line);border-radius:8px}
@@ -47,7 +54,7 @@
 .dg-tpl-add{align-self:flex-start}
 .dg-override>summary{cursor:pointer;color:var(--muted)}
 .dg-stage-wrap{min-width:0}
-.dg-vis{height:min(72vh,640px);overflow:hidden}
+.dg-vis{height:var(--diagram-h,min(72vh,640px));overflow:hidden}
 /* .vis svg（他の図の決まり）より優先して、枠いっぱいに広げる */
 .dg-vis svg.dg-canvas{height:100%;max-height:none;min-width:0}
 .dg-canvas{--dg-fill:var(--surface);--dg-stroke:var(--accent);--dg-text:var(--fg);--dg-muted:var(--muted);--dg-label-bg:var(--bg);width:100%;height:100%;display:block;background:var(--bg);border-radius:10px;touch-action:none;user-select:none;outline:none}
@@ -69,12 +76,13 @@ rect.dg-temp{fill:rgba(108,196,180,.08)}
 @container (max-width:860px){
   .dg-shell{grid-template-columns:minmax(0,1fr)}
   .dg-palette,.dg-inspector{display:none;max-height:40vh}
-  .dg-shell.show-palette .dg-palette,.dg-shell.show-inspector .dg-inspector{display:flex}
+  .dg-shell.show-palette .dg-palette{display:block}
+  .dg-shell.show-inspector .dg-inspector{display:flex}
   .dg-palette{order:-1}
   .dg-tools .dg-toggle{display:inline-flex}
   .dg-vis{height:min(60vh,520px)}
 }
-.dg-shapes-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.dg-shapes-row{position:sticky;top:0;z-index:2;background:var(--surface);margin:0 -10px 2px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;border-bottom:1px solid var(--line)}
 .dg-shapes-row>.small{flex-basis:100%}
 .dg-shapes-row .dg-shape-btn{display:inline-flex;align-items:center;justify-content:center;width:48px;height:44px;min-height:44px;padding:0}
 .dg-shapes-row .dg-shape-btn svg{display:block;width:30px;height:30px;flex:none}

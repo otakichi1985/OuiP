@@ -4,10 +4,10 @@
 // 必要なもの（状態の取得・保存・読み直し・通知）は引数で受け取り、app.js の変数を直接見ない。
 (function (root, factory) {
   const isNode = typeof module === 'object' && module.exports;
-  const api = factory(isNode ? require('./character-stats') : root.CharacterStats, isNode ? require('./status-model') : root.StatusModel);
+  const api = factory(isNode ? require('./character-stats') : root.CharacterStats, isNode ? require('./status-model') : root.StatusModel, isNode ? require('./search-query') : root.SearchQuery);
   if (isNode) module.exports = api;
   else root.StatusUI = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (CharacterStats, StatusModel) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (CharacterStats, StatusModel, SearchQuery) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const KIND = { number: '数値', rough: '段階', text: '文字' };
   const SHOW = { '': '枠の既定', bars: '棒グラフ', radar: 'レーダー', dots: 'ドット', text: 'テキスト', hidden: '非表示' };
@@ -108,8 +108,8 @@
     const free = (sets || []).filter((s) => !draft.list.some((a) => a.set === s.id));
     const add = (sets || []).length
       ? (free.length ? `<div class="row sa-add"><select data-sa-add aria-label="割り当てるステータス">${free.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select><button type="button" class="b sm" data-sa-action="add">＋ 割り当てる</button></div>` : '<p class="small muted">定義はすべて割り当て済みです。</p>')
-      : '<p class="small muted">ステータスの定義がまだありません。<button type="button" class="b quiet sm" data-sa-action="go-sets">ステータスタブで作る</button></p>';
-    return `<div class="status-assign">${enabled === false ? '<p class="small muted">この世界観ではステータスを使わない設定です（ステータスタブで切り替えられます）。</p>' : ''}<div class="sa-preview" data-sa-preview aria-label="今の表示"><p class="ss-preview-sublabel">今の表示</p>${renderAssignPreview(draft, sets, enabled)}</div><div class="row sa-view-row"><label class="sa-hide-all small"><input type="checkbox" data-sa-hide-all ${draft.hidden ? 'checked' : ''}>このキャラはステータスを出さない</label><label class="small sa-card-view">大カードのステータス<select data-sa-card-view aria-label="このキャラの大カードでのステータスの見せ方"><option value="lines"${draft.cardView !== 'graph' ? ' selected' : ''}>文字一覧</option><option value="graph"${draft.cardView === 'graph' ? ' selected' : ''}>グラフ</option></select></label></div>${blocks}${add}${legacyCount ? '' : ''}<p class="cs-error" data-sa-error role="alert"></p></div>`;
+      : '<p class="small muted">ステータスの定義がまだありません。<button type="button" class="b quiet sm" data-sa-action="go-sets">ステータスタブで追加</button></p>';
+    return `<div class="status-assign">${enabled === false ? '<p class="small muted">この世界ではステータスを使わない設定です（ステータスタブで切り替えられます）。</p>' : ''}<div class="sa-preview" data-sa-preview aria-label="今の表示"><p class="ss-preview-sublabel">今の表示</p>${renderAssignPreview(draft, sets, enabled)}</div><div class="row sa-view-row"><label class="sa-hide-all small"><input type="checkbox" data-sa-hide-all ${draft.hidden ? 'checked' : ''}>このキャラはステータスを出さない</label><label class="small sa-card-view">大カードのステータス<select data-sa-card-view aria-label="このキャラの大カードでのステータスの表示形式"><option value="lines"${draft.cardView !== 'graph' ? ' selected' : ''}>文字一覧</option><option value="graph"${draft.cardView === 'graph' ? ' selected' : ''}>グラフ</option></select></label></div>${blocks}${add}${legacyCount ? '' : ''}<p class="cs-error" data-sa-error role="alert"></p></div>`;
   }
   // 画面の入力を下書きへ戻す（再描画の前に必ず呼ぶ）。
   function readAssignDom(root, draft) {
@@ -195,14 +195,14 @@
     const tab = ui.tab === 'detail' ? 'detail' : 'card';
     const cardView = ui.cardView === 'graph' ? 'graph' : 'lines';
     const rows = draft.items.map((it, i) => `<fieldset class="ss-item" data-ss-item="${i}"><legend>項目 ${i + 1}</legend>
-      <div class="ss-head"><label>項目名<input type="text" data-ss="name" value="${esc(it.name)}" maxlength="1000"></label><label>種類<select data-ss="mode">${options(KIND, it.mode)}</select></label><label>見せ方<select data-ss="show">${options(SHOW, it.show)}</select></label><label title="キャラごとに変えられます">カードでの位置<select data-ss="place">${options(PLACE, it.place || 'stats')}</select></label><span class="row ss-actions"><button type="button" class="b quiet sm ss-move" data-ss-move="-1" aria-label="この項目を上へ移動" title="上へ移動" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="b quiet sm ss-move" data-ss-move="1" aria-label="この項目を下へ移動" title="下へ移動" ${i === draft.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="b quiet sm danger" data-ss-remove>削除</button></span></div>
+      <div class="ss-head"><label>項目名<input type="text" data-ss="name" value="${esc(it.name)}" maxlength="1000"></label><label>種類<select data-ss="mode">${options(KIND, it.mode)}</select></label><label>表示形式<select data-ss="show">${options(SHOW, it.show)}</select></label><label title="キャラごとに変えられます">カードでの位置<select data-ss="place">${options(PLACE, it.place || 'stats')}</select></label><span class="row ss-actions"><button type="button" class="b quiet sm ss-move" data-ss-move="-1" aria-label="この項目を上へ移動" title="上へ移動" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="b quiet sm ss-move" data-ss-move="1" aria-label="この項目を下へ移動" title="下へ移動" ${i === draft.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="b quiet sm danger" data-ss-remove>削除</button></span></div>
       ${it.mode === 'number' ? `<div class="ss-number"><label>最小<input type="text" inputmode="decimal" data-ss="min" value="${esc(it.min)}"></label><label>最大<input type="text" inputmode="decimal" data-ss="max" value="${esc(it.max)}"></label><label>単位<input type="text" data-ss="unit" value="${esc(it.unit)}" maxlength="1000"></label></div>` : ''}
       ${it.mode === 'rough' ? `<div class="ss-rough"><label>段階の数（2〜${StatusModel.LIMITS.levels}）<input type="number" min="2" max="${StatusModel.LIMITS.levels}" data-ss="count" value="${it.levels.length}"></label><div class="ss-levels">${it.levels.map((l, k) => `<input type="text" data-ss-level="${k}" value="${esc(l)}" aria-label="${k + 1}段目（低い順）" placeholder="${k + 1}段目">`).join('')}</div><p class="small muted">低い順に並べます。S〜Eのような文字にすると、グラフにもその文字が出ます。</p></div>` : ''}
       ${it.mode === 'text' ? '<p class="small muted">キャラごとに自由に書く項目です（固有スキル・二つ名など）。グラフには描かず、文字の行として出します。</p>' : ''}
     </fieldset>`).join('');
     return `<aside class="ss-preview" aria-label="見本"><div class="ss-preview-tabs" role="tablist" aria-label="見本の切り替え"><button type="button" role="tab" data-ss-preview-tab="card" aria-selected="${tab === 'card'}">横長カード</button><button type="button" role="tab" data-ss-preview-tab="detail" aria-selected="${tab === 'detail'}">詳細</button></div><div data-ss-preview>${renderSetPreview(draft, { tab, cardView })}</div></aside><div class="ss-form-body"><label for="ss-name">ステータス名</label><input id="ss-name" type="text" data-ss-set="name" value="${esc(draft.name)}" maxlength="1000" required>
       <label for="ss-desc">説明</label><textarea id="ss-desc" rows="2" data-ss-set="desc">${esc(draft.desc)}</textarea>
-      <div class="ss-frames"><label>カード（大）での見せ方<select data-ss-set="card">${options(CARD_FRAME, cardFrame(draft.card))}</select></label><label>詳細での見せ方<select data-ss-set="detail">${options(FRAME, draft.detail)}</select></label></div>
+      <div class="ss-frames"><label>カード（大）での表示形式<select data-ss-set="card">${options(CARD_FRAME, cardFrame(draft.card))}</select></label><label>詳細での表示形式<select data-ss-set="detail">${options(FRAME, draft.detail)}</select></label></div>
       <h4 class="form-heading">項目</h4>${rows || '<p class="small muted">項目がありません。下の「項目を追加」から足してください。</p>'}
       <div class="row"><button type="button" class="b sm" data-ss-add="number">＋ 数値の項目</button><button type="button" class="b sm" data-ss-add="rough">＋ 段階の項目</button><button type="button" class="b sm" data-ss-add="text">＋ 文字の項目</button></div>
       <p class="cs-error" data-ss-error role="alert"></p></div>`;
@@ -247,9 +247,21 @@
       : '<p class="small muted">カードの列に出す項目がありません。</p>';
     const graph = !cardHidden && statsRows.length ? CharacterStats.renderCardColumn(strip(statsRows.map(({ it }) => it)), 'graph') : '';
     const column = cardView === 'graph' && graph ? `<div class="ss-preview-graph">${graph}</div>` : lines;
-    const viewTabs = interactive ? `<div class="ss-preview-view" role="group" aria-label="カード欄の見せ方"><button type="button" data-ss-preview-view="lines" aria-pressed="${cardView !== 'graph'}">文字一覧</button><button type="button" data-ss-preview-view="graph" aria-pressed="${cardView === 'graph'}">グラフ</button></div>` : '';
+    const viewTabs = interactive ? `<div class="ss-preview-view" role="group" aria-label="カード欄の表示形式"><button type="button" data-ss-preview-view="lines" aria-pressed="${cardView !== 'graph'}">文字一覧</button><button type="button" data-ss-preview-view="graph" aria-pressed="${cardView === 'graph'}">グラフ</button></div>` : '';
     const viewNote = interactive ? '<p class="small muted">大カードの欄は、キャラごとに「文字一覧」か「グラフ」を選べます（各キャラのステータス画面・ステータスタブで一括）。</p>' : '';
-    const staticDetail = interactive ? '' : `<div class="ss-preview-detail">${CharacterStats.renderDetail(strip(rows)) || '<p class="small muted">詳細に出す項目がありません。</p>'}</div>`;
+    if (!interactive) {
+      // 一覧の見本は、定義が決める「横長カードの欄」と「詳細の形式」だけを小さく出す。
+      // 詳細の中身（とくにレーダー）は大きく、一覧が見切れるので、形は編集画面で見せる。
+      // 名前の飾りは出さない（欄だけ。実際のカードの名前とは別）。
+      const staticRows = statsRows.map(({ it }) => it);
+      const staticColumn = cardHidden || !staticRows.length
+        ? '<p class="small muted">カードの列に出す項目がありません。</p>'
+        : CharacterStats.renderCardColumn(strip(staticRows), 'lines');
+      const cardBlock = `<div class="ss-preview-card ss-preview-card-compact" aria-label="横長カードの欄の見本"><div class="ss-preview-card-body"><span class="ss-preview-kicker">横長カード</span>${mark('above')}${staticColumn}${mark('below')}${mark('bottom')}</div></div>`;
+      const detailName = FRAME[set.detail] || FRAME.bars;
+      const detailBlock = `<div class="ss-preview-detail ss-preview-detail-note" aria-label="詳細の見本"><span class="ss-preview-kicker">詳細</span><p>${esc(detailName)}で表示（${rows.length}項目）</p></div>`;
+      return `<div class="ss-preview-pair">${cardBlock}${detailBlock}</div>`;
+    }
     return `<div class="ss-preview-card" aria-label="横長カードの見本">
         <span class="ss-preview-face" aria-hidden="true"></span>
         <div class="ss-preview-card-body"><span class="ss-preview-kicker">キャラクター</span><b class="ss-preview-name">キャラの名前</b><span class="ss-preview-reading">かな</span>${mark('above')}${column}${mark('below')}${mark('bottom')}</div>
@@ -257,7 +269,6 @@
       ${viewTabs}
       ${viewNote}
       ${focus}
-      ${staticDetail}
       ${footnote}`;
   }
   function readSetDom(root, draft) {
@@ -285,7 +296,7 @@
     const bySet = new Map();
     for (const u of plan.uses) if (u.set) { if (!bySet.has(u.set)) bySet.set(u.set, new Set()); bySet.get(u.set).add(names.get(u.entry)); }
     const matched = [...bySet].map(([id, who]) => `<li>「${esc(sets.find((s) => s.id === id)?.name)}」に割り当て: ${esc([...who].join('、'))}</li>`).join('');
-    return `<p>キャラごとに持っていたステータスの項目を、世界観で共通の定義「<input type="text" data-mg-set-name value="${esc(plan.name)}" aria-label="移行先の定義の名前" class="mg-set-name">」にまとめます。値はそのまま移ります。そのキャラが持っていなかった項目は、そのキャラでは隠します。</p>
+    return `<p>キャラごとに持っていたステータスの項目を、世界で共通の定義「<input type="text" data-mg-set-name value="${esc(plan.name)}" aria-label="移行先の定義の名前" class="mg-set-name">」にまとめます。値はそのまま移ります。そのキャラが持っていなかった項目は、そのキャラでは隠します。</p>
       ${matched ? `<p class="small">既存の定義と項目がすべて一致したもの:</p><ul class="small">${matched}</ul>` : ''}
       ${rows ? `<div class="mg-table-wrap"><table class="mg-table"><thead><tr><th>移行後の項目名</th><th>種類・範囲</th><th>元の書き方</th><th>使っている人数</th><th>まとめる</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="small muted">空白や全角・半角の違いだけの項目は、自動でまとめています。「体力」と「HP」のように書き方が違う同じ項目は、種類と範囲が同じなら「まとめる」で1つにできます。範囲が違う項目は、値の意味が変わるのでまとめられません。</p>` : ''}
@@ -305,28 +316,30 @@
   // ---- 画面への取り付け ----
   function createStatusUI({ document, $, api, getState, refresh, toast, reportError, writes, openSetsTab }) {
     let banner = true; // 「あとで」でこの起動中だけ案内を閉じる
-    // 一覧の見本の開閉。端末ごとに覚え、描き直しても閉じたままにする。既定は開く。
-    const closedKey = 'ouip.statusPreviewClosed';
-    const readClosed = () => { try { return new Set(JSON.parse(localStorage.getItem(closedKey) || '[]')); } catch (_) { return new Set(); } };
-    const previewOpen = (id) => !readClosed().has(id);
-    document.addEventListener('toggle', (ev) => {
-      const d = ev.target; if (!d?.matches?.('[data-ss-preview-of]')) return;
-      const closed = readClosed(); d.open ? closed.delete(d.dataset.ssPreviewOf) : closed.add(d.dataset.ssPreviewOf);
-      try { localStorage.setItem(closedKey, JSON.stringify([...closed])); } catch (_) { /* 覚えられなくても今の開閉は変わる */ }
-    }, true);
     const modal = (title, body, actions, cls = '') => {
       $('viewer').className = 'viewer ' + cls;
       $('viewer').innerHTML = `<div class="vh"><h3 id="vt">${esc(title)}</h3><button class="b quiet sm" type="button" data-vclose>閉じる</button></div>${body}<div class="modal-actions row">${actions}</div>`;
       $('veil').hidden = false;
     };
     const assignedCount = (id) => getState().entries.filter((e) => (e.statusSets || []).some((a) => a.set === id)).length;
+    const assignees = (id) => getState().entries.filter((e) => (e.statusSets || []).some((a) => a.set === id));
     function setsPage(q) {
       const { world } = getState();
-      const sets = (world.statusConcepts || []).filter((s) => !q || [s.name, s.desc, ...s.items.map((it) => it.name)].some((v) => String(v || '').includes(q)));
-      const kinds = (s) => Object.entries(s.items.reduce((m, it) => ({ ...m, [it.mode]: (m[it.mode] || 0) + 1 }), {})).map(([k, n]) => KIND[k] + n).join('・');
-      const list = sets.length ? `<div class="status-concept-list">${sets.map((s) => `<section class="organization-row"><div><strong>${esc(s.name)}</strong><span class="small muted"> ・ ${s.items.length}項目${s.items.length ? '（' + kinds(s) + '）' : ''} ・ ${assignedCount(s.id)}人に割り当て</span>${s.desc ? `<p>${esc(s.desc)}</p>` : ''}<p class="small muted">${esc(s.items.map((it) => it.name).join('、'))}</p></div><button type="button" class="b quiet sm" data-ss-edit="${esc(s.id)}">編集</button><button type="button" class="b quiet sm" data-ss-copy="${esc(s.id)}">複製</button><button type="button" class="b quiet sm danger" data-ss-delete="${esc(s.id)}">削除</button>${s.items.length ? `<details class="ss-row-preview" data-ss-preview-of="${esc(s.id)}"${previewOpen(s.id) ? ' open' : ''}><summary class="small">見本</summary><div class="ss-preview ss-preview-inline">${renderSetPreview(createSetDraft(s), { static: true })}</div></details>` : ''}</section>`).join('')}</div>`
-        : `<div class="empty"><p>${q ? '条件に合うステータスはありません' : 'ステータスの定義はまだありません'}</p><p class="small muted">世界観で共通の項目（体力・評価・固有スキルなど）を定義して、キャラに割り当てます。下の作例から作ると早く始められます。</p></div>`;
-      return `${migrationBanner()}<div class="row status-sets-tools"><button type="button" class="b sm primary" data-ss-new>＋ ステータスを作る</button><select data-ss-preset aria-label="作例">${PRESETS.map((p) => `<option value="${p.key}">${esc(p.name)}</option>`).join('')}</select><button type="button" class="b quiet sm" data-ss-from-preset>作例から作る</button><label class="small status-enabled"><input type="checkbox" data-ss-enabled ${world.statusEnabled === false ? '' : 'checked'}>この世界観でステータスを使う</label></div><div class="row status-card-view-row"><label class="small">大カードのステータス<select data-ss-card-view aria-label="全員の大カードでのステータスの見せ方"><option value="lines">文字一覧</option><option value="graph">グラフ</option></select></label><button type="button" class="b quiet sm" data-ss-card-view-apply>全員に適用</button><span class="small muted">各キャラのステータス画面でも変えられます</span></div>${list}`;
+      const sets = (world.statusConcepts || []).filter((s) => SearchQuery.allWords([s.name, s.desc, ...s.items.map((it) => it.name)], q));
+      const kinds = (s) => Object.entries(s.items.reduce((m, it) => ({ ...m, [it.mode]: (m[it.mode] || 0) + 1 }), {})).map(([k, n]) => KIND[k] + n).join('、');
+      // 全員の大カードのステータスは、全体の設定にまとめた（キャラごとの上書きは編集画面）。
+      const cardViewControl = `<div class="row status-card-view-row"><span class="small muted">大カードのステータス（全員）は「設定」で変えられます。</span><button type="button" class="b quiet sm" data-open-settings>設定を開く</button></div>`;
+      const list = sets.length ? `<div class="status-concept-list">${sets.map((s) => {
+        const who = assignees(s.id);
+        const assign = who.length
+          ? `<details class="status-assignees"><summary>${who.length}人に割り当て</summary><ul>${who.map((e) => `<li>${esc(e.name)}</li>`).join('')}</ul></details>`
+          : `<span>まだ割り当てていません（キャラの編集で割り当てます）</span>`;
+        return `<section class="organization-row status-row"><div class="status-row-text"><strong>${esc(s.name)}</strong><div class="status-meta small muted"><span>${s.items.length}項目${s.items.length ? '（' + kinds(s) + '）' : ''}</span>${assign}</div>${s.desc ? `<p>${esc(s.desc)}</p>` : ''}<p class="small muted">${esc(s.items.map((it) => it.name).join('、'))}</p></div><div class="status-row-preview">${s.items.length ? renderSetPreview(createSetDraft(s), { static: true }) : ''}</div><div class="status-row-actions"><button type="button" class="b quiet sm" data-ss-edit="${esc(s.id)}">編集</button><button type="button" class="b quiet sm" data-ss-copy="${esc(s.id)}">複製</button><button type="button" class="b quiet sm danger" data-ss-delete="${esc(s.id)}">削除</button></div></section>`;
+      }).join('')}</div><p class="small muted status-preview-note">見本の値は、数値が範囲の6割ほど、段階が上寄りです。実際のキャラの値ではありません。</p>`
+        : `<div class="empty"><p>${q ? '条件に合うステータスはありません' : 'ステータスの定義はまだありません'}</p><p class="small muted">世界で共通の項目（体力・評価・固有スキルなど）を定義して、キャラに割り当てます。下の作例から作ると早く始められます。</p></div>`;
+      const presetMenu = `<details class="menu status-preset-menu"><summary class="b quiet sm">作例から作る</summary><div class="menu-pop" role="group" aria-label="作例">${PRESETS.map((p) => `<button type="button" class="b quiet sm" data-ss-from-preset="${esc(p.key)}">${esc(p.name)}</button>`).join('')}</div></details>`;
+      const offNote = world.statusEnabled === false ? `<p class="status-off-note small muted">この世界ではステータスを使わない設定です。カードと詳細にステータス欄を出しません。<button type="button" class="b quiet sm" data-open-settings>設定を開く</button></p>` : '';
+      return `${migrationBanner()}<div class="row status-sets-tools"><button type="button" class="b sm primary" data-ss-new>＋ ステータスを追加</button>${presetMenu}</div>${offNote}${cardViewControl}${list}`;
     }
     function migrationBanner() {
       const n = legacyEntries(getState()).length;
@@ -339,8 +352,8 @@
       let previewTab = 'card', previewCardView = 'lines';
       const ui = () => ({ tab: previewTab, cardView: previewCardView });
       const body = () => `<form id="status-set-form">${renderSetForm(draft, ui())}</form>`;
-      const actions = `<button type="button" class="b quiet" data-vclose>取消</button><button type="submit" class="b primary" form="status-set-form">${draft.id ? '決定' : '作る'}</button>`;
-      modal(draft.id ? 'ステータスを編集' : 'ステータスを作る', body(), actions, 'status-set-viewer');
+      const actions = `<button type="button" class="b quiet" data-vclose>キャンセル</button><button type="submit" class="b primary" form="status-set-form">${draft.id ? 'OK' : '追加'}</button>`;
+      modal(draft.id ? 'ステータスを編集' : 'ステータスを追加', body(), actions, 'status-set-viewer');
       const root = () => $('status-set-form');
       const redraw = () => { root().innerHTML = renderSetForm(draft, ui()); };
       // 入力中は見本だけを描き直す（入力欄は作り直さないので、打っている途中の位置が変わらない）。
@@ -390,7 +403,7 @@
     function openDelete(id) {
       const set = (getState().world.statusConcepts || []).find((s) => s.id === id); if (!set) return;
       const n = assignedCount(id);
-      modal('ステータスの削除', `<form id="status-set-delete"><p>「${esc(set.name)}」を削除します。${n ? `割り当てている${n}人のキャラでは表示されなくなります（各キャラの値は残りますが、同じ定義を作り直しても戻りません。戻すときは履歴を使ってください）。` : ''}</p></form>`, `<button type="button" class="b quiet" data-vclose>取消</button><button type="submit" class="b danger" form="status-set-delete">削除</button>`);
+      modal('ステータスの削除', `<form id="status-set-delete"><p>「${esc(set.name)}」を削除します。${n ? `割り当てている${n}人のキャラでは表示されなくなります（各キャラの値は残りますが、同じ定義を作り直しても戻りません。戻すときは履歴を使ってください）。` : ''}</p></form>`, `<button type="button" class="b quiet" data-vclose>キャンセル</button><button type="submit" class="b danger" form="status-set-delete">削除</button>`);
       $('status-set-delete').addEventListener('submit', async (ev) => {
         ev.preventDefault();
         try { await writes.write(async () => { await api.updateWorld({ deleteStatusConcept: id }); await refresh(); }); $('veil').hidden = true; toast('ステータスを削除しました'); }
@@ -400,7 +413,7 @@
     function openMigration() {
       const state = getState();
       let plan = StatusModel.planMigration(state.entries, state.world.statusConcepts || []);
-      modal('ステータスの移行', `<form id="status-migrate">${renderMigration(plan, state.world.statusConcepts || [], state.entries)}</form>`, `<button type="button" class="b quiet" data-vclose>取消</button><button type="submit" class="b primary" form="status-migrate">移行する</button>`, 'status-migrate-viewer');
+      modal('ステータスの移行', `<form id="status-migrate">${renderMigration(plan, state.world.statusConcepts || [], state.entries)}</form>`, `<button type="button" class="b quiet" data-vclose>キャンセル</button><button type="submit" class="b primary" form="status-migrate">移行する</button>`, 'status-migrate-viewer');
       $('status-migrate').addEventListener('submit', async (ev) => {
         ev.preventDefault();
         const submit = $('viewer').querySelector('[type="submit"]'); submit.disabled = true;
@@ -415,33 +428,14 @@
         } catch (e) { const n = $('status-migrate')?.querySelector('[data-mg-error]'); if (n) n.textContent = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/^ステータス: /, ''); submit.disabled = false; }
       });
     }
-    async function applyCardViewToAll(btn) {
-      const view = document.querySelector('[data-ss-card-view]')?.value === 'graph' ? 'graph' : 'lines';
-      const label = view === 'graph' ? 'グラフ' : '文字一覧';
-      const people = getState().entries.filter((e) => e.kind === '人物');
-      if (!people.length) { toast('キャラがいません'); return; }
-      if (!btn.hasAttribute('data-armed')) {
-        btn.setAttribute('data-armed', '');
-        btn.textContent = `本当に全員（${people.length}人）へ適用（もう一度押す）`;
-        return;
-      }
-      try {
-        await writes.write(async () => {
-          for (const e of people) await api.saveEntry({ id: e.id, kind: '人物', name: e.name, statusCardView: view });
-          await refresh();
-        });
-        toast(`大カードのステータスを「${label}」に揃えました`);
-      } catch (e) { reportError('大カードのステータスをまとめて変えられませんでした: ' + (e.message || e)); }
-    }
     document.addEventListener('click', (ev) => {
       const b = ev.target.closest('button'); if (!b) return;
       const sets = getState().world.statusConcepts || [];
       if (b.hasAttribute('data-ss-new')) openSetForm(null);
-      else if (b.hasAttribute('data-ss-from-preset')) { const p = PRESETS.find((x) => x.key === document.querySelector('[data-ss-preset]')?.value); if (p) openSetForm({ ...p, id: undefined }, { copy: false }); }
+      else if (b.dataset.ssFromPreset) { const p = PRESETS.find((x) => x.key === b.dataset.ssFromPreset); if (p) openSetForm({ ...p, id: undefined }, { copy: false }); }
       else if (b.dataset.ssEdit) openSetForm(sets.find((s) => s.id === b.dataset.ssEdit));
       else if (b.dataset.ssCopy) { const s = sets.find((x) => x.id === b.dataset.ssCopy); if (s) openSetForm(s, { copy: true }); }
       else if (b.dataset.ssDelete) openDelete(b.dataset.ssDelete);
-      else if (b.hasAttribute('data-ss-card-view-apply')) applyCardViewToAll(b);
       else if (b.hasAttribute('data-mg-open')) openMigration();
       else if (b.hasAttribute('data-mg-later')) { banner = false; b.closest('.status-migrate-banner')?.remove(); }
     });
