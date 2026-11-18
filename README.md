@@ -78,7 +78,7 @@ node scripts/prepare-public.cjs 0.4.0
 
 配布物の確認で使った画面写真やログは `dist/checks/`、過去の配布物・公開ソース・確認用の記録は `dist/archive/` に置きます。`dist/` はローカルの出力専用で、公開リポジトリには含めません。
 
-本プロジェクトのソースコードは MIT License（[LICENSE](LICENSE)）のもとで公開しています。同梱する第三者ソフトウェア・書体・アイコンの著作権とライセンス表記は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) にまとめています。
+本プロジェクトのソースコードは、ライセンス未設定（著作権は著作者に留保）で公開しています。同梱する第三者ソフトウェア・書体・アイコンの著作権とライセンス表記は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) にまとめています。
 
 画面のアイコンは [Lucide](https://lucide.dev)（ISC License、一部はFeather由来でMIT License）から使う分だけを同梱しています。ライセンス全文は `app/renderer/icons-LICENSE.txt` にあり、閲覧用ページにも添えています。
 
