@@ -2453,9 +2453,12 @@ async function featureScenario(personId) {
       const b = refChip.getBoundingClientRect(), i = refIcon.getBoundingClientRect();
       check(i.left >= b.left - 0.5 && i.right <= b.right + 0.5 && i.top >= b.top - 0.5 && i.bottom <= b.bottom + 0.5, 'book icon fits strictly inside linked setting chip');
     }
+    check(document.querySelector('.story-writing-toggle')?.hidden === true, 'writing toggle hides on tabs it does not affect');
     click('[data-story-tab="read"]');
+    check(document.querySelector('.story-writing-toggle')?.hidden === false, 'writing toggle shows on the reader tab');
     click('[data-story-writing="vertical"]'); await wait();
-    check(document.querySelector('.story-reader.is-vertical'), 'reader toggles vertical writing mode');
+    const readerEl = document.querySelector('.story-reader');
+    check(readerEl && getComputedStyle(readerEl).writingMode === 'vertical-rl', 'reader toggles vertical writing mode');
     const jumpBtn = document.querySelector('.story-reader button.story-inline-ref[data-story-jump]');
     check(jumpBtn, 'vertical reader shows inline setting link button');
     if (jumpBtn) {
@@ -2468,6 +2471,20 @@ async function featureScenario(personId) {
     }
     check(document.querySelector('#drawer [data-open-story]'), 'entry detail shows referencing stories');
     click('[data-close]');
+    click('[data-story-tab="scenes"]'); await wait();
+    const vBody = document.querySelector('[data-scene-field="body"]');
+    check(vBody && getComputedStyle(vBody).writingMode === 'vertical-rl', 'scene body editor follows vertical writing');
+    if (vBody) {
+      const r = vBody.getBoundingClientRect();
+      check(r.height >= 300 && r.width > 200, 'vertical scene body keeps a usable writing area');
+      const before = vBody.value.length;
+      vBody.focus(); vBody.setSelectionRange(0, 0);
+      click('[data-scene-insert-btn]');
+      check(vBody.value.length > before && vBody.value.startsWith('[['), 'quick insert works in vertical scene body');
+    }
+    check(document.documentElement.scrollWidth <= window.innerWidth + 1, 'vertical scene body causes no page horizontal overflow');
+    click('[data-story-save]'); await writes.idle(); await wait();
+    check((await ouip.load()).stories.some((x) => x.title === 'テスト短編' && x.writing === 'vertical'), 'vertical writing is saved per story');
     const delSelector = '[data-story-delete]';
     click(delSelector);
     click(delSelector); await writes.idle(); await wait();
@@ -2596,7 +2613,7 @@ async function featureScenario(personId) {
     child.stderr.on("data", (b) => { errors += b; process.stderr.write(b); });
     child.stdout.on("data", (b) => { errors += b; process.stdout.write(b); });
     await new Promise((resolve, reject) => {
-      const timeout = Math.min(120000, Math.max(55000, Number(process.env.OUIP_UI_TIMEOUT_MS) || 55000));
+      const timeout = Math.min(240000, Math.max(55000, Number(process.env.OUIP_UI_TIMEOUT_MS) || 150000)); // 全体で約85秒（2026-11-19 測定）。既定のまま通る値にする
       const timer = setTimeout(() => reject(Error("timeout: " + errors)), timeout);
       child.once('error', e => { clearTimeout(timer); reject(e); });
       child.once("close", (code) => { clearTimeout(timer); console.log('HARNESS: actual main screenshot exit=' + code); code === 0 ? resolve() : reject(Error(errors)); });

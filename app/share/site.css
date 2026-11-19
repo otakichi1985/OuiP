@@ -116,6 +116,7 @@ summary::marker{color:var(--accent)}
 .diagram-canvas>svg{display:block;width:100%;height:auto;max-width:none;user-select:text}
 .diagram-canvas text{user-select:text;cursor:text}
 footer{border-top:1px solid var(--line);padding-block:20px 28px;color:var(--muted);font-size:12px}
+.footer-mark{width:16px;height:16px;margin-right:6px;vertical-align:-3px}
 /* 年表以外の一覧: 絵の有無・説明の長さに関係なく同じ大きさのカード。絵は正方形の枠に全体を収める。 */
 :root{--card-min:170px;--desc-lines:0;--placeholder-size:40px}
 :root[data-card-size="medium"]{--card-min:240px;--desc-lines:3;--placeholder-size:56px}
@@ -279,4 +280,8 @@ footer{border-top:1px solid var(--line);padding-block:20px 28px;color:var(--mute
 .story-export-scene h4{margin:0 0 8px;font-family:var(--display);font-size:18px;border-bottom:1px solid var(--line);padding-bottom:4px}
 .story-export-prose{font-family:var(--display);line-height:1.9}
 .story-export-prose p{margin:0 0 0.65em}
+.story-export-scenes.is-vertical{writing-mode:vertical-rl;text-orientation:mixed;display:block;height:min(70vh,640px);overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
+.story-export-scenes.is-vertical .story-export-scene{margin-left:28px}
+.story-export-scenes.is-vertical .story-export-scene h4{border-bottom:0;border-left:1px solid var(--line);padding:0 0 0 4px;margin:0 0 0 8px}
+@media print{.story-export-scenes.is-vertical{height:auto;max-height:none;overflow:visible}}
 @media print{.story-export-card{break-inside:avoid;margin-bottom:16px}}

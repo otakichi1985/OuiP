@@ -249,12 +249,18 @@ h("saveAttributeViews", (l) => store.saveAttributeViews(l));
       if (!win.isDestroyed()) win.webContents.reloadIgnoringCache();
     });
 
+    const packagedIcon = () => {
+      const ico = path.join(path.dirname(process.execPath), "OuiP.ico");
+      const image = app.isPackaged && fs.existsSync(ico) ? nativeImage.createFromPath(ico) : null;
+      return image && !image.isEmpty() ? image : nativeImage.createFromBuffer(AppIcon.pngBuffer(256));
+    };
     win = new BrowserWindow({
       width: 1280,
       height: 860,
       minWidth: 720,
       minHeight: 520,
-      icon: nativeImage.createFromBuffer(AppIcon.pngBuffer(256)),
+      // 配布版は exe と同じ場所の OuiP.ico（大きさごとの絵）を使い、タスクバーや Alt+Tab の小さな表示でもぼやけないようにする。
+      icon: packagedIcon(),
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f6f8", // 描く前の地。外観が自動のときに合う色（端末ごとの選択はrendererが当てる）
       title: "OuiP",
       autoHideMenuBar: true,

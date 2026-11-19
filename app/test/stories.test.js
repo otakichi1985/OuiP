@@ -191,6 +191,31 @@ test("SiteExport: storyIds 省略時は後方互換、指定時は選択分の�
   assert.equal(html.includes(hidden.name), false);
 });
 
+test("縦書き: 作品ごとに保存され、閲覧用ページの本文に反映される", async (t) => {
+  assert.equal(StoryModel.normalizeStory({ title: "a" }).writing, "horizontal");
+  assert.equal(StoryModel.normalizeStory({ title: "a", writing: "vertical" }).writing, "vertical");
+  assert.equal(StoryModel.normalizeStory({ title: "a", writing: "sideways" }).writing, "horizontal");
+
+  const dir = await tempDir(t);
+  const store = new Store(dir);
+  await store.init();
+  const tate = await store.saveStory({ kind: "小説", title: "縦の物語", writing: "vertical", scenes: [{ title: "一", body: "[[灯]]が港へ" }] });
+  const yoko = await store.saveStory({ kind: "小説", title: "横の物語", scenes: [{ title: "一", body: "本文" }] });
+  const state = await store.load();
+  assert.equal(state.stories.find((s) => s.id === tate.id).writing, "vertical");
+  assert.equal(state.stories.find((s) => s.id === yoko.id).writing, "horizontal");
+
+  const base = { title: "作品", includeIntro: false, entryIds: [], organizationIds: [], graphIds: [], mapIds: [] };
+  const vModel = project(state, { ...base, storyIds: [tate.id] });
+  assert.equal(vModel.stories[0].writing, "vertical");
+  assert.ok(renderSite(vModel).includes("<p>灯が港へ</p>"), "[[設定名]] の括弧は書き出しで外す");
+  assert.ok(renderSite(vModel).includes('class="story-export-scenes is-vertical"'));
+  assert.match(renderSite(vModel), /<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml;base64,/);
+  const hModel = project(state, { ...base, storyIds: [yoko.id] });
+  assert.equal(hModel.stories[0].writing, "horizontal");
+  assert.equal(renderSite(hModel).includes("story-export-scenes is-vertical"), false);
+});
+
 test("app-icon generates deterministic SVG, PNG, and ICO buffers", () => {
   const markup = AppIcon.svg();
   assert.ok(markup.includes("<svg"));
@@ -204,4 +229,15 @@ test("app-icon generates deterministic SVG, PNG, and ICO buffers", () => {
   assert.deepEqual([...ico.subarray(0, 6)], [0x00, 0x00, 0x01, 0x00, 0x01, 0x00]);
   assert.equal(ico.length, 22 + png.length);
   assert.deepEqual([...ico.subarray(22, 30)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  // 既定は Windows で使う大きさをすべて持つ。exe・ショートカット・タスクバーの小さな表示用。
+  const multi = AppIcon.icoBuffer();
+  assert.equal(multi.readUInt16LE(4), AppIcon.ICO_SIZES.length);
+  AppIcon.ICO_SIZES.forEach((size, i) => {
+    const e = 6 + i * 16;
+    assert.equal(multi[e] || 256, size);
+    const off = multi.readUInt32LE(e + 12), len = multi.readUInt32LE(e + 8);
+    assert.ok(multi.subarray(off, off + len).equals(AppIcon.pngBuffer(size)));
+  });
+  assert.ok(AppIcon.ICO_SIZES.includes(16) && AppIcon.ICO_SIZES.includes(256));
 });

@@ -40,7 +40,6 @@
     let statusFilter = "";
     let listQuery = "";
     let refQuery = "";
-    let writingMode = "horizontal"; // horizontal | vertical
     let draft = null;
     let draftDirty = false;
     let saveTimer = null;
@@ -406,7 +405,6 @@
     }
 
     function renderReadTab(st) {
-      const total = M.charCount(st);
       const beatsHtml = (st.beats || []).length
         ? `<aside class="story-reader-outline" aria-label="構成のメモ">
             <h4>構成メモ</h4>
@@ -421,14 +419,7 @@
         : `<p class="small muted story-empty-note">本文の章がまだありません。</p>`;
 
       return `<div class="story-tab-pane">
-        <div class="story-subbar">
-          <div class="story-subbar-group" role="group" aria-label="組方向">
-            <button type="button" class="chipbtn" data-story-writing="horizontal" aria-pressed="${writingMode !== "vertical"}">横書き</button>
-            <button type="button" class="chipbtn" data-story-writing="vertical" aria-pressed="${writingMode === "vertical"}">縦書き</button>
-          </div>
-          <span class="small muted story-stat">${total.toLocaleString()} 文字</span>
-        </div>
-        <article class="story-reader${writingMode === "vertical" ? " is-vertical" : ""}">
+        <article class="story-reader">
           <header class="story-reader-head">
             <p class="story-reader-kind">${esc(st.kind)} / ${esc(st.status)}</p>
             <h2 class="story-reader-title">${esc(st.title)}</h2>
@@ -439,6 +430,9 @@
         </article>
       </div>`;
     }
+
+    // 文字の向きが効く画面。構成・プロットと関わる設定では切り替えを出さない。
+    const writingTabs = new Set(["scenes", "read"]);
 
     function renderMain(st) {
       if (!st) {
@@ -480,6 +474,10 @@
             <select class="inp story-status-sel" data-story-field="status" aria-label="状態">
               ${M.STATUSES.map((s) => `<option value="${esc(s)}"${st.status === s ? " selected" : ""}>${esc(s)}</option>`).join("")}
             </select>
+            <div class="story-writing-toggle" role="group" aria-label="文字の向き（本文と閲覧表示）"${writingTabs.has(storyTab) ? "" : " hidden"}>
+              <button type="button" class="chipbtn" data-story-writing="horizontal" aria-pressed="${st.writing !== "vertical"}">横書き</button>
+              <button type="button" class="chipbtn" data-story-writing="vertical" aria-pressed="${st.writing === "vertical"}">縦書き</button>
+            </div>
             <span class="story-stat" data-story-total-chars>${M.charCount(st).toLocaleString()} 文字</span>
           </div>
           <div class="story-head-actions">
@@ -491,7 +489,7 @@
         <div class="story-tabs" role="tablist" aria-label="作品編集の切り替え">
           ${tabs.map(([key, label]) => `<button type="button" role="tab" data-story-tab="${key}" aria-selected="${storyTab === key}">${esc(label)}</button>`).join("")}
         </div>
-        <div class="story-body-wrap">${body}</div>
+        <div class="story-body-wrap" data-writing="${st.writing === "vertical" ? "vertical" : "horizontal"}">${body}</div>
       </div>`;
     }
 
@@ -693,6 +691,8 @@
           const wrap = container.querySelector(".story-body-wrap");
           const prevMain = container.querySelector(".story-main");
           container.querySelectorAll("[data-story-tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.storyTab === storyTab)));
+          const writingToggle = container.querySelector(".story-writing-toggle");
+          if (writingToggle) writingToggle.hidden = !writingTabs.has(storyTab);
           if (wrap) {
             wrap.innerHTML = storyTab === "scenes"
               ? renderScenesTab(draft)
@@ -825,9 +825,14 @@
           return;
         }
         if (btn.matches("[data-story-writing]")) {
-          writingMode = btn.dataset.storyWriting === "vertical" ? "vertical" : "horizontal";
+          const next = btn.dataset.storyWriting === "vertical" ? "vertical" : "horizontal";
+          container.querySelectorAll("[data-story-writing]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.storyWriting === next)));
           const wrap = container.querySelector(".story-body-wrap");
-          if (wrap) wrap.innerHTML = renderReadTab(draft);
+          if (wrap) wrap.dataset.writing = next;
+          if (draft.writing !== next) {
+            draft.writing = next;
+            scheduleSave();
+          }
           return;
         }
         if (btn.matches("[data-story-jump]")) {

@@ -381,6 +381,24 @@
   min-height: 180px;
 }
 
+.story-writing-toggle {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* 縦書き: 本文の入力欄は右から左へ行が進む。高さを固定し、横にスクロールする。 */
+.story-body-wrap[data-writing="vertical"] .story-scene-body {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  width: 100%;
+  height: min(60vh, 560px);
+  min-height: 320px;
+  resize: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  line-height: 1.9;
+}
+
 .story-scene-refs summary {
   cursor: pointer;
   color: var(--muted);
@@ -521,7 +539,7 @@
   cursor: pointer;
 }
 
-.story-reader.is-vertical .story-inline-ref {
+.story-body-wrap[data-writing="vertical"] .story-reader .story-inline-ref {
   text-underline-position: right;
 }
 
@@ -537,7 +555,7 @@
   cursor: default;
 }
 
-.story-reader.is-vertical {
+.story-body-wrap[data-writing="vertical"] .story-reader {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   max-height: min(64vh, 620px);
@@ -547,8 +565,8 @@
   width: 100%;
 }
 
-.story-reader.is-vertical .story-reader-head,
-.story-reader.is-vertical .story-reader-outline {
+.story-body-wrap[data-writing="vertical"] .story-reader .story-reader-head,
+.story-body-wrap[data-writing="vertical"] .story-reader .story-reader-outline {
   border-bottom: 0;
   border-left: 1px solid var(--line);
   padding-bottom: 0;

@@ -6,7 +6,8 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const app = path.join(root, 'app');
 const dist = path.join(root, 'dist');
-const releases = path.join(dist, 'releases');
+// OUIP_PACKAGE_OUT: 試し組み立ての出力先。公開済みの dist/releases/<版> を上書きせずに確かめるときに使う。
+const releases = process.env.OUIP_PACKAGE_OUT ? path.resolve(process.env.OUIP_PACKAGE_OUT) : path.join(dist, 'releases');
 const marker = { product: 'OuiP', version: JSON.parse(fs.readFileSync(path.join(app, 'package.json'))).version, platform: 'win32', arch: 'x64' };
 function assert(ok, message) { if (!ok) throw new Error(message); }
 function files(dir, prefix = '') {
@@ -38,6 +39,24 @@ function runTar(args) {
   const r = spawnSync(exe, args, { encoding: 'utf8', windowsHide: true, timeout: 240000, maxBuffer: 32 * 1024 * 1024 });
   assert(!r.error && r.status === 0, `tar failed: ${r.error || r.stderr}`);
   return r.stdout;
+}
+// exe 本体にアイコンと名前・版を埋め込む。エクスプローラー・ピン留め・タスクマネージャーは exe の中の資源を読む。
+// 会社名・著作権表示は exe の中身（Electron）の表示なので変えない。
+function embedExeResources(exe, ico, iconCount, version) {
+  const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const script = path.join(__dirname, 'set-exe-resources.ps1');
+  const run = (extra) => {
+    const r = spawnSync(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Exe', exe, ...extra], { encoding: 'utf8', windowsHide: true, timeout: 120000 });
+    assert(!r.error && r.status === 0, `set-exe-resources failed: ${r.error || r.stderr || r.stdout}`);
+    return r.stdout.trim();
+  };
+  run(['-Ico', ico, '-Name', 'OuiP', '-Version', version]);
+  const lines = run(['-ListOnly']).split(/\r?\n/).filter(Boolean);
+  const first = lines.map(line => line.match(/^group (\d+) lang \d+ icons ([\d,]+)$/)).filter(Boolean).sort((a, b) => a[1] - b[1])[0];
+  assert(first && first[2].split(',').length === iconCount, `Exe icon not embedded: ${lines.join(' / ')}`);
+  for (const want of ['FileDescription=OuiP', 'ProductName=OuiP', 'OriginalFilename=OuiP.exe', `FileVersion=${version}`, `ProductVersion=${version}`, `FixedFileVersion=${version}.0`]) {
+    assert(lines.includes(`version ${want}`), `Exe version info not set (${want}): ${lines.join(' / ')}`);
+  }
 }
 async function build() {
   const started = Date.now();
@@ -74,8 +93,10 @@ async function build() {
   assert(fs.existsSync(path.join(runtime, 'LICENSE')) && fs.existsSync(path.join(runtime, 'LICENSES.chromium.html')), 'Electron licenses missing');
   assert(files(path.join(target, 'node_modules', 'isomorphic-git')).some(f => /(^|\/)licen[sc]e/i.test(f)), 'isomorphic-git license missing');
   const AppIcon = require(path.join(app, 'lib', 'app-icon'));
-  fs.writeFileSync(path.join(runtime, 'OuiP.ico'), AppIcon.icoBuffer(256));
-  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(runtime, 'LICENSE.OuiP.txt'));
+  fs.writeFileSync(path.join(runtime, 'OuiP.ico'), AppIcon.icoBuffer());
+  embedExeResources(path.join(runtime, 'OuiP.exe'), path.join(runtime, 'OuiP.ico'), AppIcon.ICO_SIZES.length, marker.version);
+  // OuiP 自身の LICENSE は 2026-11-18 に外した（ライセンス未定）。置いたときだけ同梱する。
+  if (fs.existsSync(path.join(root, 'LICENSE'))) fs.copyFileSync(path.join(root, 'LICENSE'), path.join(runtime, 'LICENSE.OuiP.txt'));
   fs.copyFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(runtime, 'THIRD_PARTY_NOTICES.md'));
   fs.writeFileSync(path.join(runtime, '.ouip-package.json'), JSON.stringify(marker, null, 2) + '\n');
   const zip = path.join(release, `ouip-win-x64-v${marker.version}.zip`);

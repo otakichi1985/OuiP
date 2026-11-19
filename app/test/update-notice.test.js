@@ -55,7 +55,9 @@ test('起動時カードに版/変更点、安全なテキスト、あとで・�
   assert.match(card.innerHTML, /v0.2.0/);
   assert.match(card.innerHTML, /v0.2.1/);
   assert.match(card.innerHTML, /&lt;img/);
-  assert.doesNotMatch(card.innerHTML, /<img/);
+  // 見出しのアプリのアイコンだけは img。更新内容の文字列からは img が生まれない。
+  assert.doesNotMatch(card.innerHTML, /<img(?! class="update-notice-mark")/);
+  assert.equal(card.innerHTML.split('<img').length - 1, 1);
   await s.click({ updateDismiss: '' });
   assert.equal(card.hidden, true);
   assert.equal(s.get('update-btn').textContent, 'アプリの更新あり');

@@ -8,6 +8,7 @@
   const KINDS = ["プロット", "小説"];
   const STATUSES = ["構想", "執筆中", "完成"];
   const BEAT_STATUSES = ["構想", "確定", "未定"];
+  const WRITINGS = ["horizontal", "vertical"];
 
   const LIMITS = {
     title: 120,
@@ -109,6 +110,7 @@
       kind,
       status,
       summary: clip(st.summary ?? "", LIMITS.summary),
+      writing: WRITINGS.includes(st.writing) ? st.writing : WRITINGS[0],
       refs: cleanRefs(st.refs),
       beats: rawBeats.map((b, i) => normalizeBeat(b, i)),
       scenes: rawScenes.map((s, i) => normalizeScene(s, i)),
@@ -161,6 +163,7 @@
 
   return {
     KINDS,
+    WRITINGS,
     STATUSES,
     BEAT_STATUSES,
     LIMITS,

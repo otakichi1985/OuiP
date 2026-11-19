@@ -26,6 +26,8 @@ const CARD_SIZE_OPTIONS = [
   ['large', '大', 'cardLarge', '横長でステータスまで'],
 ];
 const cardSizeControl = () => `<span class="card-size" role="group" aria-label="表示" data-tools hidden><span class="card-size-label">表示</span>${CARD_SIZE_OPTIONS.map(([key, label, icon, hint], index) => `<button type="button" data-card-size="${key}" aria-pressed="${index === 0}" aria-label="表示：${label}（${hint}）" title="表示：${label}（${hint}）">${Icons.icon(icon)}</button>`).join('')}</span>`;
+// アプリのアイコン。閲覧用ページのタブと足元に出す（CSP は img-src data: のみ許可）。
+const APP_ICON_DATA = 'data:image/svg+xml;base64,' + Buffer.from(read('../renderer/app-icon.svg')).toString('base64');
 const styles = read('../share/site.css') + '\n' + read('../renderer/character-stats.css');
 // 絵の枠の比率は image-crop.js の ASPECT から作る。閲覧用は静的な CSS を埋め込むので、先に :root の変数を置く。
 const cropAspectCSS = `:root{${Object.entries(ImageCrop.CSS_VARS).map(([name, value]) => `${name}:${value}`).join(';')}}`;
@@ -209,7 +211,7 @@ function renderStories(stories, context) {
       ? disclosure(`構成・プロット（${beats.length}）`, `<ol class="story-export-beats">${beats.map(b => `<li>${b.act ? `<span class="story-export-act">${esc(b.act)}</span> ` : ''}<strong>${esc(b.title)}</strong>${b.body ? `<p class="prose">${esc(b.body)}</p>` : ''}</li>`).join('')}</ol>`, st.kind === 'プロット')
       : '';
     const scenesHtml = scenes.length
-      ? `<div class="story-export-scenes">${scenes.map(sc => `<section class="story-export-scene"><h4>${esc(sc.title)}</h4><div class="story-export-prose">${text(sc.body).split(/\r?\n/).map(line => line.trim() ? `<p>${esc(line)}</p>` : '<p class="story-export-gap"><br></p>').join('')}</div></section>`).join('')}</div>`
+      ? `<div class="story-export-scenes${st.writing === 'vertical' ? ' is-vertical' : ''}">${scenes.map(sc => `<section class="story-export-scene"><h4>${esc(sc.title)}</h4><div class="story-export-prose">${text(sc.body).split(/\r?\n/).map(line => line.trim() ? `<p>${esc(line.replace(/\[\[([^[\]]+)\]\]/g, '$1'))}</p>` : '<p class="story-export-gap"><br></p>').join('')}</div></section>`).join('')}</div>`
       : '';
     return `<article class="story-export-card" id="${esc(id('story', st.id))}">
       <header class="story-export-head"><p class="muted story-export-meta">${esc(st.kind)} / ${esc(st.status)}</p><h3>${esc(st.title)}</h3></header>
@@ -264,11 +266,11 @@ function renderSite(model = {}) {
     placed.add(n); return ` ${attr}="${imageTable[n]}" data-ouip-id="${n}"`;
   };
   return (`<!doctype html>
-<html lang="ja" data-template="${esc(template)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${pageStyles}${templateStyles}</style></head>
+<html lang="ja" data-template="${esc(template)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${esc(title)}</title><link rel="icon" type="image/svg+xml" href="${APP_ICON_DATA}"><style>${pageStyles}${templateStyles}</style></head>
 <body><a class="skip-link" href="#content">資料本文へ</a>
 <nav class="site-nav" aria-label="資料の分類"><span class="nav-title">${esc(title)}${model.author ? `<span class="nav-author"> ・ ${esc(model.author)}</span>` : ''}</span><a href="#overview" data-tab-link>${Icons.icon(TAB_ICONS.overview)}概要</a>${categories.map(category => `<a href="#${category.id}" data-tab-link>${Icons.icon(TAB_ICONS[category.id])}${category.label}<span class="count">${category.items.length || maps.length}</span></a>`).join('')}<label class="nav-search" data-tools hidden>検索<input type="search" data-nav-search placeholder="名前・読み・本文" autocomplete="off"></label>${cardSizeControl()}</nav>
 <main id="content"><header class="world-header" id="overview" data-panel><div class="world-heading"><p class="document-label">世界設定資料</p><h1>${esc(title)}</h1>${model.author ? `<p class="world-author">作者 ${esc(model.author)}</p>` : ''}${model.note ? `<p class="world-note prose">${esc(model.note)}</p>` : ''}</div><div class="world-aside">${image(model.image, `${title}の画像`, 'world-image')}${categories.length ? `<nav class="world-index" aria-label="資料の索引">${categories.map(category => `<a href="#${category.id}"><span>${category.label}</span><span>${category.items.length || maps.length}</span></a>`).join('')}</nav>` : ''}</div></header>${sectionHTML}</main>
-<footer>OuiPで作成した共有資料 / 閲覧専用</footer><script>${script}</script>
+<footer><img class="footer-mark" src="${APP_ICON_DATA}" alt="" width="16" height="16">OuiPで作成した共有資料 / 閲覧専用</footer><script>${script}</script>
 <!--
 Third-party notice: icons from Lucide
 カードの表示アイコン（cardSmall/cardMedium/cardLarge）はOuiP用に描いた図形で、Lucideではない。

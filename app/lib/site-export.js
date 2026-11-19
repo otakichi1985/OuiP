@@ -114,6 +114,7 @@ function project(state,selection) {
     kind:st.kind==='小説'?'小説':'プロット',
     status:['構想','執筆中','完成'].includes(st.status)?st.status:'構想',
     summary:text(st.summary||''),
+    writing:st.writing==='vertical'?'vertical':'horizontal',
     refs:array(st.refs||[],200).filter(key=>entryIds.has(key)||organizationIds.has(key)),
     beats:array(st.beats||[],200).map(b=>({id:id(b.id),act:text(b.act||'',40),title:text(b.title||'',120),body:text(b.body||'',8000),status:['構想','確定','未定'].includes(b.status)?b.status:'構想'})),
     scenes:array(st.scenes||[],200).map(sc=>({id:id(sc.id),title:text(sc.title||'',120),body:text(sc.body||'',100000),refs:array(sc.refs||[],200).filter(key=>entryIds.has(key)||organizationIds.has(key))})),

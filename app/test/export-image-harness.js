@@ -20,7 +20,7 @@ async function assets(dir) {
 }
 // 開いたページの画像を数える（各画像の最初の1か所は本物、2か所目からは data-ouip-src を site.js が埋める）
 const COUNT = `(async () => {
-  const imgs = [...document.images], has = i => (i.getAttribute('src') || '').startsWith('data:image/');
+  const imgs = [...document.images].filter(i => !i.classList.contains('footer-mark')), has = i => (i.getAttribute('src') || '').startsWith('data:image/');
   const probe = new Image(); probe.src = imgs.find(has)?.getAttribute('src') || ''; await probe.decode().catch(() => {});
   return { count: imgs.length, filled: imgs.filter(has).length, refs: imgs.filter(i => i.hasAttribute('data-ouip-src')).length, refsFilled: imgs.filter(i => i.hasAttribute('data-ouip-src') && has(i)).length, decodedWidth: probe.naturalWidth };
 })()`;

@@ -162,21 +162,31 @@ function pngBuffer(size = 256) {
   ]);
 }
 
-function icoBuffer(size = 256) {
-  const png = pngBuffer(size);
-  const header = Buffer.alloc(22);
+// Windows の exe・ショートカット・タスクバーで使う大きさ。小さい表示でもぼやけないよう、大きさごとに描く。
+const ICO_SIZES = Object.freeze([16, 20, 24, 32, 40, 48, 64, 128, 256]);
+
+// size に数を渡すとその大きさ1枚、配列を渡すと複数の大きさを持つ ICO を作る（中身は PNG）。
+function icoBuffer(size = ICO_SIZES) {
+  const sizes = Array.isArray(size) ? size : [size];
+  const pngs = sizes.map((s) => pngBuffer(s));
+  const header = Buffer.alloc(6 + 16 * sizes.length);
   header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
-  header.writeUInt16LE(1, 4);
-  header[6] = size >= 256 ? 0 : size;
-  header[7] = size >= 256 ? 0 : size;
-  header[8] = 0;
-  header[9] = 0;
-  header.writeUInt16LE(1, 10);
-  header.writeUInt16LE(32, 12);
-  header.writeUInt32LE(png.length, 14);
-  header.writeUInt32LE(22, 18);
-  return Buffer.concat([header, png]);
+  header.writeUInt16LE(sizes.length, 4);
+  let offset = header.length;
+  sizes.forEach((s, i) => {
+    const e = 6 + i * 16;
+    header[e] = s >= 256 ? 0 : s;
+    header[e + 1] = s >= 256 ? 0 : s;
+    header[e + 2] = 0;
+    header[e + 3] = 0;
+    header.writeUInt16LE(1, e + 4);
+    header.writeUInt16LE(32, e + 6);
+    header.writeUInt32LE(pngs[i].length, e + 8);
+    header.writeUInt32LE(offset, e + 12);
+    offset += pngs[i].length;
+  });
+  return Buffer.concat([header, ...pngs]);
 }
 
-module.exports = { svg, pngBuffer, icoBuffer };
+module.exports = { svg, pngBuffer, icoBuffer, ICO_SIZES };
